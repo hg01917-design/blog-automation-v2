@@ -1,0 +1,96 @@
+"""포스팅 에이전트 — 검수 통과한 글을 블로그에 발행"""
+import sys
+from pathlib import Path
+from datetime import datetime
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from poster import post_single
+from overnight_run import update_keyword_status
+
+
+def run(result: dict, blog_id: str, keyword: str, page_id: str,
+        on_log=None, on_status=None):
+    """블로그에 글을 발행하고 Notion 상태를 업데이트한다.
+
+    Returns:
+        dict: {"posted": bool, "blog_id": str, "title": str}
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    if on_status:
+        on_status("poster", "working")
+
+    title = result["title"]
+    body = result["body"]
+    tags = result["tags"]
+    image_paths = result.get("image_paths", {})
+    images = result.get("images", [])
+
+    log(f"[포스팅] {blog_id} 발행 시작: \"{title}\"")
+
+    try:
+        ok = post_single(
+            blog_id=blog_id,
+            title=title,
+            content=body,
+            tags=tags,
+            image_paths=image_paths,
+            image_infos=images,
+            on_log=log,
+        )
+    except Exception as e:
+        log(f"[포스팅] 발행 오류: {e}")
+        ok = False
+
+    if ok:
+        log(f"[포스팅] ✓ 발행 성공: \"{title}\" ({blog_id})")
+        # Notion 상태 + 발행일 업데이트
+        update_keyword_status(page_id, "완료")
+        _update_publish_date(page_id)
+    else:
+        log(f"[포스팅] ⚠ 발행 실패: \"{title}\" ({blog_id})")
+        update_keyword_status(page_id, "실패", memo="포스팅 실패")
+
+    if on_status:
+        on_status("poster", "done" if ok else "failed")
+
+    return {
+        "posted": ok,
+        "blog_id": blog_id,
+        "title": title,
+    }
+
+
+def _update_publish_date(page_id):
+    """Notion 페이지에 발행일 기록"""
+    import json
+    import urllib.request
+    import os
+
+    token = os.environ.get("NOTION_TOKEN", "")
+    if not token:
+        return
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    body = {
+        "properties": {
+            "발행일": {"date": {"start": today}},
+        }
+    }
+    req = urllib.request.Request(
+        f"https://api.notion.com/v1/pages/{page_id}",
+        data=json.dumps(body).encode(),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json",
+        },
+        method="PATCH",
+    )
+    try:
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass

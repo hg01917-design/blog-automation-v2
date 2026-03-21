@@ -1,0 +1,391 @@
+"""야간 자동 실행 — 키워드 수집 → 글 생성 → 포스팅"""
+import os
+import re
+import json
+import time
+import urllib.request
+import urllib.parse
+from datetime import datetime
+from pathlib import Path
+
+LOG_DIR = Path(__file__).parent / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+LOG_FILE = LOG_DIR / "overnight_result.txt"
+
+# .env 로드
+_env_path = Path(__file__).parent / ".env"
+if _env_path.exists():
+    for line in _env_path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, val = line.partition("=")
+            os.environ.setdefault(key.strip(), val.strip())
+
+logs = []
+
+
+def log(msg):
+    ts = datetime.now().strftime("%H:%M:%S")
+    line = f"[{ts}] {msg}"
+    print(line, flush=True)
+    logs.append(line)
+
+
+def save_log():
+    LOG_FILE.write_text("\n".join(logs), encoding="utf-8")
+    log(f"로그 저장: {LOG_FILE}")
+
+
+# ─── Notion 키워드 큐에서 대기 키워드 가져오기 ───
+NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
+NOTION_API = "https://api.notion.com/v1"
+KEYWORD_DB_ID = "d6bb5b753f1b4963891de02427411276"
+
+
+def _notion_headers():
+    return {
+        "Authorization": f"Bearer {NOTION_TOKEN}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+    }
+
+
+def fetch_next_keyword(blog_id):
+    """Notion 키워드 큐에서 blog_id의 '대기' 상태 키워드 1개 가져오기"""
+    body = {
+        "filter": {
+            "and": [
+                {"property": "블로그", "select": {"equals": blog_id}},
+                {"property": "상태", "select": {"equals": "대기"}},
+            ]
+        },
+        "sorts": [{"property": "검색량", "direction": "descending"}],
+        "page_size": 1,
+    }
+    req = urllib.request.Request(
+        f"{NOTION_API}/databases/{KEYWORD_DB_ID}/query",
+        data=json.dumps(body).encode(),
+        headers=_notion_headers(),
+        method="POST",
+    )
+    try:
+        resp = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(resp.read())
+        results = data.get("results", [])
+        if not results:
+            return None, None
+        page = results[0]
+        page_id = page["id"]
+        props = page.get("properties", {})
+        for prop_name in ["키워드", "Name", "name", "제목"]:
+            prop = props.get(prop_name, {})
+            if prop.get("type") == "title":
+                texts = prop.get("title", [])
+                if texts:
+                    return texts[0].get("plain_text", ""), page_id
+        return None, None
+    except Exception as e:
+        log(f"[Notion] 키워드 가져오기 실패: {e}")
+        return None, None
+
+
+def update_keyword_status(page_id, status, memo=None):
+    """Notion 키워드 상태 업데이트 (메모 옵션)"""
+    props = {"상태": {"select": {"name": status}}}
+    if memo:
+        props["메모"] = {"rich_text": [{"text": {"content": memo}}]}
+    body = {"properties": props}
+    req = urllib.request.Request(
+        f"{NOTION_API}/pages/{page_id}",
+        data=json.dumps(body).encode(),
+        headers=_notion_headers(),
+        method="PATCH",
+    )
+    try:
+        urllib.request.urlopen(req, timeout=10)
+    except Exception as e:
+        log(f"[Notion] 상태 업데이트 실패: {e}")
+
+
+def _extract_core_words(keyword):
+    """키워드에서 핵심 단어를 추출한다.
+
+    예: "도시가스 요금 절약" → ["도시가스", "요금", "절약"]
+    1글자 단어, 조사, 일반 접속사는 제외.
+    """
+    STOP_WORDS = {
+        '방법', '추천', '정리', '비교', '후기', '종류', '가이드',
+        '및', '또는', '그리고', '하는', '위한', '대한', '좋은', '최고',
+        '가장', '진짜', '완벽', '꿀팁', '팁', '꿀',
+    }
+    words = keyword.split()
+    core = [w for w in words if len(w) >= 2 and w not in STOP_WORDS]
+    return core if core else words[:2]
+
+
+def check_duplicate_post(blog_id, keyword, on_log=None):
+    """네이버 블로그에서 유사 주제 글이 이미 있는지 확인한다.
+
+    핵심 단어로 블로그 내 검색 → 기존 글 제목에 핵심 단어가 포함되면 중복.
+    Returns: (is_duplicate: bool, matched_title: str or None)
+    """
+    def _log(msg):
+        if on_log:
+            on_log(msg)
+
+    core_words = _extract_core_words(keyword)
+    _log(f"[유사문서] 핵심 단어: {core_words}")
+
+    # 네이버 블로그 검색 API (RSS)
+    search_query = "+".join(core_words)
+    search_url = (
+        f"https://blog.naver.com/PostSearchList.naver?"
+        f"blogId={blog_id}&searchText={urllib.parse.quote(search_query)}"
+        f"&orderType=sim&directAccess=false"
+    )
+
+    try:
+        req = urllib.request.Request(search_url, headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
+        })
+        resp = urllib.request.urlopen(req, timeout=10)
+        html = resp.read().decode("utf-8", errors="ignore")
+
+        # 글 제목 추출 (네이버 블로그 검색 결과 HTML에서)
+        titles = re.findall(r'<span class="ell">(.*?)</span>', html)
+        if not titles:
+            titles = re.findall(r'class="pcol2"[^>]*>(.*?)</a>', html)
+        if not titles:
+            titles = re.findall(r'title="([^"]+)"', html)
+
+        # HTML 태그 제거
+        clean_titles = [re.sub(r'<[^>]+>', '', t).strip() for t in titles]
+        clean_titles = [t for t in clean_titles if len(t) > 5]
+
+        _log(f"[유사문서] {blog_id} 검색 결과: {len(clean_titles)}개 글")
+
+        # 핵심 단어 2개 이상 포함된 제목이 있으면 중복
+        for t in clean_titles[:10]:
+            match_count = sum(1 for w in core_words if w in t)
+            if match_count >= 2 or (len(core_words) == 1 and match_count >= 1):
+                _log(f"[유사문서] ⚠ 유사 글 발견: \"{t}\"")
+                _log(f"[유사문서] 매칭 단어: {[w for w in core_words if w in t]}")
+                return True, t
+
+        _log(f"[유사문서] 유사 글 없음 — 진행 가능")
+        return False, None
+
+    except Exception as e:
+        _log(f"[유사문서] 검색 실패: {e} — 안전하게 진행")
+        return False, None
+
+
+def _truncate_title(title, max_len=40):
+    """제목을 max_len자(기본 40자) 이내로 자른다.
+
+    40자 초과 시:
+    1. 구두점(.?!)에서 자르기 (20~40자 범위)
+    2. 공백(띄어쓰기)에서 자르기 — 명사 뒤 단어 경계
+    3. 조사/접속사 뒤면 한 단어 더 앞으로 (은/는/이/가/을/를/에/의/로/와/과/도/만)
+    4. 그래도 없으면 max_len자 강제 자르기
+    """
+    # 본문 혼입 방지: 줄바꿈이 있으면 첫 줄만
+    title = title.split('\n')[0].strip()
+
+    if len(title) <= max_len:
+        return title
+
+    # 1. 20~max_len 범위에서 마지막 구두점 찾기
+    for i in range(min(max_len, len(title)) - 1, 19, -1):
+        if title[i] in '.?!。？！':
+            return title[:i + 1]
+
+    # 2. 공백(단어 경계)에서 자르기 — 조사 뒤 자르기 방지
+    # 한국어 조사 패턴: 1~2글자 (은,는,이,가,을,를,에,의,로,와,과,도,만,에서,으로,까지,부터)
+    JOSA = {'은', '는', '이', '가', '을', '를', '에', '의', '로', '와', '과',
+            '도', '만', '에서', '으로', '까지', '부터', '에게', '한테', '처럼'}
+
+    # max_len 이내에서 마지막 공백 위치들 (뒤에서부터)
+    for i in range(min(max_len, len(title)) - 1, 14, -1):
+        if title[i] == ' ':
+            # 공백 앞 단어가 조사인지 확인
+            before_space = title[:i]
+            last_word = before_space.split()[-1] if before_space.split() else ""
+            if last_word in JOSA:
+                continue  # 조사 뒤에서 자르면 어색 → 건너뜀
+            return title[:i]
+
+    # 3. 강제 자르기
+    return title[:max_len]
+
+
+# ─── 전체 포스팅 파이프라인 ───
+def run_posting_pipeline(blog_id, keyword, page_id=None):
+    """유사문서 체크 → 글 생성 → 이미지 → 포스팅 전체 파이프라인
+
+    page_id가 주어지면 유사문서 발견 시 Notion 상태를 '실패'로 변경.
+    """
+    from claude_playwright import generate_text
+    from gemini_image import generate_images
+    from poster import post_single
+
+    # 0. 유사문서 체크
+    log(f"[파이프라인] {blog_id} / '{keyword}' — 유사문서 체크")
+    is_dup, matched = check_duplicate_post(blog_id, keyword, on_log=log)
+    if is_dup:
+        log(f"[파이프라인] ⚠ 유사문서 발견 — 키워드 '{keyword}' 건너뜀")
+        if page_id:
+            update_keyword_status(page_id, "실패", memo=f"유사문서: {matched[:30]}")
+        return False
+
+    # 1. Claude.ai 글 생성
+    log(f"[파이프라인] {blog_id} / '{keyword}' — Claude.ai 글 생성 시작")
+    raw = generate_text("", blog_id=blog_id, keyword=keyword, on_log=log)
+
+    if not raw or "추출 실패" in raw:
+        log(f"[파이프라인] 글 생성 실패")
+        return False
+
+    # 2. 파싱 — 각 섹션 정확히 분리
+    title_m = re.search(r"===제목===\s*\n(.*?)\n*===제목끝===", raw, re.DOTALL)
+    body_m = re.search(r"===본문===\s*\n(.*?)\n*===본문끝===", raw, re.DOTALL)
+    tag_m = re.search(r"===태그===\s*\n(.*?)\n*===태그끝===", raw, re.DOTALL)
+    img_m = re.search(r"===이미지===\s*\n(.*?)\n*===이미지끝===", raw, re.DOTALL)
+
+    # 제목: ===제목===~===제목끝=== 사이에서 첫 줄만 추출 + 40자 제한
+    if title_m:
+        title_block = title_m.group(1).strip()
+        raw_title = title_block.split('\n')[0].strip()
+    else:
+        raw_title = keyword
+    title = _truncate_title(raw_title, max_len=40)
+
+    body = body_m.group(1).strip() if body_m else raw
+
+    # 태그: 첫 줄만 (여러 줄이면 첫 줄의 쉼표 구분)
+    if tag_m:
+        tag_line = tag_m.group(1).strip().split('\n')[0].strip()
+        tags = [t.strip() for t in tag_line.split(",") if t.strip()]
+    else:
+        tags = [keyword]
+
+    images = []
+    if img_m:
+        img_text = img_m.group(1)
+        for m in re.finditer(
+            r"\[이미지(\d+)\]\s*\n- Gemini프롬프트:\s*(.+)\n- 파일명:\s*(.+)\n- alt:\s*(.+)",
+            img_text,
+        ):
+            images.append({
+                "index": int(m.group(1)),
+                "prompt": m.group(2).strip(),
+                "filename": m.group(3).strip(),
+                "alt": m.group(4).strip(),
+            })
+
+    plain = re.sub(r"##.*|{{.*?}}|\[애드센스\]|\|.*", "", body)
+    char_count = len(re.sub(r"\s+", "", plain))
+
+    # 파싱 결과 검증 로그
+    log(f"[파싱] 제목: \"{title}\" ({len(title)}자)")
+    log(f"[파싱] 본문: {char_count}자")
+    log(f"[파싱] 태그: {tags} ({len(tags)}개)")
+    log(f"[파싱] 이미지: {len(images)}개")
+    if len(title) == 0:
+        log("[파싱] ⚠ 제목이 비어있음 — 키워드로 대체")
+        title = keyword
+    if char_count < 100:
+        log(f"[파싱] ⚠ 본문이 너무 짧음 ({char_count}자)")
+    log(f"[파싱] 본문 미리보기: {body[:80]}...")
+
+    # 3. Gemini 이미지 생성
+    image_paths = {}
+    if images:
+        log(f"[파이프라인] Gemini 이미지 생성 시작")
+        image_paths = generate_images(images, on_log=log)
+        log(f"[파이프라인] 이미지 {len(image_paths)}개 생성 완료")
+
+    # 4. 포스팅
+    log(f"[파이프라인] 포스팅 시작: {blog_id}")
+    ok = post_single(
+        blog_id=blog_id,
+        title=title,
+        content=body,
+        tags=tags,
+        image_paths=image_paths,
+        image_infos=images,
+        on_log=log,
+    )
+
+    status = "성공" if ok else "실패"
+    log(f"[파이프라인] {blog_id} / '{keyword}' 포스팅 {status}")
+    return ok
+
+
+# ─── 메인 실행 ───
+if __name__ == "__main__":
+    log("=" * 60)
+    log("야간 자동 실행 시작")
+    log("=" * 60)
+
+    # ── 1단계: salim1su, baremi542 키워드 크롤링 ──
+    log("\n" + "=" * 60)
+    log("[1단계] salim1su, baremi542 키워드 크롤링")
+    log("=" * 60)
+
+    from keyword_crawler import crawl_keywords
+
+    for bid in ["salim1su", "baremi542"]:
+        try:
+            result = crawl_keywords(blog_id=bid, on_log=log)
+            log(f"[크롤링] {bid}: {result.get(bid, 0)}개 저장")
+        except Exception as e:
+            log(f"[크롤링] {bid} 오류: {e}")
+
+    save_log()
+
+    # ── 2단계: nolja100 포스팅 테스트 ──
+    log("\n" + "=" * 60)
+    log("[2단계] nolja100 포스팅 테스트")
+    log("=" * 60)
+
+    kw, page_id = fetch_next_keyword("nolja100")
+    if kw:
+        log(f"[nolja100] 키워드: {kw}")
+        try:
+            update_keyword_status(page_id, "진행중")
+            ok = run_posting_pipeline("nolja100", kw, page_id=page_id)
+            if ok:
+                update_keyword_status(page_id, "완료")
+        except Exception as e:
+            log(f"[nolja100] 오류: {e}")
+            update_keyword_status(page_id, "실패")
+    else:
+        log("[nolja100] 대기 키워드 없음 — 스킵")
+
+    save_log()
+
+    # ── 3단계: salim1su 포스팅 테스트 ──
+    log("\n" + "=" * 60)
+    log("[3단계] salim1su 포스팅 테스트")
+    log("=" * 60)
+
+    kw, page_id = fetch_next_keyword("salim1su")
+    if kw:
+        log(f"[salim1su] 키워드: {kw}")
+        try:
+            update_keyword_status(page_id, "진행중")
+            ok = run_posting_pipeline("salim1su", kw, page_id=page_id)
+            if ok:
+                update_keyword_status(page_id, "완료")
+        except Exception as e:
+            log(f"[salim1su] 오류: {e}")
+            update_keyword_status(page_id, "실패")
+    else:
+        log("[salim1su] 대기 키워드 없음 — 스킵")
+
+    # ── 최종 결과 ──
+    log("\n" + "=" * 60)
+    log("야간 자동 실행 완료")
+    log("=" * 60)
+    save_log()

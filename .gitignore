@@ -1,0 +1,10 @@
+.env
+.env.save
+__pycache__/
+*.pyc
+_last_*.json
+_last_*.txt
+debug_*.png
+images/
+logs/
+.DS_Store
