@@ -14,18 +14,21 @@ ACCOUNTS = [
         "platform": "tistory",
         "kakao_id": "isag27511",
         "editor_url": "https://goodisak.tistory.com/manage/newpost",
+        "category": "IT",
     },
     {
         "blog": "nolja100",
         "platform": "tistory",
         "kakao_id": "baremi542",
         "editor_url": "https://nolja100.tistory.com/manage/newpost",
+        "category": "여행",
     },
     {
         "blog": "salim1su",
         "platform": "naver",
         "naver_id": "daonna525",
         "editor_url": "https://blog.naver.com/salim1su/postwrite",
+        "category": "살림",
     },
 ]
 

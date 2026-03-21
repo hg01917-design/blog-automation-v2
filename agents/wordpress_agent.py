@@ -1,4 +1,8 @@
-"""작성 에이전트 — claude.ai 글 생성 + Gemini 이미지 생성"""
+"""baremi542 워드프레스 정부지원금 전용 에이전트 — claude.ai 글 생성 + Gemini 이미지 생성
+
+NOTE: 발행은 poster_agent에 위임합니다.
+      Playwright를 이용한 직접 발행 로직은 이 에이전트에 포함하지 않습니다.
+"""
 import re
 import sys
 from pathlib import Path
@@ -9,16 +13,15 @@ from claude_playwright import generate_text
 from gemini_image import generate_images
 from overnight_run import _truncate_title
 
-try:
-    import coupang_api
-    import agoda_api
-    _AFFILIATE_AVAILABLE = True
-except Exception:
-    _AFFILIATE_AVAILABLE = False
+BLOG_ID = "baremi542"
+PERSONA_RULE = "정부지원금 정보 전달, 신청방법 단계별 안내, 공식 출처 언급"
 
 
-def run(blog_id: str, keyword: str, on_log=None, on_status=None):
+def run(keyword: str, on_log=None, on_status=None):
     """글 + 이미지 생성 후 파싱된 결과를 반환한다.
+
+    blog_id는 "baremi542"으로 고정됩니다.
+    발행은 poster_agent가 담당합니다 (Playwright 불필요).
 
     Returns:
         dict: {
@@ -30,12 +33,16 @@ def run(blog_id: str, keyword: str, on_log=None, on_status=None):
             "raw": str,
         } or None
     """
+    blog_id = BLOG_ID
+
     def log(msg):
         if on_log:
             on_log(msg)
 
     if on_status:
         on_status("writer", "working")
+
+    log(f"[{blog_id}] 페르소나 규칙 적용: {PERSONA_RULE}")
 
     # 1. Claude.ai 글 생성
     log(f"[작성] {blog_id} / '{keyword}' — Claude.ai 글 생성")
@@ -63,19 +70,6 @@ def run(blog_id: str, keyword: str, on_log=None, on_status=None):
 
     result["image_paths"] = image_paths
     result["raw"] = raw
-
-    # 4. 제휴마케팅 블록 삽입
-    if _AFFILIATE_AVAILABLE:
-        try:
-            if blog_id == "nolja100":
-                affiliate_block = agoda_api.get_hotel_block(keyword)
-            else:
-                affiliate_block = coupang_api.get_affiliate_block(keyword, blog_id)
-            if affiliate_block:
-                result["body"] = result["body"] + affiliate_block
-                log("[작성] 제휴 링크 블록 삽입 완료")
-        except Exception:
-            pass  # API 오류 시 조용히 스킵
 
     log(f"[작성] ✓ 완료 — 제목: \"{result['title']}\" / 본문: {len(result['body'])}자 / 태그: {len(result['tags'])}개")
     if on_status:

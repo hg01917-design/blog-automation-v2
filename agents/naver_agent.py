@@ -1,4 +1,5 @@
-"""작성 에이전트 — claude.ai 글 생성 + Gemini 이미지 생성"""
+# salim1su 네이버 살림 전용 에이전트 — 주부 페르소나
+"""salim1su 네이버 살림 전용 에이전트 — claude.ai 글 생성 + Gemini 이미지 생성"""
 import re
 import sys
 from pathlib import Path
@@ -9,16 +10,14 @@ from claude_playwright import generate_text
 from gemini_image import generate_images
 from overnight_run import _truncate_title
 
-try:
-    import coupang_api
-    import agoda_api
-    _AFFILIATE_AVAILABLE = True
-except Exception:
-    _AFFILIATE_AVAILABLE = False
+BLOG_ID = "salim1su"
+PERSONA_RULE = "세 아이 키우는 주부 페르소나, 실생활 절약/살림 경험"
 
 
-def run(blog_id: str, keyword: str, on_log=None, on_status=None):
+def run(keyword: str, on_log=None, on_status=None):
     """글 + 이미지 생성 후 파싱된 결과를 반환한다.
+
+    blog_id는 "salim1su"으로 고정됩니다.
 
     Returns:
         dict: {
@@ -30,12 +29,16 @@ def run(blog_id: str, keyword: str, on_log=None, on_status=None):
             "raw": str,
         } or None
     """
+    blog_id = BLOG_ID
+
     def log(msg):
         if on_log:
             on_log(msg)
 
     if on_status:
         on_status("writer", "working")
+
+    log(f"[{blog_id}] 페르소나 규칙 적용: {PERSONA_RULE}")
 
     # 1. Claude.ai 글 생성
     log(f"[작성] {blog_id} / '{keyword}' — Claude.ai 글 생성")
@@ -63,19 +66,6 @@ def run(blog_id: str, keyword: str, on_log=None, on_status=None):
 
     result["image_paths"] = image_paths
     result["raw"] = raw
-
-    # 4. 제휴마케팅 블록 삽입
-    if _AFFILIATE_AVAILABLE:
-        try:
-            if blog_id == "nolja100":
-                affiliate_block = agoda_api.get_hotel_block(keyword)
-            else:
-                affiliate_block = coupang_api.get_affiliate_block(keyword, blog_id)
-            if affiliate_block:
-                result["body"] = result["body"] + affiliate_block
-                log("[작성] 제휴 링크 블록 삽입 완료")
-        except Exception:
-            pass  # API 오류 시 조용히 스킵
 
     log(f"[작성] ✓ 완료 — 제목: \"{result['title']}\" / 본문: {len(result['body'])}자 / 태그: {len(result['tags'])}개")
     if on_status:

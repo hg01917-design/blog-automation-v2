@@ -2,6 +2,7 @@
 import sys
 import time
 import traceback
+import importlib
 from pathlib import Path
 from datetime import datetime
 
@@ -33,6 +34,62 @@ DEFAULT_BLOG_ORDER = ["goodisak", "nolja100", "salim1su"]
 MAX_WRITER_RETRIES = 3       # review 불합격 시 재생성
 MAX_FINAL_RETRIES = 2        # final_review 불합격 시 재생성
 
+# 블로그 ID → 전용 에이전트 모듈명 매핑
+BLOG_AGENT_MAP = {
+    "goodisak": "it_agent",
+    "nolja100": "nolja_agent",
+    "salim1su": "naver_agent",
+    "baremi542": "wordpress_agent",
+}
+
+AGENTS_DIR = Path(__file__).parent
+
+
+def _detect_new_blogs():
+    """config.py의 ACCOUNTS와 agents/ 폴더의 *_agent.py 파일을 비교해
+    전용 에이전트가 없는 블로그를 감지하고 경고 로그를 출력한다."""
+    try:
+        import config
+        accounts = config.ACCOUNTS
+    except Exception as e:
+        print(f"[오케스트레이터] config 로드 실패: {e}", flush=True)
+        return
+
+    # agents/ 폴더에 존재하는 *_agent.py 파일 수집 (orchestrator 제외)
+    existing_agents = {
+        p.stem
+        for p in AGENTS_DIR.glob("*_agent.py")
+    }
+
+    ts = datetime.now().strftime("%H:%M:%S")
+    print(f"[{ts}] [자기확장 감지] 등록된 에이전트: {sorted(existing_agents)}", flush=True)
+
+    for account in accounts:
+        blog_id = account["blog"]
+        category = account.get("category", "미분류")
+        mapped_agent = BLOG_AGENT_MAP.get(blog_id)
+
+        if mapped_agent is None:
+            # BLOG_AGENT_MAP에 매핑 자체가 없는 경우
+            print(
+                f"[{ts}] [자기확장 감지] ⚠ '{blog_id}'({category}) — "
+                f"BLOG_AGENT_MAP에 매핑이 없습니다. 추가가 필요합니다.",
+                flush=True,
+            )
+        elif mapped_agent not in existing_agents:
+            # 매핑은 있지만 파일이 없는 경우
+            print(
+                f"[{ts}] [자기확장 감지] ⚠ '{blog_id}'({category}) → "
+                f"agents/{mapped_agent}.py 없음. 전용 에이전트 생성이 필요합니다.",
+                flush=True,
+            )
+        else:
+            print(
+                f"[{ts}] [자기확장 감지] ✔ '{blog_id}'({category}) → "
+                f"{mapped_agent}.py 확인됨",
+                flush=True,
+            )
+
 
 def run_single(blog_id: str, keyword: str = None, page_id: str = None,
                on_log=None, on_status=None):
@@ -57,6 +114,22 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
     log(f"[오케스트레이터] {blog_id} 파이프라인 시작")
     log(f"{'='*50}")
 
+    # ── 전용 writer 에이전트 동적 로드 (없으면 기본 writer_agent 폴백) ──
+    agent_module_name = BLOG_AGENT_MAP.get(blog_id)
+    active_writer = writer_agent  # 기본값
+    if agent_module_name:
+        agent_file = AGENTS_DIR / f"{agent_module_name}.py"
+        if agent_file.exists():
+            try:
+                active_writer = importlib.import_module(agent_module_name)
+                log(f"[오케스트레이터] 전용 에이전트 로드: {agent_module_name}")
+            except Exception as e:
+                log(f"[오케스트레이터] 전용 에이전트 로드 실패 ({agent_module_name}): {e} — writer_agent 폴백")
+        else:
+            log(f"[오케스트레이터] {agent_module_name}.py 없음 — writer_agent 폴백")
+    else:
+        log(f"[오케스트레이터] BLOG_AGENT_MAP 미등록 블로그 '{blog_id}' — writer_agent 폴백")
+
     try:
         # ── 1. 키워드 선택 ──
         if keyword and page_id:
@@ -78,7 +151,7 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
                 log(f"[오케스트레이터] === 재생성 {attempt}/{MAX_WRITER_RETRIES} ===")
 
             # 2. 글 생성
-            result = writer_agent.run(blog_id, keyword, on_log=log, on_status=on_status)
+            result = active_writer.run(blog_id, keyword, on_log=log, on_status=on_status)
             if not result:
                 continue
 
@@ -104,7 +177,7 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
             if attempt > 1:
                 log(f"[오케스트레이터] === 최종검토 재시도 {attempt}/{MAX_FINAL_RETRIES} ===")
                 # 재생성
-                result = writer_agent.run(blog_id, keyword, on_log=log, on_status=on_status)
+                result = active_writer.run(blog_id, keyword, on_log=log, on_status=on_status)
                 if not result:
                     break
 
@@ -152,6 +225,9 @@ def run_all(blog_ids=None, on_log=None, on_status=None):
     Returns:
         list[dict]: 각 블로그 결과
     """
+    # 새 블로그/전용 에이전트 누락 여부 자동 감지
+    _detect_new_blogs()
+
     if blog_ids is None:
         blog_ids = DEFAULT_BLOG_ORDER
 

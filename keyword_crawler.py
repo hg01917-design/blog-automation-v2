@@ -10,6 +10,8 @@ import urllib.request
 from pathlib import Path
 from datetime import datetime, timedelta
 
+from blog_stats import get_blog_level
+
 # .env 로드
 _env_path = Path(__file__).parent / ".env"
 if _env_path.exists():
@@ -217,6 +219,46 @@ def _filter_banned_keywords(keywords: list, blog_id: str, on_log=None) -> list:
         else:
             valid.append(kw)
     return valid
+
+
+def filter_by_level(keywords: list, blog_id: str, on_log=None) -> list:
+    """블로그 레벨에 따라 키워드를 필터링한다 (선택적 호출).
+
+    - 초급: 롱테일 키워드 우선 — 공백 포함 3어절 이상 또는 음절 수 6자 이상
+    - 중급/고급: 필터 없이 전체 반환 (추후 검색량 기준 필터 추가 예정)
+
+    TODO: 월 검색량 데이터가 있을 경우 LEVEL_RANGES 기준으로 검색량 필터 추가
+          초급 100~500, 중급 500~3000, 고급 3000+ 범위 적용
+
+    Args:
+        keywords: 키워드 문자열 리스트
+        blog_id: 블로그 ID
+
+    Returns:
+        list: 레벨 기준에 맞는 키워드 리스트
+    """
+    info = get_blog_level(blog_id)
+    level = info["level"]
+
+    if level == "초급":
+        # 롱테일 우선: 공백으로 구분된 단어가 3개 이상이거나, 연속 글자 수 6자 이상
+        filtered = []
+        excluded = []
+        for kw in keywords:
+            words = kw.split()
+            char_count = len(kw.replace(" ", ""))
+            if len(words) >= 3 or char_count >= 6:
+                filtered.append(kw)
+            else:
+                excluded.append(kw)
+        if excluded:
+            _log(f"[레벨필터] {blog_id}({level}): {len(excluded)}개 단어 제외 (롱테일 기준 미달)", on_log)
+        _log(f"[레벨필터] {blog_id}({level}): {len(filtered)}/{len(keywords)}개 통과", on_log)
+        return filtered
+
+    # 중급/고급: 현재는 전체 통과 (추후 검색량 범위 필터 추가)
+    _log(f"[레벨필터] {blog_id}({level}): 전체 {len(keywords)}개 통과 (필터 미적용)", on_log)
+    return keywords
 
 
 def _mark_banned_in_notion(blog_id: str, on_log=None):
