@@ -556,16 +556,20 @@ def _naver_apply_subtitle_format(page):
     for attempt in range(3):
         try:
             fmt_btn.click()
-            # 드롭다운이 나타날 때까지 최대 2초 대기
-            for _ in range(10):
+            time.sleep(0.5)  # 드롭다운 열림 대기 (기존 0.2 → 0.5)
+            # 소제목 버튼 폴링 (최대 3초)
+            for _ in range(15):
                 time.sleep(0.2)
                 sub_btn = page.query_selector(
                     'button.se-toolbar-option-text-format-sectionTitle-button'
                 )
                 if sub_btn and sub_btn.is_visible():
                     sub_btn.click()
-                    time.sleep(0.3)
+                    time.sleep(0.4)
                     return True
+            # 드롭다운 미열림 → Escape 후 재시도
+            page.keyboard.press("Escape")
+            time.sleep(0.5)
         except Exception:
             time.sleep(0.5)
     return False
@@ -582,15 +586,19 @@ def _naver_restore_body_format(page):
     for attempt in range(3):
         try:
             fmt_btn.click()
-            for _ in range(10):
+            time.sleep(0.5)  # 드롭다운 열림 대기 (기존 0.2 → 0.5)
+            for _ in range(15):
                 time.sleep(0.2)
                 text_btn = page.query_selector(
                     'button.se-toolbar-option-text-format-text-button'
                 )
                 if text_btn and text_btn.is_visible():
                     text_btn.click()
-                    time.sleep(0.3)
+                    time.sleep(0.4)
                     return
+            # 드롭다운 미열림 → Escape 후 재시도
+            page.keyboard.press("Escape")
+            time.sleep(0.5)
         except Exception:
             time.sleep(0.5)
 
@@ -668,7 +676,7 @@ def _parse_naver_sections(content):
 
 
 def _redistribute_images_if_top(sections):
-    """이미지가 모두 상단에 몰려 있으면 소제목 이후로 균등 분산시킨다."""
+    """이미지가 모두 상단에 몰려 있으면 소제목 사이사이로 균등 분산시킨다."""
     images = [s for s in sections if s["type"] == "image"]
     if not images:
         return sections
@@ -680,17 +688,24 @@ def _redistribute_images_if_top(sections):
 
     # 이미지 제외한 기본 섹션
     base = [s for s in sections if s["type"] != "image"]
-    heading_indices = [i for i, s in enumerate(base) if s["type"] == "heading"]
-    if not heading_indices:
-        return sections  # 소제목 없으면 그대로 유지
+    if len(base) < 2:
+        return sections
 
-    # 각 이미지를 소제목 바로 뒤에 삽입 (없으면 마지막 소제목 뒤)
+    n = len(images)
+    total = len(base)
+
+    # 이미지를 base 섹션에 균등 분산 (n+1 등분 지점에 삽입)
+    # 예: base 10개, 이미지 3개 → 위치 2, 5, 7
+    insert_positions = []
+    for j in range(1, n + 1):
+        pos = int(j * total / (n + 1))
+        pos = max(1, min(pos, total - 1))
+        insert_positions.append(pos)
+
+    # 뒤에서 앞으로 삽입 (인덱스 이동 방지)
     result = list(base)
-    offset = 0
-    for j, img in enumerate(images):
-        h_idx = heading_indices[min(j, len(heading_indices) - 1)]
-        result.insert(h_idx + 1 + offset, img)
-        offset += 1
+    for j in range(n - 1, -1, -1):
+        result.insert(insert_positions[j], images[j])
 
     return result
 

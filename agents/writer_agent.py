@@ -101,6 +101,16 @@ def _parse_raw(raw, keyword, log):
                 "alt": m.group(4).strip(),
             })
 
+    # {{이미지N}} 마커가 본문에 있지만 이미지 정보가 없으면 마커 제거
+    if images:
+        defined_indices = {img["index"] for img in images}
+        def _remove_unmatched_marker(m):
+            return "" if int(m.group(1)) not in defined_indices else m.group(0)
+        body = re.sub(r'\{\{이미지(\d+)\}\}', _remove_unmatched_marker, body)
+    else:
+        # 이미지 섹션 자체가 없으면 모든 마커 제거
+        body = re.sub(r'\{\{이미지\d+\}\}\n?', '', body)
+
     # 본문 글자수 확인
     plain = re.sub(r"##.*|{{.*?}}|\[애드센스\]|\|.*", "", body)
     char_count = len(re.sub(r"\s+", "", plain))

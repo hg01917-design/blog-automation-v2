@@ -10,6 +10,25 @@ FORBIDDEN_PATTERNS = [
     "완벽정리", "총정리", "완벽가이드", "완벽 정리", "총 정리",
 ]
 
+# AI가 쓴 티 나는 표현 패턴 (본문 전체 대상)
+AI_PATTERNS = [
+    "물론입니다",
+    "당연히",
+    "주목해야",
+    "살펴보겠습니다",
+    "알아보겠습니다",
+    "정리해보겠습니다",
+    "해드리겠습니다",
+    "첫째,",
+    "둘째,",
+    "셋째,",
+    "핵심은",
+    "포인트는",
+    "AI",
+    "ChatGPT",
+    "LLM",
+]
+
 IMAGES_DIR = Path(__file__).parent.parent / "images"
 
 
@@ -92,6 +111,12 @@ def run(result: dict, keyword: str, blog_id: str,
         elif not os.path.exists(filepath):
             issues.append(f"이미지 {idx} 파일 없음: {filepath}")
 
+    # 6-2. AI 패턴 체크 (본문 전체)
+    for pattern in AI_PATTERNS:
+        if pattern in body:
+            issues.append(f"AI 패턴 감지: '{pattern}' 사용됨")
+            log(f"[검수] AI 패턴 감지: '{pattern}'")
+
     # 7. {{이미지N}} 마커가 본문에 남아있지 않음 확인은
     #    poster에서 처리하므로 여기서는 이미지 없이 마커만 있는 경우 체크
     remaining_markers = re.findall(r'\{\{이미지(\d+)\}\}', body)
@@ -102,7 +127,7 @@ def run(result: dict, keyword: str, blog_id: str,
         ):
             issues.append(f"{{{{이미지{idx}}}}} 마커 있지만 이미지 정보 없음")
 
-    # 결과
+    # 결과 (AI 패턴이 하나라도 감지되면 불합격)
     passed = len(issues) == 0
 
     if passed:

@@ -196,6 +196,9 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             except Exception:
                 pass
 
+            # JavaScript 다이얼로그 자동 수락 (페이지 이동 시 confirm/alert 팝업 방지)
+            page.on("dialog", lambda d: d.dismiss())
+
             page.goto(f"{CLAUDE_URL}/new", wait_until="domcontentloaded", timeout=30000)
             page.wait_for_timeout(3000)
 
