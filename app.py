@@ -28,30 +28,32 @@ AGENT_COLORS = {
 
 
 class PixelCharacterWidget(QWidget):
-    """80x80 QPainter 기반 픽셀 캐릭터 — 에이전트 상태 표시"""
+    """96x96 Stardew Valley 스타일 픽셀 캐릭터 — 관절 움직임 애니메이션"""
 
     def __init__(self, agent_id, parent=None):
         super().__init__(parent)
         self.agent_id = agent_id
         info = AGENT_COLORS.get(agent_id, {"shirt": "#888", "pants": "#555", "name": agent_id})
-        self.shirt_color = QColor(info["shirt"])
-        self.pants_color = QColor(info["pants"])
+        self.shirt = QColor(info["shirt"])
+        self.pants = QColor(info["pants"])
+        self.shirt_hi = self.shirt.lighter(125)
+        self.shirt_dk = self.shirt.darker(125)
+        self.pants_dk = self.pants.darker(120)
         self.agent_name = info["name"]
-        self.state = "idle"       # idle, working, done, failed
+        self.state = "idle"
         self.frame = 0
         self.task_text = "대기"
 
-        self.setFixedSize(90, 120)
+        self.setFixedSize(110, 140)
 
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._tick)
-        self.timer.start(400)
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(150)
 
     def set_state(self, state):
         self.state = state
-        labels = {"idle": "대기", "working": "작업 중...",
-                  "done": "완료!", "failed": "실패"}
-        self.task_text = labels.get(state, state)
+        self.task_text = {"idle": "대기", "working": "작업 중...",
+                          "done": "완료!", "failed": "실패"}.get(state, state)
         self.frame = 0
         self.update()
 
@@ -62,123 +64,531 @@ class PixelCharacterWidget(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, False)
-        # 캐릭터를 중앙에 그리기 (80x80 영역, 아래 텍스트 공간 남김)
-        ox, oy = 5, 0  # offset
-        s = 4  # pixel scale (20x20 grid → 80x80)
+        ox = (self.width() - 96) // 2
+        oy = 0
+        s = 2  # pixel scale: 48x48 grid → 96x96 px
 
-        skin = QColor("#fcd5b0")
-        hair = QColor("#4a3728")
-        eye = QColor("#222")
-        desk = QColor("#8B7355")
-        monitor = QColor("#333")
-        screen = QColor("#1a1a2e")
+        nf = 4 if self.state == "working" else 3
+        f = self.frame % nf
 
-        f = self.frame % 4  # 4-frame animation cycle
+        # ── Stardew Valley Palette ──
+        SK = QColor("#f5c8a0")        # skin
+        SK_S = QColor("#d4a070")      # skin shadow
+        HR = QColor("#5a3825")        # hair
+        HR_H = QColor("#7a5040")      # hair highlight
+        EY = QColor("#1a1008")        # eye pupil
+        EW = QColor("#ffffff")        # eye white
+        BL = QColor("#e8a0a0")        # blush
+        MO = QColor("#c0806a")        # mouth
+        DK = QColor("#c49060")        # desk
+        DK_D = QColor("#a07048")      # desk dark
+        MN = QColor("#404050")        # monitor
+        MS = QColor("#0a0a1e")        # monitor screen
+        CH = QColor("#705038")        # chair
+        CH_L = QColor("#907060")      # chair light
+        KB = QColor("#505058")        # keyboard
+        SH = QColor("#3a2a1a")        # shoes
 
-        # ── 모니터 (고정) ──
-        p.fillRect(QRect(ox + 6*s, oy + 2*s, 8*s, 6*s), QBrush(monitor))
-        p.fillRect(QRect(ox + 7*s, oy + 3*s, 6*s, 4*s), QBrush(screen))
-        # 모니터 받침
-        p.fillRect(QRect(ox + 9*s, oy + 8*s, 2*s, s), QBrush(monitor))
+        def F(x, y, w, h, c):
+            p.fillRect(QRect(ox + x * s, oy + y * s, w * s, h * s), QBrush(c))
 
-        # 화면 내용 (상태별)
+        # ── Animation offsets (grid units) ──
+        hdy = bdy = 0
+        lax = lay = rax = ray = 0
+        stand = fcover = mblink = False
+
+        # 호흡 애니메이션 (모든 상태에서 미세하게)
+        breath = 1 if (self.frame // 4) % 2 == 0 else 0
+
+        if self.state == "idle":
+            if f == 1:
+                hdy = 1                  # 머리 살짝 아래 (꾸벅)
+        elif self.state == "working":
+            if f == 1:
+                ray = -2                 # 오른팔 살짝 올림
+            elif f == 2:
+                lay = -2                 # 왼팔 살짝 올림
+            elif f == 3:
+                lay = 1; ray = 1         # 양팔 내림
+                mblink = True            # 모니터 깜빡
+        elif self.state == "done":
+            if f == 0:
+                bdy = -1; hdy = -2       # 일어서는 모션
+            else:
+                stand = True
+                bdy = -3; hdy = -5       # 완전히 일어남
+                lay = ray = -10          # 양팔 번쩍
+                lax = -2; rax = 2        # 팔 벌림
+        elif self.state == "failed":
+            if f == 0:
+                hdy = 2                  # 고개 숙임
+            else:
+                hdy = 3                  # 더 숙임
+                fcover = True            # 손으로 얼굴 가림
+
+        # ═══ 1. CHAIR BACK (뒤쪽) ═══
+        F(4, 14, 2, 16, CH)
+        F(5, 14, 1, 16, CH_L)
+
+        # ═══ 2. MONITOR ═══
+        F(28, 0, 18, 14, MN)
+        scr = QColor("#162040") if mblink else MS
+        F(30, 2, 14, 10, scr)
+        F(35, 14, 4, 2, MN)           # 받침대
+        F(33, 16, 8, 1, MN)           # 받침 바닥
+        # 화면 내용
         if self.state == "working":
-            # 깜빡이는 텍스트 줄
-            line_c = QColor("#4ade80")
-            for row in range(3):
-                w = (3 + ((f + row) % 3)) * s
-                if not (f % 2 == 0 and row == 2):
-                    p.fillRect(QRect(ox + 8*s, oy + (3 + row)*s + 2, w, 2), QBrush(line_c))
+            g = QColor("#4ade80")
+            for r in range(4):
+                w = 3 + (f + r) % 5
+                if not (f == 3 and r >= 3):
+                    F(31, 3 + r * 2, min(w, 12), 1, g)
+            if f % 2 == 0:
+                F(31 + 3 + f % 3, 9, 1, 1, QColor("#ffffff"))  # 커서
         elif self.state == "done":
             p.setPen(QPen(QColor("#4ade80")))
-            p.setFont(QFont("Arial", 7, QFont.Bold))
-            p.drawText(QRect(ox + 7*s, oy + 3*s, 6*s, 4*s), Qt.AlignCenter, "OK")
+            p.setFont(QFont("Courier", 8, QFont.Bold))
+            p.drawText(QRect(ox + 30 * s, oy + 2 * s, 14 * s, 10 * s),
+                       Qt.AlignCenter, "OK!")
         elif self.state == "failed":
             p.setPen(QPen(QColor("#ef4444")))
-            p.setFont(QFont("Arial", 7, QFont.Bold))
-            p.drawText(QRect(ox + 7*s, oy + 3*s, 6*s, 4*s), Qt.AlignCenter, "ERR")
+            p.setFont(QFont("Courier", 7, QFont.Bold))
+            p.drawText(QRect(ox + 30 * s, oy + 2 * s, 14 * s, 10 * s),
+                       Qt.AlignCenter, "ERR")
         else:
-            # idle — 빈 화면 또는 스크린세이버
-            if f % 4 < 2:
-                p.fillRect(QRect(ox + 8*s + f*s, oy + 5*s, s, s), QBrush(QColor("#334155")))
+            # 스크린세이버 — 바운싱 도트
+            t = self.frame % 20
+            dx = t if t < 10 else 20 - t
+            dy = (self.frame // 3) % 6
+            dy = dy if dy < 3 else 6 - dy
+            F(31 + dx, 5 + dy, 1, 1, QColor("#303050"))
+            F(31 + (10 - dx), 5 + (3 - dy), 1, 1, QColor("#252540"))
 
-        # ── 책상 ──
-        p.fillRect(QRect(ox + 2*s, oy + 9*s, 16*s, s), QBrush(desk))
+        # ═══ 3. LEGS — 앉은 자세 (책상 뒤) ═══
+        if not stand:
+            F(11, 26, 5, 6, self.pants)
+            F(11, 26, 1, 6, self.pants_dk)
+            F(16, 26, 5, 6, self.pants)
+            F(16, 26, 1, 6, self.pants_dk)
+            F(10, 32, 6, 2, SH)        # 왼쪽 신발
+            F(16, 32, 6, 2, SH)        # 오른쪽 신발
 
-        # ── 머리 ──
-        head_bob = 0
-        if self.state == "idle":
-            head_bob = s // 2 if f % 4 < 2 else 0  # 꾸벅꾸벅
-        elif self.state == "done":
-            head_bob = -(s // 2) if f % 2 == 0 else 0  # 들썩
-
-        # 머리카락
-        p.fillRect(QRect(ox + 2*s, oy + 6*s + head_bob, 4*s, s), QBrush(hair))
-        # 얼굴
-        p.fillRect(QRect(ox + 2*s, oy + 7*s + head_bob, 4*s, 3*s), QBrush(skin))
-        # 눈
-        if self.state == "idle" and f % 4 >= 2:
-            # 졸고 있음 — 눈 감음
-            p.fillRect(QRect(ox + 3*s, oy + 8*s + head_bob, s, 1), QBrush(eye))
-            p.fillRect(QRect(ox + 5*s, oy + 8*s + head_bob, s, 1), QBrush(eye))
-        else:
-            p.fillRect(QRect(ox + 3*s, oy + 8*s + head_bob, s, s), QBrush(eye))
-            p.fillRect(QRect(ox + 5*s, oy + 8*s + head_bob, s, s), QBrush(eye))
-
-        # 실패 시 땀방울
-        if self.state == "failed" and f % 2 == 0:
-            p.fillRect(QRect(ox + 7*s, oy + 7*s + head_bob, s//2, s), QBrush(QColor("#60a5fa")))
-
-        # ── 몸통 (셔츠) ──
-        p.fillRect(QRect(ox + 1*s, oy + 10*s, 6*s, 4*s), QBrush(self.shirt_color))
-
-        # ── 팔 ──
+        # ═══ 4. DESK ═══
+        F(2, 24, 44, 2, DK)
+        F(2, 24, 44, 1, DK.lighter(110))   # 책상 상판 하이라이트
+        F(4, 26, 2, 14, DK_D)              # 왼쪽 다리
+        F(42, 26, 2, 14, DK_D)             # 오른쪽 다리
+        # 키보드 (작업 중 글로우 효과)
         if self.state == "working":
-            # 타이핑 — 팔 움직임
-            arm_dx = s if f % 2 == 0 else 0
-            p.fillRect(QRect(ox + 7*s + arm_dx, oy + 11*s, 2*s, s), QBrush(skin))
-            p.fillRect(QRect(ox + 7*s - arm_dx + s, oy + 12*s, 2*s, s), QBrush(skin))
-        elif self.state == "done":
-            # 만세!
-            if f % 2 == 0:
-                p.fillRect(QRect(ox + 0*s, oy + 8*s, s, 2*s), QBrush(skin))
-                p.fillRect(QRect(ox + 7*s, oy + 8*s, s, 2*s), QBrush(skin))
-            else:
-                p.fillRect(QRect(ox + 0*s, oy + 9*s, s, 2*s), QBrush(skin))
-                p.fillRect(QRect(ox + 7*s, oy + 9*s, s, 2*s), QBrush(skin))
-        elif self.state == "failed":
-            # 머리 긁적
-            scratch_y = oy + 7*s if f % 2 == 0 else oy + 6*s + head_bob
-            p.fillRect(QRect(ox + 6*s, scratch_y, s, 2*s), QBrush(skin))
-            # 다른 팔은 내림
-            p.fillRect(QRect(ox + 0*s, oy + 12*s, s, 2*s), QBrush(skin))
+            kb_glow = QColor("#606878") if f % 2 == 0 else KB
+            F(26, 23, 10, 1, kb_glow)
+            # 눌리는 키 애니메이션
+            key_pos = [27, 29, 31, 33]
+            active_key = key_pos[f % 4]
+            for kp in key_pos:
+                c = QColor("#90e0a0") if kp == active_key else QColor("#606068")
+                F(kp, 23, 2, 1, c)
         else:
-            # idle — 책상 위에 팔
-            p.fillRect(QRect(ox + 7*s, oy + 11*s, 2*s, s), QBrush(skin))
+            F(26, 23, 10, 1, KB)
+            F(27, 23, 2, 1, QColor("#606068"))
+            F(31, 23, 2, 1, QColor("#606068"))
 
-        # ── 바지 ──
-        p.fillRect(QRect(ox + 1*s, oy + 14*s, 3*s, 2*s), QBrush(self.pants_color))
-        p.fillRect(QRect(ox + 4*s, oy + 14*s, 3*s, 2*s), QBrush(self.pants_color))
+        # ═══ 5. CHAIR SEAT + FRONT LEGS ═══
+        F(4, 30, 20, 2, CH)
+        F(4, 30, 20, 1, CH_L)
+        F(6, 32, 2, 8, CH)             # 왼쪽 의자 다리
+        F(20, 32, 2, 8, CH)            # 오른쪽 의자 다리
 
-        # ── 의자 ──
-        chair = QColor("#555")
-        p.fillRect(QRect(ox + 0*s, oy + 16*s, 8*s, s), QBrush(chair))
-        p.fillRect(QRect(ox + 1*s, oy + 17*s, s, 2*s), QBrush(chair))
-        p.fillRect(QRect(ox + 6*s, oy + 17*s, s, 2*s), QBrush(chair))
+        # ═══ 6. LEGS — 서 있는 자세 (의자/책상 앞) ═══
+        if stand:
+            ly = 24 + bdy
+            lh = 34 - ly
+            F(11, ly, 5, lh, self.pants)
+            F(16, ly, 5, lh, self.pants)
+            F(10, 34, 6, 2, SH)
+            F(16, 34, 6, 2, SH)
 
-        # ── 이름 + 상태 텍스트 ──
+        # ═══ 7. BODY (셔츠) + 호흡 ═══
+        F(10, 16 + bdy, 12, 8 + breath, self.shirt)
+        F(10, 16 + bdy, 2, 8 + breath, self.shirt_dk)   # 왼쪽 음영
+        F(15, 17 + bdy, 3, 4, self.shirt_hi)              # 하이라이트
+        F(13, 16 + bdy, 6, 1, self.shirt_dk)              # 칼라
+
+        # ═══ 8. ARMS ═══
+        if fcover:
+            # 손으로 얼굴 가림
+            F(10, 9 + hdy, 4, 5, SK)
+            F(18, 9 + hdy, 4, 5, SK)
+        else:
+            # 왼팔 — 소매 + 팔뚝 + 손
+            lx, ly2 = 7 + lax, 17 + lay + bdy
+            F(lx, ly2, 3, 4, self.shirt)
+            F(lx, ly2 + 4, 3, 3, SK)
+            F(lx - 1, ly2 + 6, 4, 2, SK)
+            # 오른팔
+            rx, ry = 22 + rax, 17 + ray + bdy
+            F(rx, ry, 3, 4, self.shirt)
+            F(rx, ry + 4, 3, 3, SK)
+            F(rx, ry + 6, 4, 2, SK)
+
+        # ═══ 9. HEAD ═══
+        hy = hdy
+        # 머리카락 (뒷부분)
+        F(9, 2 + hy, 14, 4, HR)
+        F(10, 1 + hy, 12, 2, HR)
+        F(13, 2 + hy, 4, 2, HR_H)          # 하이라이트
+        # 얼굴
+        F(9, 5 + hy, 14, 10, SK)
+        F(9, 5 + hy, 1, 10, SK_S)          # 왼쪽 음영
+        F(22, 5 + hy, 1, 10, SK_S)         # 오른쪽 음영
+        # 앞머리 (얼굴 위에)
+        F(8, 4 + hy, 3, 5, HR)
+        F(21, 4 + hy, 3, 4, HR)
+        F(10, 5 + hy, 3, 3, HR)
+
+        # 눈
+        if self.state == "idle" and f == 1:
+            # 감은 눈 (졸림)
+            F(12, 9 + hy, 3, 1, EY)
+            F(18, 9 + hy, 3, 1, EY)
+        elif self.state == "done":
+            # ^_^ 해피 아이
+            F(12, 9 + hy, 1, 1, EY); F(14, 9 + hy, 1, 1, EY)
+            F(13, 8 + hy, 1, 1, EY)
+            F(18, 9 + hy, 1, 1, EY); F(20, 9 + hy, 1, 1, EY)
+            F(19, 8 + hy, 1, 1, EY)
+        elif self.state == "failed" and f >= 1:
+            # X_X 실패 눈
+            F(12, 8 + hy, 1, 1, EY); F(14, 8 + hy, 1, 1, EY)
+            F(13, 9 + hy, 1, 1, EY)
+            F(12, 10 + hy, 1, 1, EY); F(14, 10 + hy, 1, 1, EY)
+            F(18, 8 + hy, 1, 1, EY); F(20, 8 + hy, 1, 1, EY)
+            F(19, 9 + hy, 1, 1, EY)
+            F(18, 10 + hy, 1, 1, EY); F(20, 10 + hy, 1, 1, EY)
+        else:
+            # 기본 눈 (흰자 + 동공)
+            F(12, 8 + hy, 3, 3, EW)
+            F(13, 9 + hy, 2, 2, EY)
+            F(18, 8 + hy, 3, 3, EW)
+            F(19, 9 + hy, 2, 2, EY)
+
+        # 볼터치 (Stardew Valley 스타일)
+        if self.state != "failed":
+            F(10, 11 + hy, 2, 1, BL)
+            F(20, 11 + hy, 2, 1, BL)
+
+        # 입
+        if self.state == "done":
+            # 웃는 입 ∪
+            F(14, 13 + hy, 4, 1, MO)
+            F(13, 12 + hy, 1, 1, MO)
+            F(18, 12 + hy, 1, 1, MO)
+        elif self.state == "failed":
+            # 슬픈 입 ∩
+            F(14, 12 + hy, 4, 1, MO)
+            F(13, 13 + hy, 1, 1, MO)
+            F(18, 13 + hy, 1, 1, MO)
+        else:
+            # 기본 입 —
+            F(14, 13 + hy, 4, 1, MO)
+
+        # ✦ 반짝이 효과 (완료)
+        if self.state == "done" and f >= 1:
+            sparkle = QColor("#fff44f")
+            sparkle2 = QColor("#ffffff")
+            # 머리 위 별
+            sp = (self.frame // 2) % 4
+            sx = [6, 25, 12, 20][sp]
+            sy = [0, 2, -1, 1][sp]
+            F(sx, sy + hy, 1, 1, sparkle2)
+            F(sx - 1, sy + 1 + hy, 1, 1, sparkle)
+            F(sx + 1, sy + 1 + hy, 1, 1, sparkle)
+            F(sx, sy + 2 + hy, 1, 1, sparkle2)
+            # 추가 작은 별
+            sp2 = (self.frame // 3) % 3
+            sx2 = [3, 27, 15][sp2]
+            sy2 = [4, 0, 2][sp2]
+            F(sx2, sy2 + hy, 1, 1, sparkle)
+
+        # 땀방울 (실패)
+        if self.state == "failed" and f >= 1:
+            F(24, 6 + hy, 2, 3, QColor("#60a5fa"))
+            F(25, 9 + hy, 1, 1, QColor("#60a5fa"))
+
+        # ═══ 10. TEXT ═══
         p.setPen(QPen(QColor("#e0e0e0")))
         p.setFont(QFont("Arial", 9, QFont.Bold))
-        text_rect = QRect(0, 82, 90, 16)
-        p.drawText(text_rect, Qt.AlignCenter, self.agent_name)
+        p.drawText(QRect(0, 100, self.width(), 16), Qt.AlignCenter, self.agent_name)
 
         p.setFont(QFont("Arial", 8))
-        state_colors = {
-            "idle": "#888", "working": "#4ade80",
-            "done": "#22c55e", "failed": "#ef4444",
-        }
-        p.setPen(QPen(QColor(state_colors.get(self.state, "#888"))))
-        p.drawText(QRect(0, 98, 90, 16), Qt.AlignCenter, self.task_text)
+        stc = {"idle": "#888", "working": "#4ade80",
+               "done": "#22c55e", "failed": "#ef4444"}
+        p.setPen(QPen(QColor(stc.get(self.state, "#888"))))
+        p.drawText(QRect(0, 116, self.width(), 16), Qt.AlignCenter, self.task_text)
+
+        p.end()
+
+
+class PixelOfficeWidget(QWidget):
+    """탑다운 Stardew Valley 스타일 픽셀 사무실 — 에이전트 5명 작업 시각화"""
+
+    DESKS = [
+        (15, 14, "keyword"),
+        (78, 14, "writer"),
+        (15, 65, "review"),
+        (78, 65, "final_review"),
+        (168, 40, "poster"),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("agentPanel")
+        self.agents = {}
+        for *_, aid in self.DESKS:
+            info = AGENT_COLORS.get(aid, {"shirt": "#888", "pants": "#555", "name": aid})
+            self.agents[aid] = {
+                "state": "idle", "frame": 0,
+                "shirt": QColor(info["shirt"]),
+                "pants": QColor(info["pants"]),
+                "name": info["name"],
+            }
+        self.setMinimumSize(700, 390)
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(150)
+
+    def set_agent_state(self, agent_id, state):
+        if agent_id in self.agents:
+            self.agents[agent_id]["state"] = state
+            self.agents[agent_id]["frame"] = 0
+            self.update()
+
+    def reset_all(self):
+        for a in self.agents.values():
+            a["state"] = "idle"
+            a["frame"] = 0
+        self.update()
+
+    def _tick(self):
+        for a in self.agents.values():
+            a["frame"] += 1
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, False)
+        s = 3
+        ow = self.width() // s
+        oh = self.height() // s
+
+        def F(x, y, w, h, c):
+            p.fillRect(QRect(x * s, y * s, w * s, h * s), QBrush(c))
+
+        # ═══ FLOOR ═══
+        main_w = 152
+        F(0, 0, main_w, oh, QColor("#7a6548"))
+        F(main_w + 3, 0, ow - main_w - 3, oh, QColor("#4a5568"))
+        F(main_w, 0, 3, oh, QColor("#5a4a3a"))
+        # Tile grid — office
+        for tx in range(0, main_w, 10):
+            F(tx, 0, 1, oh, QColor("#6e5b40"))
+        for ty in range(0, oh, 10):
+            F(0, ty, main_w, 1, QColor("#6e5b40"))
+        # Tile grid — lounge
+        lx0 = main_w + 3
+        for tx in range(lx0, ow, 12):
+            F(tx, 0, 1, oh, QColor("#424d5e"))
+        for ty in range(0, oh, 12):
+            F(lx0, ty, ow - lx0, 1, QColor("#424d5e"))
+
+        # ═══ WALLS ═══
+        F(0, 0, ow, 8, QColor("#5a4a3a"))
+        F(0, 0, ow, 2, QColor("#4a3a2a"))
+        F(0, 7, ow, 1, QColor("#6a5a48"))
+
+        # ═══ BOOKSHELVES ═══
+        bk_colors = ["#c44040", "#4080b0", "#40a040", "#c0a030", "#a040a0", "#40a0a0"]
+        for sx in [5, 42, 80, 118]:
+            F(sx, 2, 28, 5, QColor("#6a5040"))
+            F(sx, 2, 28, 1, QColor("#8a7060"))
+            F(sx + 27, 2, 1, 5, QColor("#5a4030"))
+            for i in range(6):
+                bx = sx + 1 + i * 4
+                bh = 2 + (i % 3)
+                F(bx, 3, 3, bh, QColor(bk_colors[i]))
+                F(bx, 3, 1, bh, QColor(bk_colors[i]).lighter(130))
+
+        # ═══ LOUNGE ═══
+        lrx = main_w + 8
+        # Wall painting
+        F(lrx + 10, 2, 16, 10, QColor("#8a7060"))
+        F(lrx + 11, 3, 14, 8, QColor("#87ceeb"))
+        F(lrx + 11, 8, 14, 3, QColor("#4a8a4a"))
+        F(lrx + 17, 4, 3, 3, QColor("#f0e060"))
+        # Sofa
+        sofa_x, sofa_y = lrx + 3, 85
+        F(sofa_x, sofa_y, 30, 3, QColor("#8a4040"))
+        F(sofa_x, sofa_y + 3, 30, 8, QColor("#a05050"))
+        F(sofa_x, sofa_y + 3, 30, 2, QColor("#b06060"))
+        F(sofa_x, sofa_y + 3, 4, 8, QColor("#8a4040"))
+        F(sofa_x + 26, sofa_y + 3, 4, 8, QColor("#8a4040"))
+        F(sofa_x + 6, sofa_y + 4, 5, 4, QColor("#e0c060"))
+        # Coffee table
+        F(sofa_x + 8, sofa_y + 13, 14, 5, QColor("#7a6a5a"))
+        F(sofa_x + 8, sofa_y + 13, 14, 1, QColor("#8a7a6a"))
+        F(sofa_x + 12, sofa_y + 14, 3, 2, QColor("#e8e0d0"))
+        # Vending machine
+        vm_x = lrx + 38
+        if vm_x + 12 < ow:
+            F(vm_x, 8, 10, 16, QColor("#4a6a8a"))
+            F(vm_x + 1, 9, 8, 8, QColor("#2a4a6a"))
+            F(vm_x + 1, 9, 8, 1, QColor("#3a5a7a"))
+            for i in range(3):
+                F(vm_x + 2 + i * 2, 11, 1, 4, QColor("#e0a040"))
+                F(vm_x + 3 + i * 2, 11, 1, 4, QColor("#40a0e0"))
+            F(vm_x + 3, 18, 4, 2, QColor("#3a5a7a"))
+            F(vm_x + 4, 19, 2, 1, QColor("#60e060"))
+
+        # ═══ PLANTS ═══
+        for px, py in [(60, 50), (130, 50), (8, 100), (140, 100),
+                        (lrx + 38, 75), (lrx, 30)]:
+            if px + 6 < ow and py + 8 < oh:
+                F(px + 1, py + 5, 4, 3, QColor("#8a6040"))
+                F(px + 1, py + 5, 4, 1, QColor("#a07050"))
+                F(px + 1, py + 1, 4, 4, QColor("#2d8a4e"))
+                F(px, py + 2, 6, 2, QColor("#3aaa5e"))
+                F(px + 2, py, 2, 2, QColor("#2d8a4e"))
+
+        # ═══ WALL CLOCK ═══
+        clx = main_w - 12
+        F(clx, 1, 8, 6, QColor("#d0c8b8"))
+        F(clx + 1, 2, 6, 4, QColor("#f0e8d8"))
+        F(clx + 4, 2, 1, 3, QColor("#333"))
+        F(clx + 4, 4, 2, 1, QColor("#333"))
+
+        # ═══ DESKS + AGENTS ═══
+        for dx, dy, aid in self.DESKS:
+            ag = self.agents[aid]
+            nf = 4 if ag["state"] == "working" else 3
+            f = ag["frame"] % nf
+            st = ag["state"]
+            shirt = ag["shirt"]
+
+            # ── Animation offsets ──
+            cdy = 0
+            typing = False
+            if st == "idle":
+                cdy = 1 if f == 1 else 0
+            elif st == "working":
+                cdy = -1; typing = True
+            elif st == "done":
+                cdy = 3 if f >= 1 else 1
+            elif st == "failed":
+                cdy = 1
+
+            # ── Monitor ──
+            F(dx + 7, dy, 10, 5, QColor("#303040"))
+            msc = QColor("#162040") if (st == "working" and f == 3) else QColor("#0a0a1e")
+            F(dx + 8, dy + 1, 8, 3, msc)
+            F(dx + 11, dy + 5, 2, 1, QColor("#303040"))
+            if st == "working":
+                gc = QColor("#4ade80")
+                for r in range(3):
+                    lw = 2 + (f + r) % 5
+                    if not (f == 3 and r == 2):
+                        F(dx + 8, dy + 1 + r, min(lw, 7), 1, gc)
+                if f % 2 == 0:
+                    F(dx + 8 + 2 + f % 3, dy + 3, 1, 1, QColor("#fff"))
+            elif st == "done":
+                F(dx + 9, dy + 2, 5, 1, QColor("#4ade80"))
+            elif st == "failed":
+                F(dx + 9, dy + 2, 5, 1, QColor("#ef4444"))
+            else:
+                dot = ag["frame"] % 6
+                F(dx + 8 + dot, dy + 2, 1, 1, QColor("#252540"))
+
+            # ── Desk surface ──
+            F(dx, dy + 6, 24, 5, QColor("#9a7a56"))
+            F(dx, dy + 6, 24, 1, QColor("#b09070"))
+            F(dx, dy + 10, 24, 1, QColor("#7a6040"))
+            # Keyboard
+            F(dx + 8, dy + 7, 8, 2, QColor("#404048"))
+            if typing:
+                kx = dx + 9 + (f % 3) * 2
+                F(kx, dy + 7, 2, 1, QColor("#80d0a0"))
+            # Mug
+            F(dx + 20, dy + 7, 2, 2, QColor("#e8e0d0"))
+            F(dx + 20, dy + 7, 2, 1, QColor("#c49060"))
+            # Papers
+            F(dx + 2, dy + 7, 4, 3, QColor("#e8e0d0"))
+            F(dx + 2, dy + 7, 4, 1, QColor("#d0c8b8"))
+
+            # ── Chair ──
+            chy = dy + 13 + cdy
+            F(dx + 7, chy + 7, 10, 3, QColor("#454545"))
+            F(dx + 6, chy + 2, 12, 6, QColor("#505050"))
+            F(dx + 6, chy + 2, 12, 1, QColor("#5a5a5a"))
+            F(dx + 7, chy + 10, 2, 1, QColor("#333"))
+            F(dx + 15, chy + 10, 2, 1, QColor("#333"))
+
+            # ── Character (top-down back view) ──
+            skin = QColor("#f5c8a0")
+            hair = QColor("#5a3825")
+            cx = dx + 8
+            cy = dy + 13 + cdy
+
+            if st == "done" and f >= 1:
+                # Standing up — celebration
+                F(cx + 1, cy, 6, 1, hair)
+                F(cx, cy + 1, 8, 2, hair)
+                F(cx + 2, cy + 1, 3, 1, QColor("#7a5040"))
+                F(cx + 2, cy + 3, 4, 1, skin)
+                F(cx - 1, cy + 4, 10, 4, shirt)
+                F(cx + 2, cy + 5, 4, 2, shirt.lighter(120))
+                F(cx, cy + 8, 3, 3, ag["pants"])
+                F(cx + 5, cy + 8, 3, 3, ag["pants"])
+                # Arms spread
+                F(cx - 3, cy + 4, 2, 2, skin)
+                F(cx + 9, cy + 4, 2, 2, skin)
+                # Sparkles
+                sp = ag["frame"] // 2 % 4
+                sps = [(cx - 4, cy - 1), (cx + 11, cy),
+                       (cx + 4, cy - 2), (cx + 9, cy - 1)]
+                sx, sy = sps[sp]
+                F(sx, sy, 1, 1, QColor("#fff44f"))
+                F(sx + 1, sy - 1, 1, 1, QColor("#ffffff"))
+            else:
+                # Sitting — back of head + shoulders
+                F(cx + 1, cy, 6, 1, hair)
+                F(cx, cy + 1, 8, 3, hair)
+                F(cx + 2, cy + 1, 3, 1, QColor("#7a5040"))
+                F(cx - 1, cy + 2, 1, 2, skin)     # left ear
+                F(cx + 8, cy + 2, 1, 2, skin)      # right ear
+                F(cx + 2, cy + 4, 4, 1, skin)      # neck
+                F(cx - 1, cy + 5, 10, 1, shirt)    # shoulders
+                F(cx, cy + 6, 8, 3, shirt)          # back
+                F(cx + 3, cy + 6, 2, 2, shirt.lighter(120))
+                if typing:
+                    # Arms reaching forward
+                    F(cx - 2, cy + 4, 2, 2, shirt.darker(110))
+                    F(cx + 8, cy + 4, 2, 2, shirt.darker(110))
+                    F(cx - 2, cy + 3, 2, 1, skin)
+                    F(cx + 8, cy + 3, 2, 1, skin)
+                if st == "failed" and f >= 1:
+                    # Sweat + dark cloud
+                    F(cx + 9, cy + 1, 1, 2, QColor("#60a5fa"))
+                    F(cx, cy - 1, 8, 1, QColor("#40405a"))
+
+            # ── Agent label ──
+            ly = dy + 27 + (cdy if st != "done" else 5)
+            p.setPen(QPen(QColor("#e0e0e0")))
+            p.setFont(QFont("Arial", 8, QFont.Bold))
+            p.drawText(QRect((dx - 2) * s, ly * s, 28 * s, 5 * s),
+                       Qt.AlignCenter, ag["name"])
+            # Status dot
+            dot_c = {"idle": "#666", "working": "#4ade80",
+                     "done": "#22c55e", "failed": "#ef4444"}
+            F(dx + 10, ly + 5, 4, 2, QColor(dot_c.get(st, "#666")))
 
         p.end()
 
@@ -424,9 +834,8 @@ class BlogAutomationApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Blog Automation v2")
-        self.resize(800, 750)
+        self.resize(900, 800)
         self.worker = None
-        self.char_widgets = {}
         self._build_ui()
 
     def _build_ui(self):
@@ -449,26 +858,9 @@ class BlogAutomationApp(QMainWindow):
         top.addWidget(self.keyword_input)
         layout.addLayout(top)
 
-        # --- 에이전트 캐릭터 패널 ---
-        agent_panel = QFrame()
-        agent_panel.setObjectName("agentPanel")
-        agent_layout = QHBoxLayout(agent_panel)
-        agent_layout.setContentsMargins(10, 10, 10, 10)
-        agent_layout.setSpacing(6)
-        agent_layout.addStretch()
-        for agent_id in ["keyword", "writer", "review", "final_review", "poster"]:
-            cw = PixelCharacterWidget(agent_id)
-            self.char_widgets[agent_id] = cw
-            agent_layout.addWidget(cw)
-            # 에이전트 사이 화살표
-            if agent_id != "poster":
-                arrow = QLabel(">")
-                arrow.setStyleSheet("color: #555; font-size: 18px; font-weight: bold;")
-                arrow.setAlignment(Qt.AlignCenter)
-                arrow.setFixedWidth(16)
-                agent_layout.addWidget(arrow)
-        agent_layout.addStretch()
-        layout.addWidget(agent_panel)
+        # --- 에이전트 사무실 뷰 (탑다운 픽셀 아트) ---
+        self.office = PixelOfficeWidget()
+        layout.addWidget(self.office)
 
         # --- 로그인 + 포스팅 + 에이전트 버튼 행 ---
         action_row = QHBoxLayout()
@@ -641,14 +1033,11 @@ class BlogAutomationApp(QMainWindow):
         self.agent_all_btn.setText("전체 에이전트")
 
     def _update_character(self, agent_name, state):
-        """on_status 콜백 → 픽셀 캐릭터 상태 업데이트"""
-        cw = self.char_widgets.get(agent_name)
-        if cw:
-            cw.set_state(state)
+        """on_status 콜백 → 사무실 에이전트 상태 업데이트"""
+        self.office.set_agent_state(agent_name, state)
 
     def _reset_characters(self):
-        for cw in self.char_widgets.values():
-            cw.set_state("idle")
+        self.office.reset_all()
 
 
 if __name__ == "__main__":
