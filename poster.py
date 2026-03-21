@@ -550,16 +550,24 @@ def _naver_apply_subtitle_format(page):
     fmt_btn = page.query_selector('.se-text-format-toolbar-button')
     if not fmt_btn:
         fmt_btn = page.query_selector('button[data-name="text-format"]')
-    if fmt_btn:
-        fmt_btn.click()
-        time.sleep(0.5)
-        sub_btn = page.query_selector(
-            'button.se-toolbar-option-text-format-sectionTitle-button'
-        )
-        if sub_btn:
-            sub_btn.click()
-            time.sleep(0.3)
-            return True
+    if not fmt_btn:
+        return False
+
+    for attempt in range(3):
+        try:
+            fmt_btn.click()
+            # 드롭다운이 나타날 때까지 최대 2초 대기
+            for _ in range(10):
+                time.sleep(0.2)
+                sub_btn = page.query_selector(
+                    'button.se-toolbar-option-text-format-sectionTitle-button'
+                )
+                if sub_btn and sub_btn.is_visible():
+                    sub_btn.click()
+                    time.sleep(0.3)
+                    return True
+        except Exception:
+            time.sleep(0.5)
     return False
 
 
@@ -568,15 +576,23 @@ def _naver_restore_body_format(page):
     fmt_btn = page.query_selector('.se-text-format-toolbar-button')
     if not fmt_btn:
         fmt_btn = page.query_selector('button[data-name="text-format"]')
-    if fmt_btn:
-        fmt_btn.click()
-        time.sleep(0.5)
-        text_btn = page.query_selector(
-            'button.se-toolbar-option-text-format-text-button'
-        )
-        if text_btn:
-            text_btn.click()
-            time.sleep(0.3)
+    if not fmt_btn:
+        return
+
+    for attempt in range(3):
+        try:
+            fmt_btn.click()
+            for _ in range(10):
+                time.sleep(0.2)
+                text_btn = page.query_selector(
+                    'button.se-toolbar-option-text-format-text-button'
+                )
+                if text_btn and text_btn.is_visible():
+                    text_btn.click()
+                    time.sleep(0.3)
+                    return
+        except Exception:
+            time.sleep(0.5)
 
 
 def _parse_naver_sections(content):
@@ -651,6 +667,34 @@ def _parse_naver_sections(content):
     return sections
 
 
+def _redistribute_images_if_top(sections):
+    """이미지가 모두 상단에 몰려 있으면 소제목 이후로 균등 분산시킨다."""
+    images = [s for s in sections if s["type"] == "image"]
+    if not images:
+        return sections
+
+    # 마지막 이미지 위치가 전체 섹션 30% 이내이면 분산 필요
+    last_img_pos = max(i for i, s in enumerate(sections) if s["type"] == "image")
+    if last_img_pos >= len(sections) * 0.3:
+        return sections  # 이미 충분히 분산됨
+
+    # 이미지 제외한 기본 섹션
+    base = [s for s in sections if s["type"] != "image"]
+    heading_indices = [i for i, s in enumerate(base) if s["type"] == "heading"]
+    if not heading_indices:
+        return sections  # 소제목 없으면 그대로 유지
+
+    # 각 이미지를 소제목 바로 뒤에 삽입 (없으면 마지막 소제목 뒤)
+    result = list(base)
+    offset = 0
+    for j, img in enumerate(images):
+        h_idx = heading_indices[min(j, len(heading_indices) - 1)]
+        result.insert(h_idx + 1 + offset, img)
+        offset += 1
+
+    return result
+
+
 # ─────────────────────────────────────────────
 # 네이버 글 작성
 # ─────────────────────────────────────────────
@@ -676,8 +720,9 @@ def _post_naver(account, title, content, tags=None,
     blog_id = account.get("blog", "")
     body_text = insert_adsense_markers(content, blog_id)
 
-    # 본문을 섹션으로 파싱
+    # 본문을 섹션으로 파싱 + 이미지 상단 몰림 방지
     sections = _parse_naver_sections(body_text)
+    sections = _redistribute_images_if_top(sections)
 
     pw, browser = connect_cdp(on_log)
     try:
