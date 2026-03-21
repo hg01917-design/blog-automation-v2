@@ -5,8 +5,9 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QComboBox, QLineEdit, QTextEdit, QPushButton, QFrame,
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QRect, QPoint
-from PyQt5.QtGui import QFont, QPainter, QColor, QPen, QBrush
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QRect, QPoint, QSize
+from PyQt5.QtGui import QFont, QPainter, QColor, QPen, QBrush, QMovie
+from pathlib import Path
 
 # 같은 디렉토리의 모듈 import를 위해 경로 추가
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -16,171 +17,103 @@ from login_playwright import login_blog, login_naver
 from poster import post_single, post_all
 
 
-# ─── 픽셀 캐릭터 위젯 ───
+# ─── GIF 기반 픽셀 캐릭터 위젯 ───
 
-AGENT_COLORS = {
-    "keyword":      {"shirt": "#3b82f6", "pants": "#1e40af", "name": "키워드"},
-    "writer":       {"shirt": "#22c55e", "pants": "#15803d", "name": "작성"},
-    "review":       {"shirt": "#eab308", "pants": "#a16207", "name": "검수"},
-    "final_review": {"shirt": "#a855f7", "pants": "#7e22ce", "name": "최종"},
-    "poster":       {"shirt": "#ef4444", "pants": "#b91c1c", "name": "포스팅"},
+ASSETS_DIR = Path(__file__).parent / "assets"
+
+AGENT_NAMES = {
+    "keyword": "키워드",
+    "writer": "작성",
+    "review": "검수",
+    "final_review": "최종",
+    "poster": "포스팅",
 }
 
 
 class PixelCharacterWidget(QWidget):
-    """80x80 QPainter 기반 픽셀 캐릭터 — 에이전트 상태 표시"""
+    """GIF 애니메이션 기반 에이전트 캐릭터 위젯"""
 
     def __init__(self, agent_id, parent=None):
         super().__init__(parent)
         self.agent_id = agent_id
-        info = AGENT_COLORS.get(agent_id, {"shirt": "#888", "pants": "#555", "name": agent_id})
-        self.shirt_color = QColor(info["shirt"])
-        self.pants_color = QColor(info["pants"])
-        self.agent_name = info["name"]
-        self.state = "idle"       # idle, working, done, failed
-        self.frame = 0
+        self.agent_name = AGENT_NAMES.get(agent_id, agent_id)
+        self.state = "idle"
         self.task_text = "대기"
 
-        self.setFixedSize(90, 120)
+        self.setFixedSize(130, 170)
 
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._tick)
-        self.timer.start(400)
+        # GIF 로드
+        self.movies = {}
+        for state in ("idle", "working", "done", "failed"):
+            gif_path = ASSETS_DIR / f"{agent_id}_{state}.gif"
+            if gif_path.exists():
+                movie = QMovie(str(gif_path))
+                movie.setScaledSize(QSize(120, 120))
+                self.movies[state] = movie
+
+        # 메인 레이아웃
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 0)
+        layout.setSpacing(2)
+
+        # GIF 표시 라벨
+        self.gif_label = QLabel()
+        self.gif_label.setFixedSize(120, 120)
+        self.gif_label.setAlignment(Qt.AlignCenter)
+        self.gif_label.setStyleSheet("background: transparent; border: none;")
+        layout.addWidget(self.gif_label, alignment=Qt.AlignCenter)
+
+        # 이름 라벨
+        self.name_label = QLabel(self.agent_name)
+        self.name_label.setAlignment(Qt.AlignCenter)
+        self.name_label.setStyleSheet(
+            "color: #e0e0e0; font-size: 11px; font-weight: bold; "
+            "background: transparent; border: none;")
+        layout.addWidget(self.name_label)
+
+        # 상태 라벨
+        self.status_label = QLabel(self.task_text)
+        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setStyleSheet(
+            "color: #888; font-size: 10px; "
+            "background: transparent; border: none;")
+        layout.addWidget(self.status_label)
+
+        # 초기 GIF 시작
+        self._play_state("idle")
 
     def set_state(self, state):
         self.state = state
         labels = {"idle": "대기", "working": "작업 중...",
                   "done": "완료!", "failed": "실패"}
         self.task_text = labels.get(state, state)
-        self.frame = 0
-        self.update()
+        self._play_state(state)
 
-    def _tick(self):
-        self.frame += 1
-        self.update()
+    def _play_state(self, state):
+        # 기존 GIF 중지
+        for movie in self.movies.values():
+            movie.stop()
 
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing, False)
-        # 캐릭터를 중앙에 그리기 (80x80 영역, 아래 텍스트 공간 남김)
-        ox, oy = 5, 0  # offset
-        s = 4  # pixel scale (20x20 grid → 80x80)
-
-        skin = QColor("#fcd5b0")
-        hair = QColor("#4a3728")
-        eye = QColor("#222")
-        desk = QColor("#8B7355")
-        monitor = QColor("#333")
-        screen = QColor("#1a1a2e")
-
-        f = self.frame % 4  # 4-frame animation cycle
-
-        # ── 모니터 (고정) ──
-        p.fillRect(QRect(ox + 6*s, oy + 2*s, 8*s, 6*s), QBrush(monitor))
-        p.fillRect(QRect(ox + 7*s, oy + 3*s, 6*s, 4*s), QBrush(screen))
-        # 모니터 받침
-        p.fillRect(QRect(ox + 9*s, oy + 8*s, 2*s, s), QBrush(monitor))
-
-        # 화면 내용 (상태별)
-        if self.state == "working":
-            # 깜빡이는 텍스트 줄
-            line_c = QColor("#4ade80")
-            for row in range(3):
-                w = (3 + ((f + row) % 3)) * s
-                if not (f % 2 == 0 and row == 2):
-                    p.fillRect(QRect(ox + 8*s, oy + (3 + row)*s + 2, w, 2), QBrush(line_c))
-        elif self.state == "done":
-            p.setPen(QPen(QColor("#4ade80")))
-            p.setFont(QFont("Arial", 7, QFont.Bold))
-            p.drawText(QRect(ox + 7*s, oy + 3*s, 6*s, 4*s), Qt.AlignCenter, "OK")
-        elif self.state == "failed":
-            p.setPen(QPen(QColor("#ef4444")))
-            p.setFont(QFont("Arial", 7, QFont.Bold))
-            p.drawText(QRect(ox + 7*s, oy + 3*s, 6*s, 4*s), Qt.AlignCenter, "ERR")
-        else:
-            # idle — 빈 화면 또는 스크린세이버
-            if f % 4 < 2:
-                p.fillRect(QRect(ox + 8*s + f*s, oy + 5*s, s, s), QBrush(QColor("#334155")))
-
-        # ── 책상 ──
-        p.fillRect(QRect(ox + 2*s, oy + 9*s, 16*s, s), QBrush(desk))
-
-        # ── 머리 ──
-        head_bob = 0
-        if self.state == "idle":
-            head_bob = s // 2 if f % 4 < 2 else 0  # 꾸벅꾸벅
-        elif self.state == "done":
-            head_bob = -(s // 2) if f % 2 == 0 else 0  # 들썩
-
-        # 머리카락
-        p.fillRect(QRect(ox + 2*s, oy + 6*s + head_bob, 4*s, s), QBrush(hair))
-        # 얼굴
-        p.fillRect(QRect(ox + 2*s, oy + 7*s + head_bob, 4*s, 3*s), QBrush(skin))
-        # 눈
-        if self.state == "idle" and f % 4 >= 2:
-            # 졸고 있음 — 눈 감음
-            p.fillRect(QRect(ox + 3*s, oy + 8*s + head_bob, s, 1), QBrush(eye))
-            p.fillRect(QRect(ox + 5*s, oy + 8*s + head_bob, s, 1), QBrush(eye))
-        else:
-            p.fillRect(QRect(ox + 3*s, oy + 8*s + head_bob, s, s), QBrush(eye))
-            p.fillRect(QRect(ox + 5*s, oy + 8*s + head_bob, s, s), QBrush(eye))
-
-        # 실패 시 땀방울
-        if self.state == "failed" and f % 2 == 0:
-            p.fillRect(QRect(ox + 7*s, oy + 7*s + head_bob, s//2, s), QBrush(QColor("#60a5fa")))
-
-        # ── 몸통 (셔츠) ──
-        p.fillRect(QRect(ox + 1*s, oy + 10*s, 6*s, 4*s), QBrush(self.shirt_color))
-
-        # ── 팔 ──
-        if self.state == "working":
-            # 타이핑 — 팔 움직임
-            arm_dx = s if f % 2 == 0 else 0
-            p.fillRect(QRect(ox + 7*s + arm_dx, oy + 11*s, 2*s, s), QBrush(skin))
-            p.fillRect(QRect(ox + 7*s - arm_dx + s, oy + 12*s, 2*s, s), QBrush(skin))
-        elif self.state == "done":
-            # 만세!
-            if f % 2 == 0:
-                p.fillRect(QRect(ox + 0*s, oy + 8*s, s, 2*s), QBrush(skin))
-                p.fillRect(QRect(ox + 7*s, oy + 8*s, s, 2*s), QBrush(skin))
-            else:
-                p.fillRect(QRect(ox + 0*s, oy + 9*s, s, 2*s), QBrush(skin))
-                p.fillRect(QRect(ox + 7*s, oy + 9*s, s, 2*s), QBrush(skin))
-        elif self.state == "failed":
-            # 머리 긁적
-            scratch_y = oy + 7*s if f % 2 == 0 else oy + 6*s + head_bob
-            p.fillRect(QRect(ox + 6*s, scratch_y, s, 2*s), QBrush(skin))
-            # 다른 팔은 내림
-            p.fillRect(QRect(ox + 0*s, oy + 12*s, s, 2*s), QBrush(skin))
-        else:
-            # idle — 책상 위에 팔
-            p.fillRect(QRect(ox + 7*s, oy + 11*s, 2*s, s), QBrush(skin))
-
-        # ── 바지 ──
-        p.fillRect(QRect(ox + 1*s, oy + 14*s, 3*s, 2*s), QBrush(self.pants_color))
-        p.fillRect(QRect(ox + 4*s, oy + 14*s, 3*s, 2*s), QBrush(self.pants_color))
-
-        # ── 의자 ──
-        chair = QColor("#555")
-        p.fillRect(QRect(ox + 0*s, oy + 16*s, 8*s, s), QBrush(chair))
-        p.fillRect(QRect(ox + 1*s, oy + 17*s, s, 2*s), QBrush(chair))
-        p.fillRect(QRect(ox + 6*s, oy + 17*s, s, 2*s), QBrush(chair))
-
-        # ── 이름 + 상태 텍스트 ──
-        p.setPen(QPen(QColor("#e0e0e0")))
-        p.setFont(QFont("Arial", 9, QFont.Bold))
-        text_rect = QRect(0, 82, 90, 16)
-        p.drawText(text_rect, Qt.AlignCenter, self.agent_name)
-
-        p.setFont(QFont("Arial", 8))
+        # 상태별 색상
         state_colors = {
             "idle": "#888", "working": "#4ade80",
             "done": "#22c55e", "failed": "#ef4444",
         }
-        p.setPen(QPen(QColor(state_colors.get(self.state, "#888"))))
-        p.drawText(QRect(0, 98, 90, 16), Qt.AlignCenter, self.task_text)
+        self.status_label.setText(self.task_text)
+        self.status_label.setStyleSheet(
+            f"color: {state_colors.get(state, '#888')}; font-size: 10px; "
+            "background: transparent; border: none;")
 
-        p.end()
+        # 새 GIF 재생
+        movie = self.movies.get(state)
+        if movie:
+            self.gif_label.setMovie(movie)
+            movie.start()
+        else:
+            self.gif_label.setText("?")
+            self.gif_label.setStyleSheet(
+                "color: #888; font-size: 40px; background: #1a1a2e; "
+                "border: 1px solid #333; border-radius: 4px;")
 
 
 class OrchestratorWorker(QThread):
@@ -250,6 +183,103 @@ class SingleAgentWorker(QThread):
         self.status_signal.emit(agent, state)
 
 
+class SchedulerWorker(QThread):
+    """스케줄러를 GUI 내에서 실행하는 워커"""
+    log_signal = pyqtSignal(str)
+    status_signal = pyqtSignal(str, str)
+    finished = pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+        self._stop_flag = False
+
+    def stop(self):
+        self._stop_flag = True
+
+    def run(self):
+        import random
+        from datetime import datetime, timedelta
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "agents"))
+        from agents import orchestrator
+
+        START_HOUR, END_HOUR = 7, 23
+        MIN_INTERVAL, MAX_INTERVAL = 60, 180
+        BLOG_ORDER = ["goodisak", "nolja100", "salim1su"]
+
+        self._emit_log("[스케줄러] 시작 (7:00~23:00, 60~180분 간격)")
+
+        while not self._stop_flag:
+            hour = datetime.now().hour
+            if hour < START_HOUR or hour >= END_HOUR:
+                # 비활동 시간 — 다음 7시까지 대기
+                now = datetime.now()
+                if hour >= END_HOUR:
+                    target = (now + timedelta(days=1)).replace(
+                        hour=START_HOUR, minute=0, second=0)
+                else:
+                    target = now.replace(hour=START_HOUR, minute=0, second=0)
+                wait = (target - now).total_seconds()
+                self._emit_log(
+                    f"[스케줄러] 비활동 시간 — {target.strftime('%H:%M')}까지 대기")
+                self._sleep(wait)
+                continue
+
+            # 사이클 실행
+            for blog_id in BLOG_ORDER:
+                if self._stop_flag:
+                    break
+                if not (START_HOUR <= datetime.now().hour < END_HOUR):
+                    break
+
+                self._emit_log(f"[스케줄러] {blog_id} 파이프라인 시작")
+                try:
+                    result = orchestrator.run_single(
+                        blog_id,
+                        on_log=self._emit_log,
+                        on_status=self._emit_status,
+                    )
+                    if result["success"]:
+                        self._emit_log(
+                            f"[스케줄러] {blog_id} 발행 완료: {result['title']}")
+                    else:
+                        self._emit_log(
+                            f"[스케줄러] {blog_id} 실패: {result['reason']}")
+                except Exception as e:
+                    self._emit_log(f"[스케줄러] {blog_id} 오류: {e}")
+
+                # 블로그 간 쿨다운
+                if blog_id != BLOG_ORDER[-1] and not self._stop_flag:
+                    cd = random.randint(5, 15) * 60
+                    self._emit_log(
+                        f"[스케줄러] 다음 블로그까지 {cd // 60}분 대기")
+                    self._sleep(cd)
+
+            if self._stop_flag:
+                break
+
+            # 다음 사이클까지 랜덤 대기
+            interval = random.randint(MIN_INTERVAL, MAX_INTERVAL) * 60
+            next_time = datetime.now() + timedelta(seconds=interval)
+            self._emit_log(
+                f"[스케줄러] 다음 사이클: {next_time.strftime('%H:%M')} "
+                f"({interval // 60}분 후)")
+            self._sleep(interval)
+
+        self.finished.emit("[스케줄러] 종료됨")
+
+    def _sleep(self, seconds):
+        import time as _time
+        end = _time.time() + seconds
+        while _time.time() < end and not self._stop_flag:
+            _time.sleep(min(5, end - _time.time()))
+
+    def _emit_log(self, msg):
+        self.log_signal.emit(msg)
+
+    def _emit_status(self, agent, state):
+        self.status_signal.emit(agent, state)
+
+
 DARK_STYLE = """
 QMainWindow { background: #1e1e1e; }
 QLabel { color: #e0e0e0; font-size: 14px; }
@@ -284,6 +314,9 @@ QPushButton {
     background: #181818; border: 1px solid #333;
     border-radius: 8px;
 }
+#schedBtn { background: #059669; }
+#schedBtn:disabled { background: #555; }
+#schedStopBtn { background: #dc2626; }
 """
 
 
@@ -424,7 +457,7 @@ class BlogAutomationApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Blog Automation v2")
-        self.resize(800, 750)
+        self.resize(900, 850)
         self.worker = None
         self.char_widgets = {}
         self._build_ui()
@@ -454,7 +487,7 @@ class BlogAutomationApp(QMainWindow):
         agent_panel.setObjectName("agentPanel")
         agent_layout = QHBoxLayout(agent_panel)
         agent_layout.setContentsMargins(10, 10, 10, 10)
-        agent_layout.setSpacing(6)
+        agent_layout.setSpacing(4)
         agent_layout.addStretch()
         for agent_id in ["keyword", "writer", "review", "final_review", "poster"]:
             cw = PixelCharacterWidget(agent_id)
@@ -462,10 +495,10 @@ class BlogAutomationApp(QMainWindow):
             agent_layout.addWidget(cw)
             # 에이전트 사이 화살표
             if agent_id != "poster":
-                arrow = QLabel(">")
-                arrow.setStyleSheet("color: #555; font-size: 18px; font-weight: bold;")
+                arrow = QLabel(">>>")
+                arrow.setStyleSheet("color: #555; font-size: 12px; font-weight: bold;")
                 arrow.setAlignment(Qt.AlignCenter)
-                arrow.setFixedWidth(16)
+                arrow.setFixedWidth(24)
                 agent_layout.addWidget(arrow)
         agent_layout.addStretch()
         layout.addWidget(agent_panel)
@@ -497,6 +530,18 @@ class BlogAutomationApp(QMainWindow):
         self.post_all_btn.setObjectName("postAllBtn")
         self.post_all_btn.clicked.connect(self._run_post_all)
         action_row.addWidget(self.post_all_btn)
+
+        self.sched_btn = QPushButton("스케줄러 시작")
+        self.sched_btn.setObjectName("schedBtn")
+        self.sched_btn.clicked.connect(self._run_scheduler)
+        action_row.addWidget(self.sched_btn)
+
+        self.sched_stop_btn = QPushButton("중지")
+        self.sched_stop_btn.setObjectName("schedStopBtn")
+        self.sched_stop_btn.clicked.connect(self._stop_scheduler)
+        self.sched_stop_btn.setEnabled(False)
+        self.sched_stop_btn.setFixedWidth(60)
+        action_row.addWidget(self.sched_stop_btn)
 
         action_row.addStretch()
         layout.addLayout(action_row)
@@ -649,6 +694,30 @@ class BlogAutomationApp(QMainWindow):
     def _reset_characters(self):
         for cw in self.char_widgets.values():
             cw.set_state("idle")
+
+    # --- 스케줄러 ---
+    def _run_scheduler(self):
+        self.sched_btn.setEnabled(False)
+        self.sched_btn.setText("실행 중...")
+        self.sched_stop_btn.setEnabled(True)
+        self._reset_characters()
+        self.sched_worker = SchedulerWorker()
+        self.sched_worker.log_signal.connect(self.log_box.append)
+        self.sched_worker.status_signal.connect(self._update_character)
+        self.sched_worker.finished.connect(self._on_scheduler_done)
+        self.sched_worker.start()
+
+    def _stop_scheduler(self):
+        if hasattr(self, 'sched_worker') and self.sched_worker.isRunning():
+            self.sched_worker.stop()
+            self.log_box.append("[스케줄러] 중지 요청...")
+
+    def _on_scheduler_done(self, text):
+        self.log_box.append(text)
+        self.sched_btn.setEnabled(True)
+        self.sched_btn.setText("스케줄러 시작")
+        self.sched_stop_btn.setEnabled(False)
+        self._reset_characters()
 
 
 if __name__ == "__main__":
