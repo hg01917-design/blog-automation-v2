@@ -40,7 +40,7 @@ class PixelCharacterWidget(QWidget):
         self.state = "idle"
         self.task_text = "대기"
 
-        self.setFixedSize(130, 170)
+        self.setFixedSize(210, 280)
 
         # GIF 로드
         self.movies = {}
@@ -48,17 +48,17 @@ class PixelCharacterWidget(QWidget):
             gif_path = ASSETS_DIR / f"{agent_id}_{state}.gif"
             if gif_path.exists():
                 movie = QMovie(str(gif_path))
-                movie.setScaledSize(QSize(120, 120))
+                movie.setScaledSize(QSize(192, 192))
                 self.movies[state] = movie
 
         # 메인 레이아웃
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 0)
-        layout.setSpacing(2)
+        layout.setContentsMargins(8, 10, 8, 8)
+        layout.setSpacing(6)
 
         # GIF 표시 라벨
         self.gif_label = QLabel()
-        self.gif_label.setFixedSize(120, 120)
+        self.gif_label.setFixedSize(192, 192)
         self.gif_label.setAlignment(Qt.AlignCenter)
         self.gif_label.setStyleSheet("background: transparent; border: none;")
         layout.addWidget(self.gif_label, alignment=Qt.AlignCenter)
@@ -67,16 +67,16 @@ class PixelCharacterWidget(QWidget):
         self.name_label = QLabel(self.agent_name)
         self.name_label.setAlignment(Qt.AlignCenter)
         self.name_label.setStyleSheet(
-            "color: #e0e0e0; font-size: 11px; font-weight: bold; "
-            "background: transparent; border: none;")
+            "color: #ffffff; font-size: 16px; font-weight: bold; letter-spacing: 1px; "
+            "background: #333; border-radius: 5px; padding: 3px 10px; border: none;")
         layout.addWidget(self.name_label)
 
         # 상태 라벨
         self.status_label = QLabel(self.task_text)
         self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setStyleSheet(
-            "color: #888; font-size: 10px; "
-            "background: transparent; border: none;")
+            "color: #aaa; font-size: 13px; font-weight: bold; "
+            "background: transparent; border: none; padding: 2px 0;")
         layout.addWidget(self.status_label)
 
         # 초기 GIF 시작
@@ -94,15 +94,52 @@ class PixelCharacterWidget(QWidget):
         for movie in self.movies.values():
             movie.stop()
 
-        # 상태별 색상
+        # 상태별 색상 설정
         state_colors = {
-            "idle": "#888", "working": "#4ade80",
-            "done": "#22c55e", "failed": "#ef4444",
+            "idle": "#888888",
+            "working": "#4ade80",
+            "done": "#22c55e",
+            "failed": "#f87171",
         }
+        state_bg = {
+            "idle": "#1e1e2e",
+            "working": "#0b2a1a",
+            "done": "#0a250a",
+            "failed": "#2a0b0b",
+        }
+        state_border = {
+            "idle": "#444455",
+            "working": "#4ade80",
+            "done": "#22c55e",
+            "failed": "#ef4444",
+        }
+        state_name_bg = {
+            "idle": "#333344",
+            "working": "#14532d",
+            "done": "#166534",
+            "failed": "#7f1d1d",
+        }
+
+        # 위젯 전체 배경 + 테두리 (상태별 색깔 구분)
+        self.setStyleSheet(
+            f"background: {state_bg.get(state, '#1e1e2e')}; "
+            f"border: 3px solid {state_border.get(state, '#444455')}; "
+            "border-radius: 12px;"
+        )
+
+        # 이름 라벨 배경색
+        self.name_label.setStyleSheet(
+            f"color: #ffffff; font-size: 16px; font-weight: bold; letter-spacing: 1px; "
+            f"background: {state_name_bg.get(state, '#333344')}; "
+            "border-radius: 5px; padding: 3px 10px; border: none;"
+        )
+
+        # 상태 텍스트 + 색상
         self.status_label.setText(self.task_text)
         self.status_label.setStyleSheet(
-            f"color: {state_colors.get(state, '#888')}; font-size: 10px; "
-            "background: transparent; border: none;")
+            f"color: {state_colors.get(state, '#888')}; font-size: 13px; font-weight: bold; "
+            "background: transparent; border: none; padding: 2px 0;"
+        )
 
         # 새 GIF 재생
         movie = self.movies.get(state)
@@ -112,8 +149,9 @@ class PixelCharacterWidget(QWidget):
         else:
             self.gif_label.setText("?")
             self.gif_label.setStyleSheet(
-                "color: #888; font-size: 40px; background: #1a1a2e; "
-                "border: 1px solid #333; border-radius: 4px;")
+                "color: #888; font-size: 48px; background: #1a1a2e; "
+                "border: 1px solid #333; border-radius: 4px;"
+            )
 
 
 class OrchestratorWorker(QThread):
@@ -457,7 +495,7 @@ class BlogAutomationApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Blog Automation v2")
-        self.resize(900, 850)
+        self.resize(1350, 980)
         self.worker = None
         self.char_widgets = {}
         self._build_ui()
@@ -486,8 +524,8 @@ class BlogAutomationApp(QMainWindow):
         agent_panel = QFrame()
         agent_panel.setObjectName("agentPanel")
         agent_layout = QHBoxLayout(agent_panel)
-        agent_layout.setContentsMargins(10, 10, 10, 10)
-        agent_layout.setSpacing(4)
+        agent_layout.setContentsMargins(16, 14, 16, 14)
+        agent_layout.setSpacing(6)
         agent_layout.addStretch()
         for agent_id in ["keyword", "writer", "review", "final_review", "poster"]:
             cw = PixelCharacterWidget(agent_id)
@@ -495,10 +533,11 @@ class BlogAutomationApp(QMainWindow):
             agent_layout.addWidget(cw)
             # 에이전트 사이 화살표
             if agent_id != "poster":
-                arrow = QLabel(">>>")
-                arrow.setStyleSheet("color: #555; font-size: 12px; font-weight: bold;")
+                arrow = QLabel("▶")
+                arrow.setStyleSheet(
+                    "color: #4a4a66; font-size: 22px; font-weight: bold;")
                 arrow.setAlignment(Qt.AlignCenter)
-                arrow.setFixedWidth(24)
+                arrow.setFixedWidth(32)
                 agent_layout.addWidget(arrow)
         agent_layout.addStretch()
         layout.addWidget(agent_panel)
