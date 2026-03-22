@@ -39,6 +39,7 @@ def run(result: dict, blog_id: str, keyword: str, page_id: str,
             tags=tags,
             image_paths=image_paths,
             image_infos=images,
+            keyword=keyword,
             on_log=log,
         )
     except Exception as e:

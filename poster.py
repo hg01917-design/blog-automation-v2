@@ -971,11 +971,109 @@ def _post_naver(account, title, content, tags=None,
 
 
 # ─────────────────────────────────────────────
+# WordPress REST API 포스팅 (baremi542)
+# ─────────────────────────────────────────────
+def _post_wordpress(account, title, content, tags=None,
+                    keyword: str = "", on_log=None):
+    """WordPress REST API로 글을 발행하고 Rank Math 메타를 설정한다.
+
+    .env 필요:
+      WP_USER=<워드프레스 사용자명>
+      WP_APP_PASSWORD=<애플리케이션 비밀번호 (공백 제거)>
+    """
+    import json
+    import base64
+    import re
+    import urllib.request
+    import os
+
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    site_url = account.get("editor_url", "").replace("/wp-admin/post-new.php", "")
+    if not site_url:
+        site_url = "https://baremi542.com"
+
+    wp_user = os.environ.get("WP_USER", "")
+    wp_pass = os.environ.get("WP_APP_PASSWORD", "").replace(" ", "")
+
+    if not wp_user or not wp_pass:
+        log("[WordPress] ⚠ WP_USER / WP_APP_PASSWORD 환경변수 미설정 — 발행 스킵")
+        return False
+
+    token = base64.b64encode(f"{wp_user}:{wp_pass}".encode()).decode()
+    headers = {
+        "Authorization": f"Basic {token}",
+        "Content-Type": "application/json",
+    }
+
+    # 메타 설명: 본문 첫 200자 (마크다운 기호 제거)
+    plain = re.sub(r"##.*|{{.*?}}|\[애드센스\]|\|.*|\*+|`+", "", content)
+    plain = re.sub(r"\s+", " ", plain).strip()
+    meta_desc = plain[:160]
+
+    # 태그 ID 조회 (없으면 생성)
+    tag_ids = []
+    if tags:
+        for tag_name in tags[:10]:
+            try:
+                search_url = f"{site_url}/wp-json/wp/v2/tags?search={urllib.parse.quote(tag_name)}"
+                req = urllib.request.Request(search_url, headers=headers)
+                res = json.loads(urllib.request.urlopen(req, timeout=8).read())
+                if res:
+                    tag_ids.append(res[0]["id"])
+                else:
+                    # 태그 생성
+                    create_req = urllib.request.Request(
+                        f"{site_url}/wp-json/wp/v2/tags",
+                        data=json.dumps({"name": tag_name}).encode(),
+                        headers=headers,
+                        method="POST",
+                    )
+                    new_tag = json.loads(urllib.request.urlopen(create_req, timeout=8).read())
+                    tag_ids.append(new_tag["id"])
+            except Exception:
+                pass
+
+    # 글 발행
+    post_body = {
+        "title": title,
+        "content": content,
+        "status": "publish",
+        "tags": tag_ids,
+        "meta": {
+            "rank_math_focus_keyword": keyword,
+            "rank_math_description": meta_desc,
+        },
+    }
+
+    log(f"[WordPress] REST API 발행 시작: \"{title}\"")
+    log(f"[WordPress] Focus Keyword: {keyword}")
+
+    try:
+        import urllib.parse
+        req = urllib.request.Request(
+            f"{site_url}/wp-json/wp/v2/posts",
+            data=json.dumps(post_body).encode(),
+            headers=headers,
+            method="POST",
+        )
+        resp = json.loads(urllib.request.urlopen(req, timeout=30).read())
+        post_url = resp.get("link", "")
+        log(f"[WordPress] ✓ 발행 완료: {post_url}")
+        return True
+    except Exception as e:
+        log(f"[WordPress] ⚠ 발행 실패: {e}")
+        return False
+
+
+# ─────────────────────────────────────────────
 # 단일 계정 포스팅 (로그인 → 글쓰기 → 로그아웃)
 # ─────────────────────────────────────────────
 def post_single(blog_id: str, title: str, content: str,
                 tags=None, image_paths=None, image_infos=None,
-                on_log=None):
+                keyword: str = "", on_log=None):
     """한 계정에 대해 로그인 → 포스팅 → 로그아웃 전체 수행"""
     def log(msg):
         if on_log:
@@ -1008,6 +1106,9 @@ def post_single(blog_id: str, title: str, content: str,
         ok = _post_naver(account, title, content, tags,
                          image_paths=image_paths, image_infos=image_infos,
                          on_log=on_log)
+    elif account["platform"] == "wordpress":
+        ok = _post_wordpress(account, title, content, tags,
+                             keyword=keyword, on_log=on_log)
     else:
         log(f"[순환] 지원하지 않는 플랫폼: {account['platform']}")
         ok = False

@@ -304,7 +304,12 @@ def fetch_prompt(blog_id: str, keyword: str, on_log=None) -> str:
 - 네이버쇼핑 언급 절대 금지
 - Rank Math SEO 메타 포함: 메타 제목(60자 이내), 메타 설명(160자 이내)
 - 콜투액션 최대 2개 (본문 상단+하단): [신청하러 가기](URL) 형식
-- 확인되지 않은 수치·날짜 단정 금지"""
+- 확인되지 않은 수치·날짜 단정 금지
+
+**Rank Math SEO 최적화 규칙 (baremi542)**:
+- 본문 첫 문단(100자 이내)에 반드시 메인 키워드({keyword})를 자연스럽게 포함
+- 예시: '{keyword}에 대해 찾아보시는 분들이 많아서 직접 정리해봤어요.'
+- 메타 설명은 본문 첫 문단 내용 기반으로 160자 이내로 작성"""
 
     # {keyword} 치환
     prompt_text = prompt_text.replace("{keyword}", keyword)
