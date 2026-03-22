@@ -89,21 +89,46 @@ def fetch_prompt(blog_id: str, keyword: str, on_log=None) -> str:
     resp.raise_for_status()
     blocks = resp.json().get("results", [])
 
-    # "글 생성 프롬프트" 섹션 이후만 추출
+    # "🔑 핵심 원칙" 섹션과 "글 생성 프롬프트" 섹션 추출
+    principle_lines = []
     prompt_lines = []
-    capture = False
+    capture_principle = False
+    capture_prompt = False
     for block in blocks:
         btype = block.get("type", "")
         data = block.get(btype, {})
         rich_texts = data.get("rich_text", [])
         text = "".join(rt.get("plain_text", "") for rt in rich_texts)
 
-        # "글 생성 프롬프트" 헤딩을 만나면 캡처 시작
-        if btype == "heading_2" and "글 생성 프롬프트" in text:
-            capture = True
-            continue
+        if btype == "heading_2":
+            if "핵심 원칙" in text:
+                capture_principle = True
+                capture_prompt = False
+                continue
+            elif "글 생성 프롬프트" in text:
+                capture_prompt = True
+                capture_principle = False
+                continue
+            elif capture_principle:
+                # 다음 heading_2를 만나면 핵심 원칙 캡처 중단
+                capture_principle = False
 
-        if capture:
+        if capture_principle:
+            if btype == "heading_3":
+                principle_lines.append(f"\n### {text}")
+            elif btype == "bulleted_list_item":
+                principle_lines.append(f"- {text}")
+            elif btype == "numbered_list_item":
+                principle_lines.append(f"1. {text}")
+            elif btype == "divider":
+                principle_lines.append("---")
+            elif btype == "code":
+                lang = data.get("language", "")
+                principle_lines.append(f"```{lang}\n{text}\n```")
+            elif btype == "paragraph":
+                principle_lines.append(text)
+
+        if capture_prompt:
             if btype == "heading_2":
                 prompt_lines.append(f"\n## {text}")
             elif btype == "heading_3":
@@ -120,7 +145,12 @@ def fetch_prompt(blog_id: str, keyword: str, on_log=None) -> str:
             elif btype == "paragraph":
                 prompt_lines.append(text)
 
+    principle_text = "\n".join(principle_lines).strip()
     prompt_text = "\n".join(prompt_lines).strip()
+
+    # 핵심 원칙이 있으면 프롬프트 맨 앞에 추가
+    if principle_text:
+        prompt_text = f"## 에이전트 행동 원칙\n{principle_text}\n\n---\n\n{prompt_text}"
 
     if not prompt_text:
         raise ValueError(f"프롬프트 내용이 비어있습니다: {blog_id}")
@@ -162,6 +192,7 @@ def fetch_prompt(blog_id: str, keyword: str, on_log=None) -> str:
         prompt_text += """
 
 **IT 블로그 스펙/가격 표 규칙 (goodisak)**:
+- 판단 기준: '내가 이 IT 블로그 운영자라면 이렇게 쓸까?' 항상 자문하며 작성
 - 제품 스펙 또는 가격 비교 표가 포함된 경우, 표 바로 아래에 반드시 다음 문구를 추가:
   ※ 위 표의 스펙 및 가격은 참고용이며, 실제와 다를 수 있습니다. 구매 전 반드시 공식 페이지에서 최신 정보를 확인하세요."""
 
@@ -169,6 +200,7 @@ def fetch_prompt(blog_id: str, keyword: str, on_log=None) -> str:
         prompt_text += """
 
 **살림 페르소나 규칙 (daonna525)**:
+- 판단 기준: '내가 이 살림 블로그 운영자(하린)라면 이렇게 쓸까?' 항상 자문하며 작성
 - 짧은 문단 (2-3문장) 위주로 작성, 긴 설명 지양
 - ~더라구요, ~했어요, ~이에요, ~거든요 말투 사용 (딱딱한 ~습니다 최소화)
 - 실제 살림 경험담처럼 자연스럽게 (예: "저도 처음엔 몰랐는데 해보니까 진짜 달라지더라구요")
@@ -193,11 +225,12 @@ def fetch_prompt(blog_id: str, keyword: str, on_log=None) -> str:
         prompt_text += """
 
 **여행 블로그 지은 페르소나 규칙 (nolja100)**:
-- 실제 방문한 여행자 시점으로 작성, 생생한 현장감 표현
-- 구체적인 장소명·교통·비용·운영시간은 확실히 아는 정보만 작성 (불확실하면 '현장 확인 권장' 표시)
-- 환각(hallucination) 엄금: 없는 장소, 잘못된 가격, 날조 정보 절대 금지
-- ~했어요, ~였어요, ~더라구요 말투로 현장감 있게 작성
-- 꿀팁·주의사항은 실제 경험 기반으로 구체적으로 서술
+- 페르소나: 지은 (32세 콘텐츠 플래너, 리서치 기반)
+- 1인칭 체험 주장 절대 금지: "직접 가봤어요", "제가 먹어봤는데" 같은 표현 금지
+- 정보는 리서치 기반으로 작성. 불확실한 수치(환율/입장료/운영시간)는 반드시 "조사 기준" 명시
+- 조작된 고유명사·주소·가격 절대 금지 (환각 엄금)
+- 문체: 정보 전달형 (~입니다, ~합니다) + 자연스러운 구어체 (~요)
+- 숙소 관련 키워드 감지 시 본문 말미에 Agoda 링크 형식 안내 삽입: "추천 숙소: [호텔명](agoda affiliate link) (최저 00원부터)"
 
 **여행 블로그 제목 규칙 (nolja100)**:
 - 메인키워드는 반드시 제목 맨 앞에 위치
@@ -207,6 +240,17 @@ def fetch_prompt(blog_id: str, keyword: str, on_log=None) -> str:
 - 직장인/주부/혼자 등 대상은 제목에 직접 넣지 말고, 검색 의도에 자연스럽게 녹여낼 것
 - 40자 이내 유지
 - 제목에 숫자+일정, 지역명, 핵심 정보(코스/예산/숙소 등) 조합으로 구체성 확보"""
+    elif blog_id == "baremi542":
+        prompt_text += """
+
+**정부지원금 블로그 페르소나 규칙 (baremi542)**:
+- 페르소나: 정부 혜택을 직접 찾아서 정리하는 블로그 운영자 본인 시점
+- 정확한 정책명·지원금액·신청기간 반드시 명시. 불확실한 정보는 "확인 필요" 표기
+- 공식 출처(bokjiro.go.kr, gov.kr, korea.kr 등) 기반으로 작성
+- 네이버쇼핑 언급 절대 금지
+- Rank Math SEO 메타 포함: 메타 제목(60자 이내), 메타 설명(160자 이내)
+- 콜투액션 최대 2개 (본문 상단+하단): [신청하러 가기](URL) 형식
+- 확인되지 않은 수치·날짜 단정 금지"""
 
     # {keyword} 치환
     prompt_text = prompt_text.replace("{keyword}", keyword)

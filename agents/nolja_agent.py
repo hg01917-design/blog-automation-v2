@@ -11,7 +11,11 @@ from gemini_image import generate_images
 from overnight_run import _truncate_title
 
 BLOG_ID = "nolja100"
-PERSONA_RULE = "여행지 실제 경험담 스타일, 지은(30대 여행러) 페르소나"
+PERSONA_RULE = (
+    "놀자 여행 블로그 운영자 본인 시점 — 지은(32세 콘텐츠 플래너) 페르소나. "
+    "리서치 기반 정보 전달. 1인칭 체험 주장 절대 금지(직접 가봤어요 등 금지). "
+    "불확실 수치는 '조사 기준' 명시. 판단 기준: '내가 이 블로그 운영자라면?'"
+)
 
 
 def run(keyword: str, on_log=None, on_status=None):

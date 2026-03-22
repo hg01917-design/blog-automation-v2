@@ -11,7 +11,11 @@ from gemini_image import generate_images
 from overnight_run import _truncate_title
 
 BLOG_ID = "salim1su"
-PERSONA_RULE = "세 아이 키우는 주부 페르소나, 실생활 절약/살림 경험"
+PERSONA_RULE = (
+    "퇴근후살림 블로그 운영자 본인 시점 — 하린(30대 중반, 주부+직장인, 세 자녀) 페르소나. "
+    "체험형 문체(~더라구요/~했어요), 구체적 금액/수치 사용. "
+    "판단 기준: '내가 이 살림 블로그 운영자라면 이렇게 쓸까?'"
+)
 
 
 def run(keyword: str, on_log=None, on_status=None):

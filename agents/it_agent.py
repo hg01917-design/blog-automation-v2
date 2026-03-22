@@ -11,7 +11,11 @@ from gemini_image import generate_images
 from overnight_run import _truncate_title
 
 BLOG_ID = "goodisak"
-PERSONA_RULE = "IT 트러블슈팅 경험담, 직접 해봤다는 느낌, 결론 먼저"
+PERSONA_RULE = (
+    "굳이삭 IT 블로그 운영자 본인 시점 — 트러블슈터(해결사) 페르소나. "
+    "판단 기준: '내가 이 블로그 운영자라면 이렇게 쓸까?' "
+    "결론 먼저, 원인→해결 순서, 존댓말(~습니다/~세요/~해요)"
+)
 
 
 def run(keyword: str, on_log=None, on_status=None):

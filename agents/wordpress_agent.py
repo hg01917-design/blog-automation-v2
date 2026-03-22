@@ -14,7 +14,11 @@ from gemini_image import generate_images
 from overnight_run import _truncate_title
 
 BLOG_ID = "baremi542"
-PERSONA_RULE = "정부지원금 정보 전달, 신청방법 단계별 안내, 공식 출처 언급"
+PERSONA_RULE = (
+    "baremi542 정부지원금 블로그 운영자 본인 시점 — 정부 혜택을 직접 찾아 정리하는 사람. "
+    "정확한 정책명·지원금액·신청기간 필수 명시, 불확실 시 '확인 필요' 표기. "
+    "공식 출처(bokjiro.go.kr/gov.kr) 기반. 판단 기준: '내가 이 블로그 운영자라면?'"
+)
 
 
 def run(keyword: str, on_log=None, on_status=None):
