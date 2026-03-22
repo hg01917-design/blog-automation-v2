@@ -11,6 +11,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 from blog_stats import get_blog_level
+import blog_visitor
 
 # .env 로드
 _env_path = Path(__file__).parent / ".env"
@@ -41,37 +42,47 @@ BLOG_CATEGORIES = {
     "goodisak": ["노트북", "스마트폰", "태블릿", "이어폰", "스마트워치"],
     "nolja100": ["국내여행", "해외여행", "일본여행", "동남아여행", "유럽여행"],
     "salim1su": [
-        # 전기/가스
+        # 전기/가스 — 고정지출 절약
         "전기요금", "전기요금 절약", "전기세 폭탄", "에어컨 전기요금",
         "가스비", "가스비 절약", "도시가스 요금", "보일러 가스비",
         # 통신/관리비
         "통신비", "통신비 절약", "알뜰폰 추천", "인터넷 요금 절약",
         "관리비", "아파트 관리비 절약", "관리비 줄이는법",
-        # 연말정산/세금
+        # 연말정산 (직장인 세금 환급 — 살림 범주)
         "연말정산", "연말정산 환급", "연말정산 공제", "직장인 연말정산",
         "자동차세 연납 할인", "재산세 분납",
-        "종합소득세 환급", "근로장려금 신청",
-        # 건강보험
+        # 건강보험 — 보험료 절약
         "건강보험료 줄이기", "건강보험 피부양자 등록",
-        "건강보험 지역가입자 절약", "건강보험 환급금",
-        # 주거
-        "월세 세액공제", "주거급여 신청", "이사비용 줄이기",
+        "건강보험 지역가입자 절약",
+        # 주거 절약
+        "월세 세액공제", "이사비용 줄이기",
         # 구독서비스
         "OTT 구독 절약", "구독서비스 해지 방법",
         "넷플릭스 요금제", "유튜브 프리미엄 절약",
-        # 기타 고정비
-        "에너지바우처 신청", "긴급복지지원 신청",
-        "국민연금 납부유예", "실업급여 조건",
         # 명의변경/이사
         "전기요금 명의변경", "도시가스 명의변경",
         "인터넷 해지 위약금", "통신 번호이동 절약",
     ],
     "baremi542": [
+        # 장려금/지원금
+        "근로장려금", "근로장려금 신청", "근로장려금 조건", "근로장려금 지급일",
+        "자녀장려금", "자녀장려금 신청", "장려금 신청방법",
+        # 청년 지원
         "청년지원", "청년지원금 종류", "청년 월세지원", "청년 전세자금",
+        "청년도약계좌", "청년희망적금",
+        # 실업급여
         "실업급여", "실업급여 조건", "실업급여 신청방법", "실업급여 계산",
+        # 육아휴직
         "육아휴직", "육아휴직 급여", "육아휴직 기간", "육아휴직 신청",
-        "복지신청", "복지로 신청", "긴급복지 지원",
+        # 복지 신청
+        "복지신청", "복지로 신청", "긴급복지 지원", "긴급복지지원 신청",
+        # 정부지원
         "정부지원", "정부지원 대출", "정부지원금 신청", "소상공인 지원금",
+        # 세금 환급/신고
+        "종합소득세 환급", "종합소득세 신고방법",
+        # 복지 수당
+        "에너지바우처 신청", "주거급여 신청", "건강보험 환급금",
+        "국민연금 납부유예",
     ],
 }
 
@@ -191,11 +202,22 @@ def _update_page_status(page_id: str, status: str):
 # ─────────────────────────────────────────────
 BANNED_WORDS = {
     "salim1su": [
+        # 금융/투자 (baremi542도 아님, 완전 금지)
         "카드", "신용카드", "체크카드", "실비", "실비보험", "종신보험", "암보험",
         "대출", "주택담보대출", "신용대출", "전세자금대출", "대출이자",
         "투자", "주식", "펀드", "ETF", "코인", "증권",
         "부동산", "아파트매매", "청약",
         "저축", "적금", "예금", "금리", "환율",
+        # 정부지원금/장려금 → baremi542로 보내야 함
+        "장려금", "근로장려금", "자녀장려금",
+        "실업급여", "육아휴직급여",
+        "지원금", "정부지원", "복지급여", "복지신청",
+        "주거급여", "에너지바우처",
+        "긴급복지", "긴급지원",
+        "종합소득세 환급", "종합소득세 신고",
+        "국민연금 납부유예",
+        "청년지원", "청년수당", "청년월세",
+        "소상공인 지원",
     ],
 }
 # "보험" 단독은 금지하지 않음 (건강보험은 허용, 실비보험/종신보험/암보험은 금지)
@@ -520,11 +542,22 @@ def fetch_search_volume(keywords: list, on_log=None) -> dict:
     return results
 
 
-def classify_keywords(keywords_with_volume: dict, on_log=None) -> list:
-    """검색량 기준으로 키워드 분류 (300 미만 제외)"""
+def classify_keywords(keywords_with_volume: dict, on_log=None,
+                      min_vol: int = 300, max_vol: int = 100_000) -> list:
+    """검색량 기준으로 키워드 분류.
+
+    Args:
+        keywords_with_volume: {keyword: volume} 딕셔너리
+        min_vol: 최소 검색량 (기본 300 — blog_visitor로 동적 결정 가능)
+        max_vol: 최대 검색량 (기본 무제한)
+    """
     result = []
     for kw, vol in keywords_with_volume.items():
-        if vol < 300:
+        if vol < min_vol:
+            _log(f"[분류] 제외(검색량 부족): {kw} ({vol:,} < {min_vol:,})", on_log)
+            continue
+        if vol > max_vol:
+            _log(f"[분류] 제외(검색량 초과): {kw} ({vol:,} > {max_vol:,})", on_log)
             continue
         ktype = "트렌딩" if vol >= 5000 else "에버그린"
         result.append({"keyword": kw, "volume": vol, "type": ktype})
@@ -704,9 +737,21 @@ def crawl_keywords(blog_id: str = None, on_log=None) -> dict:
         # 3단계: 검색량 확인
         _log(f"\n[3단계] 검색량 확인...", on_log)
         volumes = fetch_search_volume(all_keywords, on_log)
-        qualified = classify_keywords(volumes, on_log)
 
-        _log(f"[수집] {len(qualified)}개 키워드 통과 (300회 이상)", on_log)
+        # 방문자 수 기반 동적 검색량 범위
+        try:
+            vrange = blog_visitor.get_volume_range_for_blog(bid, on_log)
+            min_vol = vrange["min"]
+            max_vol = vrange["max"]
+        except Exception as e:
+            _log(f"[방문자] 범위 조회 실패: {e} — 기본값(300~100000) 사용", on_log)
+            min_vol, max_vol = 300, 100_000
+
+        qualified = classify_keywords(volumes, on_log, min_vol=min_vol, max_vol=max_vol)
+        _log(
+            f"[수집] {len(qualified)}개 키워드 통과 "
+            f"(검색량 {min_vol:,}~{max_vol:,})", on_log
+        )
 
         # 4단계: Notion 저장
         _log(f"\n[4단계] Notion 저장...", on_log)
@@ -724,25 +769,39 @@ _scheduler = None
 
 
 def start_scheduler(on_log=None):
-    """4시간마다 키워드 수집 스케줄러 시작"""
+    """4시간마다 키워드 수집 + 방문자 수 갱신 스케줄러 시작"""
     global _scheduler
     from apscheduler.schedulers.background import BackgroundScheduler
+    from datetime import datetime
 
     if _scheduler and _scheduler.running:
         _log("[스케줄러] 이미 실행 중", on_log)
         return _scheduler
 
     _scheduler = BackgroundScheduler()
+
+    # 키워드 수집 (4시간 간격, 즉시 실행 안 함)
     _scheduler.add_job(
         crawl_keywords,
         "interval",
         hours=4,
         kwargs={"on_log": on_log},
         id="keyword_crawl",
-        next_run_time=None,  # 즉시 실행 안 함
+        next_run_time=None,
     )
+
+    # 방문자 수 갱신 (4시간 간격, 시작 즉시 1회 실행)
+    _scheduler.add_job(
+        blog_visitor.refresh_all,
+        "interval",
+        hours=4,
+        kwargs={"on_log": on_log},
+        id="visitor_refresh",
+        next_run_time=datetime.now(),
+    )
+
     _scheduler.start()
-    _log("[스케줄러] 4시간 간격 키워드 수집 스케줄러 시작", on_log)
+    _log("[스케줄러] 4시간 간격 키워드 수집 + 방문자 수 갱신 스케줄러 시작", on_log)
     return _scheduler
 
 

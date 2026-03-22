@@ -30,6 +30,12 @@ ACCOUNTS = [
         "editor_url": "https://blog.naver.com/salim1su/postwrite",
         "category": "살림",
     },
+    {
+        "blog": "baremi542",
+        "platform": "wordpress",
+        "editor_url": "https://baremi542.com/wp-admin/post-new.php",
+        "category": "정부지원금",
+    },
 ]
 
 # 계정별 빠른 조회용

@@ -1,6 +1,8 @@
-"""오케스트레이터 — 에이전트 팀 순차 실행, 사람 개입 없음"""
+"""오케스트레이터 — 에이전트 팀 순차 실행, 체크포인트 지원"""
 import sys
 import time
+import json
+import textwrap
 import traceback
 import importlib
 from pathlib import Path
@@ -10,9 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 
 import keyword_agent
-import writer_agent
-import review_agent
-import final_review_agent
+import common_review_agent
 import poster_agent
 
 # .env 로드
@@ -28,26 +28,64 @@ if _env_path.exists():
 LOG_DIR = Path(__file__).parent.parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
-# 기본 블로그 순서
-DEFAULT_BLOG_ORDER = ["goodisak", "nolja100", "salim1su"]
+CHECKPOINT_FILE = LOG_DIR / "checkpoint.json"
 
-MAX_WRITER_RETRIES = 3       # review 불합격 시 재생성
-MAX_FINAL_RETRIES = 2        # final_review 불합격 시 재생성
+# 기본 블로그 순서
+DEFAULT_BLOG_ORDER = ["goodisak", "nolja100", "salim1su", "baremi542"]
+
+MAX_WRITER_RETRIES = 3      # 검수 불합격 시 재생성
 
 # 블로그 ID → 전용 에이전트 모듈명 매핑
 BLOG_AGENT_MAP = {
-    "goodisak": "it_agent",
-    "nolja100": "nolja_agent",
-    "salim1su": "naver_agent",
-    "baremi542": "wordpress_agent",
+    "goodisak":  "goodisak_agent",
+    "nolja100":  "nolja100_agent",
+    "salim1su":  "salim1su_agent",
+    "baremi542": "baremi542_agent",
 }
 
 AGENTS_DIR = Path(__file__).parent
 
 
+# ── 체크포인트 ──────────────────────────────────────────────────────────────
+
+def _load_checkpoint() -> dict:
+    """오늘 날짜의 체크포인트 로드. 없거나 날짜 다르면 빈 dict."""
+    try:
+        if CHECKPOINT_FILE.exists():
+            data = json.loads(CHECKPOINT_FILE.read_text(encoding="utf-8"))
+            if data.get("date") == datetime.now().strftime("%Y-%m-%d"):
+                return data
+    except Exception:
+        pass
+    return {}
+
+
+def _save_checkpoint(completed: list, next_blog):
+    """완료된 블로그 목록 + 다음 블로그를 체크포인트에 저장."""
+    data = {
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "completed": completed,
+        "next": next_blog,
+        "updated_at": datetime.now().isoformat(),
+    }
+    CHECKPOINT_FILE.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def _clear_checkpoint():
+    try:
+        if CHECKPOINT_FILE.exists():
+            CHECKPOINT_FILE.unlink()
+    except Exception:
+        pass
+
+
+# ── 신규 블로그 감지 + 템플릿 자동 생성 ───────────────────────────────────
+
 def _detect_new_blogs():
-    """config.py의 ACCOUNTS와 agents/ 폴더의 *_agent.py 파일을 비교해
-    전용 에이전트가 없는 블로그를 감지하고 경고 로그를 출력한다."""
+    """config.py의 ACCOUNTS와 agents/ 폴더를 비교해
+    전용 에이전트가 없는 블로그를 감지하고 템플릿을 자동 생성한다."""
     try:
         import config
         accounts = config.ACCOUNTS
@@ -55,47 +93,150 @@ def _detect_new_blogs():
         print(f"[오케스트레이터] config 로드 실패: {e}", flush=True)
         return
 
-    # agents/ 폴더에 존재하는 *_agent.py 파일 수집 (orchestrator 제외)
-    existing_agents = {
-        p.stem
-        for p in AGENTS_DIR.glob("*_agent.py")
-    }
-
+    existing_agents = {p.stem for p in AGENTS_DIR.glob("*_agent.py")}
     ts = datetime.now().strftime("%H:%M:%S")
-    print(f"[{ts}] [자기확장 감지] 등록된 에이전트: {sorted(existing_agents)}", flush=True)
 
     for account in accounts:
         blog_id = account["blog"]
         category = account.get("category", "미분류")
-        mapped_agent = BLOG_AGENT_MAP.get(blog_id)
+        mapped = BLOG_AGENT_MAP.get(blog_id)
 
-        if mapped_agent is None:
-            # BLOG_AGENT_MAP에 매핑 자체가 없는 경우
-            print(
-                f"[{ts}] [자기확장 감지] ⚠ '{blog_id}'({category}) — "
-                f"BLOG_AGENT_MAP에 매핑이 없습니다. 추가가 필요합니다.",
-                flush=True,
-            )
-        elif mapped_agent not in existing_agents:
-            # 매핑은 있지만 파일이 없는 경우
-            print(
-                f"[{ts}] [자기확장 감지] ⚠ '{blog_id}'({category}) → "
-                f"agents/{mapped_agent}.py 없음. 전용 에이전트 생성이 필요합니다.",
-                flush=True,
-            )
+        if mapped is None:
+            # BLOG_AGENT_MAP에 매핑 없음 — 자동으로 추가
+            new_name = f"{blog_id}_agent"
+            BLOG_AGENT_MAP[blog_id] = new_name
+            mapped = new_name
+            print(f"[{ts}] [자기확장] '{blog_id}' 매핑 자동 추가 → {new_name}", flush=True)
+
+        if mapped not in existing_agents:
+            _generate_agent_template(blog_id, mapped, category)
+            print(f"[{ts}] [자기확장] ✔ '{blog_id}' 템플릿 자동 생성: {mapped}.py", flush=True)
         else:
-            print(
-                f"[{ts}] [자기확장 감지] ✔ '{blog_id}'({category}) → "
-                f"{mapped_agent}.py 확인됨",
-                flush=True,
-            )
+            print(f"[{ts}] [자기확장] ✔ '{blog_id}'({category}) → {mapped}.py 확인됨", flush=True)
 
+
+def _generate_agent_template(blog_id: str, module_name: str, category: str):
+    """신규 블로그용 에이전트 템플릿 파일을 자동 생성한다."""
+    agent_file = AGENTS_DIR / f"{module_name}.py"
+    if agent_file.exists():
+        return  # 이미 존재하면 건드리지 않음
+
+    template = textwrap.dedent(f'''\
+        """auto-generated agent for {blog_id} — {category}"""
+        import re
+        import sys
+        from pathlib import Path
+
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+
+        from claude_playwright import generate_text
+        from gemini_image import generate_images
+        from overnight_run import _truncate_title
+
+        BLOG_ID = "{blog_id}"
+        PERSONA_RULE = "{category} 블로그 전문 정보 전달"
+
+
+        def run(keyword: str, on_log=None, on_status=None):
+            blog_id = BLOG_ID
+
+            def log(msg):
+                if on_log:
+                    on_log(msg)
+
+            if on_status:
+                on_status("writer", "working")
+
+            log(f"[{{blog_id}}] 페르소나: {{PERSONA_RULE}}")
+            log(f"[작성] {{blog_id}} / \'{{keyword}}\' — Claude.ai 글 생성")
+            raw = generate_text("", blog_id=blog_id, keyword=keyword, on_log=log)
+
+            if not raw or "추출 실패" in raw:
+                log("[작성] ⚠ 글 생성 실패")
+                if on_status:
+                    on_status("writer", "failed")
+                return None
+
+            result = _parse_raw(raw, keyword, log)
+            if not result:
+                if on_status:
+                    on_status("writer", "failed")
+                return None
+
+            image_paths = {{}}
+            if result["images"]:
+                log(f"[작성] Gemini 이미지 {{len(result[\'images\'])}}개 생성 시작")
+                image_paths = generate_images(result["images"], on_log=log)
+
+            result["image_paths"] = image_paths
+            result["raw"] = raw
+
+            log(f"[작성] ✓ 완료 — 제목: \\"{{result[\'title\']}}\\"")
+            if on_status:
+                on_status("writer", "done")
+            return result
+
+
+        def _parse_raw(raw, keyword, log):
+            """===섹션=== 형식의 raw 텍스트를 파싱한다."""
+            title_m = re.search(r"===제목===\\s*\\n(.*?)\\n*===제목끝===", raw, re.DOTALL)
+            body_m  = re.search(r"===본문===\\s*\\n(.*?)\\n*===본문끝===", raw, re.DOTALL)
+            tag_m   = re.search(r"===태그===\\s*\\n(.*?)\\n*===태그끝===", raw, re.DOTALL)
+            img_m   = re.search(r"===이미지===\\s*\\n(.*?)\\n*===이미지끝===", raw, re.DOTALL)
+
+            raw_title = title_m.group(1).strip().split("\\n")[0].strip() if title_m else keyword
+            title = _truncate_title(raw_title, max_len=40)
+            body  = body_m.group(1).strip() if body_m else raw
+
+            if tag_m:
+                tags = [t.strip() for t in tag_m.group(1).strip().split(",") if t.strip()]
+            else:
+                tags = [keyword]
+
+            images = []
+            if img_m:
+                for m in re.finditer(
+                    r"\\[이미지(\\d+)\\]\\s*\\n- Gemini프롬프트:\\s*(.+)\\n- 파일명:\\s*(.+)\\n- alt:\\s*(.+)",
+                    img_m.group(1),
+                ):
+                    images.append({{
+                        "index": int(m.group(1)),
+                        "prompt": m.group(2).strip(),
+                        "filename": m.group(3).strip(),
+                        "alt": m.group(4).strip(),
+                    }})
+
+            if images:
+                defined = {{img["index"] for img in images}}
+                body = re.sub(
+                    r\'\\{{\\{{이미지(\\d+)\\}}\\}}\',
+                    lambda m: "" if int(m.group(1)) not in defined else m.group(0),
+                    body,
+                )
+            else:
+                body = re.sub(r\'\\{{\\{{이미지\\d+\\}}\\}}\\n?\', "", body)
+
+            plain = re.sub(r"##.*|{{{{.*?}}}}|\\[애드센스\\]|\\|.*", "", body)
+            char_count = len(re.sub(r"\\s+", "", plain))
+
+            log(f"[파싱] 제목: \\"{{title}}\\" ({{len(title)}}자)")
+            log(f"[파싱] 본문: {{char_count}}자 / 태그: {{len(tags)}}개 / 이미지: {{len(images)}}개")
+
+            if char_count < 100:
+                log("[파싱] ⚠ 본문 너무 짧음")
+                return None
+
+            return {{"title": title, "body": body, "tags": tags, "images": images}}
+    ''')
+
+    agent_file.write_text(template, encoding="utf-8")
+
+
+# ── 단일 실행 ───────────────────────────────────────────────────────────────
 
 def run_single(blog_id: str, keyword: str = None, page_id: str = None,
                on_log=None, on_status=None):
     """한 블로그에 대해 전체 파이프라인 실행.
-
-    keyword/page_id가 None이면 keyword_agent가 자동 선택.
 
     Returns:
         dict: {"success": bool, "title": str, "blog_id": str, "reason": str}
@@ -114,23 +255,23 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
     log(f"[오케스트레이터] {blog_id} 파이프라인 시작")
     log(f"{'='*50}")
 
-    # ── 전용 writer 에이전트 동적 로드 (없으면 기본 writer_agent 폴백) ──
+    # ── 전용 writer 에이전트 동적 로드 ──
     agent_module_name = BLOG_AGENT_MAP.get(blog_id)
-    active_writer = writer_agent  # 기본값
-    is_dedicated_agent = False    # 전용 에이전트 여부
+    active_writer = None
     if agent_module_name:
         agent_file = AGENTS_DIR / f"{agent_module_name}.py"
         if agent_file.exists():
             try:
                 active_writer = importlib.import_module(agent_module_name)
-                is_dedicated_agent = True
                 log(f"[오케스트레이터] 전용 에이전트 로드: {agent_module_name}")
             except Exception as e:
-                log(f"[오케스트레이터] 전용 에이전트 로드 실패 ({agent_module_name}): {e} — writer_agent 폴백")
+                log(f"[오케스트레이터] 전용 에이전트 로드 실패 ({agent_module_name}): {e}")
         else:
-            log(f"[오케스트레이터] {agent_module_name}.py 없음 — writer_agent 폴백")
-    else:
-        log(f"[오케스트레이터] BLOG_AGENT_MAP 미등록 블로그 '{blog_id}' — writer_agent 폴백")
+            log(f"[오케스트레이터] {agent_module_name}.py 없음")
+
+    if active_writer is None:
+        log(f"[오케스트레이터] '{blog_id}' 전용 에이전트 없음 — 건너뜀")
+        return _fail(blog_id, keyword or "없음", "전용 에이전트 없음", logs)
 
     try:
         # ── 1. 키워드 선택 ──
@@ -146,71 +287,55 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
         keyword = kw_result["keyword"]
         page_id = kw_result["page_id"]
 
-        # ── 2~3. 글 생성 + 자동 검수 (최대 3회) ──
+        # ── 2~3. 글 생성 + 통합 검수 (최대 MAX_WRITER_RETRIES회) ──
         result = None
         for attempt in range(1, MAX_WRITER_RETRIES + 1):
             if attempt > 1:
                 log(f"[오케스트레이터] === 재생성 {attempt}/{MAX_WRITER_RETRIES} ===")
 
-            # 2. 글 생성
-            if is_dedicated_agent:
-                result = active_writer.run(keyword, on_log=log, on_status=on_status)
-            else:
-                result = active_writer.run(blog_id, keyword, on_log=log, on_status=on_status)
+            result = active_writer.run(keyword, on_log=log, on_status=on_status)
             if not result:
                 continue
 
-            # 3. 자동 검수
-            review = review_agent.run(
+            review = common_review_agent.run(
                 result, keyword, blog_id, on_log=log, on_status=on_status
             )
             if review["passed"]:
                 result = review["result"]
                 break
 
-            # 불합격 — 재생성
-            log(f"[오케스트레이터] 자동 검수 불합격 — 재생성 시도")
+            log(f"[오케스트레이터] 검수 불합격 — 재생성")
             result = None
 
         if not result:
             from overnight_run import update_keyword_status
             update_keyword_status(page_id, "실패", memo="검수 불합격")
-            return _fail(blog_id, keyword, "자동 검수 불합격 (3회)", logs)
+            return _fail(blog_id, keyword, f"검수 불합격 ({MAX_WRITER_RETRIES}회)", logs)
 
-        # ── 4. 최종 검토 (최대 2회) ──
-        for attempt in range(1, MAX_FINAL_RETRIES + 1):
-            if attempt > 1:
-                log(f"[오케스트레이터] === 최종검토 재시도 {attempt}/{MAX_FINAL_RETRIES} ===")
-                # 재생성
-                if is_dedicated_agent:
-                    result = active_writer.run(keyword, on_log=log, on_status=on_status)
-                else:
-                    result = active_writer.run(blog_id, keyword, on_log=log, on_status=on_status)
-                if not result:
-                    break
-
-            final = final_review_agent.run(
-                result, keyword, blog_id, on_log=log, on_status=on_status
-            )
-            if final["passed"]:
-                result = final["result"]
-                break
-
-            log(f"[오케스트레이터] 최종 검토 불합격: {final['reason'][:100]}")
-            result = None
-
-        if not result:
-            from overnight_run import update_keyword_status
-            update_keyword_status(page_id, "실패", memo="최종검토 불합격")
-            return _fail(blog_id, keyword, "최종 검토 불합격", logs)
-
-        # ── 5. 포스팅 ──
+        # ── 4. 포스팅 ──
         post_result = poster_agent.run(
             result, blog_id, keyword, page_id,
             on_log=log, on_status=on_status
         )
 
         if post_result["posted"]:
+            # ── 5. 포스팅 후 검수 ──
+            try:
+                post_review = common_review_agent.run_post(
+                    blog_id,
+                    post_result["title"],
+                    on_log=log,
+                    on_status=on_status,
+                )
+                if not post_review["passed"]:
+                    log(f"[오케스트레이터] 포스팅후검수 이슈 {len(post_review['issues'])}건 "
+                        f"(fixed={post_review['fixed']}): "
+                        f"{post_review['issues'][:2]}")
+                else:
+                    log("[오케스트레이터] ✓ 포스팅후검수 통과")
+            except Exception as _pr_err:
+                log(f"[오케스트레이터] 포스팅후검수 오류 (무시): {_pr_err}")
+
             return _success(blog_id, post_result["title"], logs)
         else:
             return _fail(blog_id, keyword, "포스팅 실패", logs)
@@ -227,25 +352,43 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
         return _fail(blog_id, keyword or "알수없음", f"오류: {e}", logs)
 
 
+# ── 전체 실행 (체크포인트 지원) ────────────────────────────────────────────
+
 def run_all(blog_ids=None, on_log=None, on_status=None):
-    """여러 블로그 순차 실행.
+    """여러 블로그 순차 실행. 체크포인트에서 재개 가능.
 
     Returns:
         list[dict]: 각 블로그 결과
     """
-    # 새 블로그/전용 에이전트 누락 여부 자동 감지
     _detect_new_blogs()
 
     if blog_ids is None:
         blog_ids = DEFAULT_BLOG_ORDER
 
+    # 체크포인트 로드
+    cp = _load_checkpoint()
+    completed_ids = set(cp.get("completed", []))
+    if completed_ids:
+        skipped = [b for b in blog_ids if b in completed_ids]
+        if skipped and on_log:
+            on_log(f"[오케스트레이터] 체크포인트 재개 — 완료된 블로그 건너뜀: {skipped}")
+
     results = []
-    for blog_id in blog_ids:
+    remaining = [b for b in blog_ids if b not in completed_ids]
+
+    for i, blog_id in enumerate(remaining):
+        next_blog = remaining[i + 1] if i + 1 < len(remaining) else None
         result = run_single(blog_id, on_log=on_log, on_status=on_status)
         results.append(result)
+
+        # 체크포인트 저장
+        completed_ids.add(blog_id)
+        _save_checkpoint(list(completed_ids), next_blog)
+
         time.sleep(5)  # 블로그 간 쿨다운
 
-    # 결과 저장
+    # 모든 블로그 완료 → 체크포인트 삭제
+    _clear_checkpoint()
     _save_results(results)
     return results
 
@@ -275,15 +418,11 @@ def _fail(blog_id, keyword, reason, logs):
 
 
 def _save_results(results):
-    """결과를 logs/result.txt에 저장"""
     result_file = LOG_DIR / "result.txt"
-
     lines = []
-    # 기존 내용 읽기
     if result_file.exists():
         lines = result_file.read_text(encoding="utf-8").splitlines()
 
-    # 구분선 + 날짜
     lines.append("")
     lines.append(f"{'='*50}")
     lines.append(f"실행 시각: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -307,19 +446,16 @@ if __name__ == "__main__":
     parser.add_argument("--all", action="store_true", help="전체 블로그 순환")
     args = parser.parse_args()
 
-    if args.all:
+    if args.all or not args.blog:
         results = run_all()
-    elif args.blog:
-        result = run_single(args.blog, keyword=args.keyword)
     else:
-        results = run_all()
+        result = run_single(args.blog, keyword=args.keyword)
 
     print("\n" + "="*50)
     print("[최종 결과]")
     print("="*50)
     result_file = LOG_DIR / "result.txt"
     if result_file.exists():
-        # 마지막 실행 결과만 출력
         content = result_file.read_text(encoding="utf-8")
         last_run = content.split("="*50)[-1] if "="*50 in content else content
         print(last_run)

@@ -8,3 +8,6 @@ debug_*.png
 images/
 logs/
 .DS_Store
+build/
+dist/
+.claude/worktrees/

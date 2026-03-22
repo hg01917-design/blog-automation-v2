@@ -6,9 +6,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+try:
+    from agents import fact_check as _fact_check
+except ImportError:
+    import fact_check as _fact_check
+
 FORBIDDEN_PATTERNS = [
     "완벽정리", "총정리", "완벽가이드", "완벽 정리", "총 정리",
 ]
+
+# 네이버 제한어 (salim1su 전용 — 저품질 판정 원인)
+NAVER_RESTRICTED = {
+    "의료": ["유발", "진단", "처방", "치료", "완치", "증상", "임상", "효과 있음"],
+    "법률/금융": ["상담", "보장", "환급 확정", "수익 보장"],
+    "과장": ["무조건", "반드시", "100%", "즉시 효과", "유일한"],
+}
 
 # AI가 쓴 티 나는 표현 패턴 (본문 전체 대상)
 AI_PATTERNS = [
@@ -117,6 +129,14 @@ def run(result: dict, keyword: str, blog_id: str,
             issues.append(f"AI 패턴 감지: '{pattern}' 사용됨")
             log(f"[검수] AI 패턴 감지: '{pattern}'")
 
+    # 6-3. 네이버 제한어 체크 (salim1su 전용)
+    if blog_id == "salim1su":
+        for category, words in NAVER_RESTRICTED.items():
+            for word in words:
+                if word in body:
+                    issues.append(f"네이버 제한어({category}): '{word}' 사용됨")
+                    log(f"[검수] 네이버 제한어 감지 [{category}]: '{word}'")
+
     # 7. {{이미지N}} 마커가 본문에 남아있지 않음 확인은
     #    poster에서 처리하므로 여기서는 이미지 없이 마커만 있는 경우 체크
     remaining_markers = re.findall(r'\{\{이미지(\d+)\}\}', body)
@@ -132,6 +152,24 @@ def run(result: dict, keyword: str, blog_id: str,
 
     if passed:
         log("[검수] ✓ 자동 검수 통과")
+
+        # ── 팩트체크 (가격/스펙 검증 및 자동 수정) ──
+        try:
+            fc = _fact_check.run(body, keyword, on_log=on_log)
+            if fc["corrections"]:
+                log(f"[팩트체크] {len(fc['corrections'])}건 수정됨:")
+                for c in fc["corrections"]:
+                    log(
+                        f"  - '{c['old_text']}' → '{c['new_text']}' "
+                        f"(명시 {c['stated']:,.0f}원 / 실제 {c['actual']:,.0f}원 / "
+                        f"오차 {c['ratio']:.0%})"
+                    )
+                result["body"] = fc["body"]
+            elif fc["checked"]:
+                log("[팩트체크] ✓ 수정 없음")
+        except Exception as _fc_err:
+            log(f"[팩트체크] 오류로 건너뜀: {_fc_err}")
+
     else:
         log(f"[검수] ⚠ 불합격 ({len(issues)}건)")
         for issue in issues:

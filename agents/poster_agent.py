@@ -61,7 +61,76 @@ def run(result: dict, blog_id: str, keyword: str, page_id: str,
         "posted": ok,
         "blog_id": blog_id,
         "title": title,
+        "post_url": _find_latest_post_url(blog_id) if ok else "",
     }
+
+
+def _find_latest_post_url(blog_id: str) -> str:
+    """블로그 홈에서 가장 최근 게시물 URL을 반환한다. 실패 시 "" 반환."""
+    home_urls = {
+        "goodisak":  "https://goodisak.tistory.com",
+        "nolja100":  "https://nolja100.tistory.com",
+        "salim1su":  "https://blog.naver.com/salim1su",
+        "baremi542": "https://baremi542.com",
+    }
+    home = home_urls.get(blog_id, "")
+    if not home:
+        return ""
+
+    try:
+        import re
+        from browser import connect_cdp
+
+        playwright, browser, context = connect_cdp()
+        try:
+            page = context.new_page()
+            page.goto(home, timeout=30000)
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
+
+            if blog_id in ("goodisak", "nolja100"):
+                # tistory: first <a> href ending with /\d+
+                links = page.eval_on_selector_all(
+                    "a[href]",
+                    "els => els.map(e => e.getAttribute('href'))",
+                )
+                for href in links:
+                    if href and re.search(r"/\d+$", href):
+                        url = href if href.startswith("http") else home + href
+                        return url
+
+            elif blog_id == "salim1su":
+                # naver: first <a> href containing blog.naver.com/salim1su/\d+
+                links = page.eval_on_selector_all(
+                    "a[href]",
+                    "els => els.map(e => e.getAttribute('href'))",
+                )
+                for href in links:
+                    if href and re.search(r"blog\.naver\.com/salim1su/\d+", href):
+                        return href if href.startswith("http") else "https:" + href
+
+            elif blog_id == "baremi542":
+                # wordpress: first <a> inside h1, h2, or .entry-title
+                href = page.eval_on_selector(
+                    "h1 a, h2 a, .entry-title a",
+                    "el => el.getAttribute('href')",
+                )
+                if href:
+                    return href
+
+        finally:
+            try:
+                page.close()
+            except Exception:
+                pass
+            try:
+                playwright.stop()
+            except Exception:
+                pass
+
+    except Exception:
+        pass
+
+    return ""
 
 
 def _update_publish_date(page_id):
