@@ -1,4 +1,4 @@
-"""salim1su 전용 에이전트 — naver_agent 기반 + 세부 키워드 확장"""
+"""salim1su 전용 에이전트 — naver_agent 기반 + 세부 키워드 확장 + 키워드 자체 수집"""
 import re
 import sys
 from pathlib import Path
@@ -11,11 +11,85 @@ except ImportError:
 
 from claude_playwright import generate_text
 from gemini_image import generate_images
-from overnight_run import _truncate_title
+from overnight_run import _truncate_title, fetch_next_keyword, update_keyword_status, check_duplicate_post
+from keyword_crawler import _is_banned
+
+try:
+    import coupang_api
+    _COUPANG_AVAILABLE = True
+except ImportError:
+    _COUPANG_AVAILABLE = False
 
 BLOG_ID = "salim1su"
 PERSONA_RULE = _base.PERSONA_RULE
 _parse_raw = _base._parse_raw
+
+# 쿠팡파트너스 삽입 허용 키워드 (제품 관련)
+_COUPANG_PRODUCT_KEYWORDS = {
+    "생활용품", "주방용품", "청소", "세제", "주방", "세탁",
+    "수납", "정리함", "청소기", "걸레", "수세미", "바구니",
+    "냄비", "프라이팬", "식기", "보관용기", "밀폐용기",
+    "욕실", "화장실", "방향제", "섬유유연제", "세정제",
+    "수건", "이불", "베개", "생필품", "가정용품",
+}
+
+# 쿠팡 삽입 금지 키워드 (정보성)
+_COUPANG_BLOCK_KEYWORDS = {
+    "전기요금", "도시가스", "가스요금", "수도요금", "관리비",
+    "절약", "아끼는", "요금", "지원금", "보조금", "복지",
+    "신청방법", "신청하는", "혜택", "정책", "제도",
+}
+
+
+def _needs_coupang(keyword: str, body: str = "") -> bool:
+    """키워드/본문이 쿠팡 제품 링크가 필요한 내용인지 판단."""
+    kw_lower = keyword.lower()
+    # 금지 키워드 먼저 체크 (정보성 → 삽입 금지)
+    for block in _COUPANG_BLOCK_KEYWORDS:
+        if block in kw_lower or block in keyword:
+            return False
+    # 허용 키워드 체크 (제품 관련 → 삽입 허용)
+    for allow in _COUPANG_PRODUCT_KEYWORDS:
+        if allow in kw_lower or allow in keyword:
+            return True
+    # 본문에서 제품 관련 단어 등장 빈도 확인 (3회 이상이면 제품성 글로 판단)
+    if body:
+        count = sum(body.count(w) for w in _COUPANG_PRODUCT_KEYWORDS)
+        if count >= 3:
+            return True
+    return False
+
+
+def _collect_keyword(on_log=None):
+    """Notion 키워드 큐에서 salim1su 대기 키워드를 직접 수집한다.
+
+    - 금칙어(banned) 또는 중복 발행 키워드는 건너뜀
+    - 유효 키워드 발견 시 상태를 '진행중'으로 업데이트하고 (keyword, page_id) 반환
+    - 없으면 (None, None) 반환
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    keyword, page_id = fetch_next_keyword(BLOG_ID)
+    if not keyword:
+        log("[키워드수집] 대기 키워드 없음")
+        return None, None
+
+    if _is_banned(keyword, BLOG_ID):
+        log(f"[키워드수집] '{keyword}' — 금칙어, 건너뜀")
+        update_keyword_status(page_id, "실패", memo="금칙어")
+        return None, None
+
+    is_dup, matched = check_duplicate_post(BLOG_ID, keyword, on_log=log)
+    if is_dup:
+        log(f"[키워드수집] '{keyword}' — 중복 발행 ('{matched}'), 건너뜀")
+        update_keyword_status(page_id, "실패", memo=f"중복: {matched}")
+        return None, None
+
+    update_keyword_status(page_id, "진행중")
+    log(f"[키워드수집] '{keyword}' 수집 완료 → 진행중")
+    return keyword, page_id
 
 
 def _expand_keyword(keyword: str, on_log=None) -> str:
@@ -61,10 +135,11 @@ def _expand_keyword(keyword: str, on_log=None) -> str:
         return keyword
 
 
-def run(keyword: str, on_log=None, on_status=None):
+def run(keyword: str = None, on_log=None, on_status=None, _page_id=None):
     """글 + 이미지 생성 후 파싱된 결과를 반환한다.
 
     blog_id는 "salim1su"으로 고정됩니다.
+    keyword=None 이면 _collect_keyword()로 직접 수집 (자체 완결 모드).
     단어 1개(띄어쓰기 없음)인 키워드는 claude.ai로 롱테일 확장 후 글 생성.
 
     Returns:
@@ -85,6 +160,14 @@ def run(keyword: str, on_log=None, on_status=None):
 
     if on_status:
         on_status("writer", "working")
+
+    # keyword가 없으면 Notion 큐에서 직접 수집
+    if keyword is None:
+        keyword, _page_id = _collect_keyword(on_log=log)
+        if not keyword:
+            if on_status:
+                on_status("writer", "failed")
+            return None
 
     log(f"[{blog_id}] 페르소나 규칙 적용: {PERSONA_RULE}")
 
@@ -117,6 +200,20 @@ def run(keyword: str, on_log=None, on_status=None):
 
     result["image_paths"] = image_paths
     result["raw"] = raw
+
+    # 쿠팡파트너스 블록 조건부 삽입
+    if _COUPANG_AVAILABLE and _needs_coupang(actual_keyword, result["body"]):
+        try:
+            affiliate_block = coupang_api.get_affiliate_block(actual_keyword, BLOG_ID)
+            if affiliate_block:
+                result["body"] = result["body"] + affiliate_block
+                log("[작성] 쿠팡파트너스 블록 삽입 완료")
+            else:
+                log("[작성] 쿠팡파트너스 블록 없음 (API 키 미설정 또는 결과 없음)")
+        except Exception as e:
+            log(f"[작성] 쿠팡파트너스 블록 삽입 오류 (스킵): {e}")
+    else:
+        log(f"[작성] 쿠팡파트너스 삽입 건너뜀 — 정보성 키워드 또는 모듈 없음")
 
     log(f"[작성] 완료 — 제목: \"{result['title']}\" / 본문: {len(result['body'])}자 / 태그: {len(result['tags'])}개")
     if on_status:

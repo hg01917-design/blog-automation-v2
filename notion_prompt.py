@@ -127,6 +127,22 @@ def fetch_prompt(blog_id: str, keyword: str, on_log=None) -> str:
                 principle_lines.append(f"```{lang}\n{text}\n```")
             elif btype == "paragraph":
                 principle_lines.append(text)
+            if block.get("has_children"):
+                child_resp = requests.get(
+                    f"{NOTION_API}/blocks/{block['id']}/children",
+                    headers=_headers(),
+                )
+                if child_resp.ok:
+                    for cb in child_resp.json().get("results", []):
+                        cbtype = cb.get("type", "")
+                        cdata = cb.get(cbtype, {})
+                        ctext = "".join(rt.get("plain_text", "") for rt in cdata.get("rich_text", []))
+                        if cbtype == "bulleted_list_item":
+                            principle_lines.append(f"  - {ctext}")
+                        elif cbtype == "numbered_list_item":
+                            principle_lines.append(f"  1. {ctext}")
+                        elif cbtype == "paragraph" and ctext:
+                            principle_lines.append(f"  {ctext}")
 
         if capture_prompt:
             if btype == "heading_2":
@@ -144,6 +160,22 @@ def fetch_prompt(blog_id: str, keyword: str, on_log=None) -> str:
                 prompt_lines.append(f"```{lang}\n{text}\n```")
             elif btype == "paragraph":
                 prompt_lines.append(text)
+            if block.get("has_children"):
+                child_resp = requests.get(
+                    f"{NOTION_API}/blocks/{block['id']}/children",
+                    headers=_headers(),
+                )
+                if child_resp.ok:
+                    for cb in child_resp.json().get("results", []):
+                        cbtype = cb.get("type", "")
+                        cdata = cb.get(cbtype, {})
+                        ctext = "".join(rt.get("plain_text", "") for rt in cdata.get("rich_text", []))
+                        if cbtype == "bulleted_list_item":
+                            prompt_lines.append(f"  - {ctext}")
+                        elif cbtype == "numbered_list_item":
+                            prompt_lines.append(f"  1. {ctext}")
+                        elif cbtype == "paragraph" and ctext:
+                            prompt_lines.append(f"  {ctext}")
 
     principle_text = "\n".join(principle_lines).strip()
     prompt_text = "\n".join(prompt_lines).strip()

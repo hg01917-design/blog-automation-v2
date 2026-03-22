@@ -43,8 +43,9 @@ KEYWORD_DB_ID = "d6bb5b753f1b4963891de02427411276"
 
 
 def _notion_headers():
+    token = os.environ.get("NOTION_TOKEN") or NOTION_TOKEN
     return {
-        "Authorization": f"Bearer {NOTION_TOKEN}",
+        "Authorization": f"Bearer {token}",
         "Notion-Version": "2022-06-28",
         "Content-Type": "application/json",
     }
