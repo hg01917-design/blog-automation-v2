@@ -191,8 +191,24 @@ def run(keyword: str = None, on_log=None, on_status=None, _page_id=None):
             on_status("writer", "failed")
         return None
 
-    # Gemini 이미지 생성
+    # Gemini 이미지 생성 — H2 소제목 개수 + 썸네일 1개 기준으로 이미지 수 보정
     image_paths = {}
+
+    # H2 소제목(## 로 시작하는 줄) 개수 계산
+    h2_count = sum(1 for line in result["body"].splitlines() if line.startswith("## "))
+    required_count = h2_count + 1  # H2 개수 + 썸네일 1개
+    log(f"[작성] H2 소제목 {h2_count}개 감지 → 이미지 {required_count}개 필요")
+
+    # 파싱된 이미지 목록이 부족하면 기본 항목 추가
+    if len(result["images"]) < required_count:
+        shortage = required_count - len(result["images"])
+        log(f"[작성] 이미지 프롬프트 부족 ({len(result['images'])}개) → {shortage}개 기본 항목 추가")
+        for i in range(shortage):
+            result["images"].append({
+                "prompt": f"{actual_keyword} 관련 생활 절약 정보 이미지 {len(result['images']) + 1}",
+                "filename": f"img_{len(result['images']) + 1:02d}.jpg",
+            })
+
     if result["images"]:
         log(f"[작성] Gemini 이미지 {len(result['images'])}개 생성 시작")
         image_paths = generate_images(result["images"], on_log=log)
