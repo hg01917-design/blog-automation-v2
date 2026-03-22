@@ -13,7 +13,11 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import ACCOUNTS, ACCOUNT_MAP
 
-ASSETS_DIR = Path(__file__).parent / "assets"
+try:
+    _base = Path(sys._MEIPASS)
+except AttributeError:
+    _base = Path(__file__).parent
+ASSETS_DIR = _base / "assets"
 
 AGENT_ORDER = ["goodisak", "nolja100", "salim1su", "baremi542", "common_review"]
 AGENT_LABELS = {
@@ -38,6 +42,112 @@ BLOG_CATEGORIES = {
     "salim1su":  "살림",
     "baremi542": "정부지원금",
 }
+
+
+# ─── 픽셀 아트 캐릭터 위젯 (GIF 없을 때 폴백) ────────────────────────────
+
+class PixelCharLabel(QWidget):
+    """8×13 픽셀 캐릭터 — QPainter로 그림. GIF 파일 없을 때 폴백."""
+
+    PIX = 4  # 1 게임픽셀 = 화면 4×4 px
+
+    AGENT_CLOTH = {
+        "goodisak":      "#4da6ff",
+        "nolja100":      "#ff9966",
+        "salim1su":      "#55dd77",
+        "baremi542":     "#cc88ff",
+        "common_review": "#ffdd44",
+    }
+    STATE_CLOTH = {
+        "done":   "#22dd55",
+        "failed": "#ff5555",
+    }
+
+    # 각 행: 8 픽셀 (S=피부, H=머리카락, E=눈, C=옷, .=투명)
+    WALK_F = [
+        [   # frame 0 — 왼발 앞
+            "..HHHH..",
+            ".HSSSSH.",
+            ".HSEESH.",
+            ".HSSSSH.",
+            "..SSSS..",
+            ".CCCCCC.",
+            "CCCCCCCC",
+            ".CCCCCC.",
+            "..CCCC..",
+            ".CC..CC.",
+            ".CC..CC.",
+            "CC....CC",
+            "C......C",
+        ],
+        [   # frame 1 — 오른발 앞
+            "..HHHH..",
+            ".HSSSSH.",
+            ".HSEESH.",
+            ".HSSSSH.",
+            "..SSSS..",
+            ".CCCCCC.",
+            "CCCCCCCC",
+            ".CCCCCC.",
+            "..CCCC..",
+            "..CCCC..",
+            ".CC..CC.",
+            "CC....CC",
+            ".C....C.",
+        ],
+    ]
+
+    def __init__(self, agent_id, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(64, 64)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self._agent = agent_id
+        self._frame = 0
+        self._state = "idle"
+        self._walk_timer = QTimer(self)
+        self._walk_timer.setInterval(500)
+        self._walk_timer.timeout.connect(self._next_frame)
+        self._walk_timer.start()
+
+    def set_state(self, state: str):
+        self._state = state
+        self.update()
+
+    def start_walk(self):
+        self._walk_timer.setInterval(130)
+
+    def stop_walk(self):
+        self._walk_timer.setInterval(500)
+        self._frame = 0
+        self.update()
+
+    def _next_frame(self):
+        self._frame = (self._frame + 1) % len(self.WALK_F)
+        self.update()
+
+    def paintEvent(self, event):
+        frame = self.WALK_F[self._frame]
+        cloth_hex = self.STATE_CLOTH.get(self._state) or \
+                    self.AGENT_CLOTH.get(self._agent, "#aaaaaa")
+        cloth = QColor(cloth_hex)
+        skin  = QColor("#f5cba7")
+        hair  = QColor("#5d4037")
+        eye   = QColor("#111111")
+
+        ox = (64 - 8 * self.PIX) // 2   # x 오프셋 — 가운데 정렬
+        oy = (64 - 13 * self.PIX) // 2  # y 오프셋
+
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, False)
+        for r, row in enumerate(frame):
+            for ci, px in enumerate(row):
+                if px == '.':
+                    continue
+                x = ox + ci * self.PIX
+                y = oy + r  * self.PIX
+                col = {"S": skin, "H": hair, "E": eye}.get(px, cloth)
+                p.fillRect(x, y, self.PIX, self.PIX, col)
+        p.end()
 
 
 # ─── 씬 내부 캐릭터 위젯 ──────────────────────────────────────────────────
@@ -73,6 +183,15 @@ class SceneChar(QWidget):
         self.gif_label.setStyleSheet("background: transparent; border: none;")
         lay.addWidget(self.gif_label, alignment=Qt.AlignCenter)
 
+        self.pixel_char = PixelCharLabel(agent_id)
+        lay.addWidget(self.pixel_char, alignment=Qt.AlignCenter)
+
+        # GIF 유효 여부에 따라 초기 표시 결정
+        if self.movies:
+            self.pixel_char.hide()
+        else:
+            self.gif_label.hide()
+
         self.name_label = QLabel(AGENT_LABELS.get(agent_id, agent_id))
         self.name_label.setAlignment(Qt.AlignCenter)
         self.name_label.setStyleSheet(
@@ -91,6 +210,12 @@ class SceneChar(QWidget):
     def set_state(self, state):
         self.state = state
         self._apply_state(state)
+
+    def set_walking(self, walking: bool):
+        if walking:
+            self.pixel_char.start_walk()
+        else:
+            self.pixel_char.stop_walk()
 
     def _apply_state(self, state):
         for m in self.movies.values():
@@ -116,14 +241,15 @@ class SceneChar(QWidget):
             "background:transparent; border:none;")
 
         m = self.movies.get(state)
-        if m:
+        if m and m.isValid():
+            self.gif_label.show()
+            self.pixel_char.hide()
             self.gif_label.setMovie(m)
             m.start()
         else:
-            self.gif_label.setText("●")
-            self.gif_label.setStyleSheet(
-                f"color:{col.get(state,'#888')}; font-size:28px;"
-                "background:transparent; border:none;")
+            self.gif_label.hide()
+            self.pixel_char.show()
+            self.pixel_char.set_state(state)
 
 
 # ─── 거실 + 작업실 씬 위젯 ───────────────────────────────────────────────
@@ -194,6 +320,7 @@ class SceneWidget(QFrame):
 
         # y는 즉시 이동, x만 프레임별 이동
         c.move(start_x, ty)
+        c.set_walking(True)
 
         timer = QTimer(c)
         timer.setInterval(INTERVAL_MS)
@@ -202,6 +329,7 @@ class SceneWidget(QFrame):
             step[0] += 1
             if step[0] >= STEPS:
                 c.move(tx, ty)
+                c.set_walking(False)
                 timer.stop()
                 return
             new_x = int(start_x + dx * step[0] / STEPS)

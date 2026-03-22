@@ -1,4 +1,4 @@
-"""팩트체크 모듈 — 가격/스펙 주장을 네이버쇼핑/쿠팡으로 검증 후 자동 수정"""
+"""팩트체크 모듈 — 가격/스펙 주장을 블로그별 지정 사이트로 검증 후 자동 수정"""
 import re
 import sys
 import urllib.parse
@@ -69,14 +69,122 @@ def extract_spec_claims(body: str) -> list:
     return claims
 
 
-# ── 2. 크롤링 ────────────────────────────────────────────────────────────────
+# ── 2. 블로그별 팩트체크 사이트 매핑 ─────────────────────────────────────────
 
-_NAVER_URL = "https://search.shopping.naver.com/search/all?query={q}"
-_COUPANG_URL = "https://www.coupang.com/np/search?q={q}&channel=auto"
+def get_fact_check_sites(blog_name: str) -> list:
+    """blog_name 에 따라 크롤링 대상 사이트 목록 반환.
 
-_NAVER_SELECTORS = ["strong.price_num", ".price_num", "[class*='price'] strong"]
-_COUPANG_SELECTORS = [".price-value", ".sale-price"]
+    Returns:
+        [{"url": str, "selectors": list, "label": str}, ...]
+    """
+    blog = (blog_name or "").lower().strip()
 
+    if "goodisak" in blog:
+        # IT/제품: 네이버쇼핑 우선, 쿠팡 폴백
+        return [
+            {
+                "url": "https://search.shopping.naver.com/search/all?query={q}",
+                "selectors": ["strong.price_num", ".price_num", "[class*='price'] strong"],
+                "label": "네이버쇼핑",
+            },
+            {
+                "url": "https://www.coupang.com/np/search?q={q}&channel=auto",
+                "selectors": [".price-value", ".sale-price"],
+                "label": "쿠팡",
+            },
+        ]
+
+    if "nolja100" in blog:
+        # 여행: 네이버호텔 우선, 야놀자 폴백 (관광지 공식 홈페이지는 키워드 기반이라 목록 포함)
+        return [
+            {
+                "url": "https://hotel.naver.com/hotels/search?query={q}",
+                "selectors": [".price", "[class*='price']", ".room-price"],
+                "label": "네이버호텔",
+            },
+            {
+                "url": "https://www.yanolja.com/search?keyword={q}",
+                "selectors": [".price", "[class*='price']", ".sale-price"],
+                "label": "야놀자",
+            },
+        ]
+
+    if "salim1su" in blog:
+        # 살림/고정비: 공공기관·통신사 — 네이버쇼핑 절대 사용 금지
+        return [
+            {
+                "url": "https://www.kepco.co.kr/kepco/search/searchList.do?searchWord={q}",
+                "selectors": [".price", "[class*='price']", ".cost"],
+                "label": "한전",
+            },
+            {
+                "url": "https://www.kogas.or.kr/search/search.do?query={q}",
+                "selectors": [".price", "[class*='price']", ".cost"],
+                "label": "한국가스공사",
+            },
+            {
+                "url": "https://www.sktelecom.com/search/search.do?query={q}",
+                "selectors": [".price", "[class*='price']", ".monthly-fee"],
+                "label": "SKT",
+            },
+            {
+                "url": "https://www.kt.com/search/search.do?query={q}",
+                "selectors": [".price", "[class*='price']", ".monthly-fee"],
+                "label": "KT",
+            },
+            {
+                "url": "https://www.lguplus.com/search?query={q}",
+                "selectors": [".price", "[class*='price']", ".monthly-fee"],
+                "label": "LGU+",
+            },
+            {
+                "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?searchWord={q}",
+                "selectors": [".price", "[class*='amount']", ".benefit"],
+                "label": "복지로",
+            },
+            {
+                "url": "https://www.gov.kr/search?srchWord={q}",
+                "selectors": [".price", "[class*='amount']", ".benefit"],
+                "label": "정부24",
+            },
+        ]
+
+    if "baremi542" in blog:
+        # 정부지원금: 공공기관만 — 네이버쇼핑 절대 사용 금지
+        return [
+            {
+                "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?searchWord={q}",
+                "selectors": [".price", "[class*='amount']", ".benefit"],
+                "label": "복지로",
+            },
+            {
+                "url": "https://www.gov.kr/search?srchWord={q}",
+                "selectors": [".price", "[class*='amount']", ".benefit"],
+                "label": "정부24",
+            },
+            {
+                "url": "https://www.korea.kr/search/search.do?query={q}",
+                "selectors": [".price", "[class*='amount']", ".benefit"],
+                "label": "대한민국정책브리핑",
+            },
+        ]
+
+    # 기본값: 네이버쇼핑 + 쿠팡
+    return [
+        {
+            "url": "https://search.shopping.naver.com/search/all?query={q}",
+            "selectors": ["strong.price_num", ".price_num", "[class*='price'] strong"],
+            "label": "네이버쇼핑",
+        },
+        {
+            "url": "https://www.coupang.com/np/search?q={q}&channel=auto",
+            "selectors": [".price-value", ".sale-price"],
+            "label": "쿠팡",
+        },
+    ]
+
+
+# ── 3. 크롤링 ────────────────────────────────────────────────────────────────
 
 def _clean_price(raw: str):
     cleaned = re.sub(r"[^\d]", "", raw)
@@ -113,30 +221,26 @@ def _scrape_prices(page, url: str, selectors: list, on_log=None) -> list:
     return []
 
 
-def _fetch_actual_prices(browser, query: str, on_log=None) -> list:
-    """네이버쇼핑 우선, 없으면 쿠팡 폴백 — 새 탭 열고 닫음"""
+def _fetch_actual_prices(browser, query: str, blog_name: str = "", on_log=None) -> list:
+    """블로그별 팩트체크 사이트에서 가격 조회 — 첫 번째 결과 반환 후 폴백"""
     def log(msg):
         if on_log:
             on_log(msg)
 
+    sites = get_fact_check_sites(blog_name)
     context = browser.contexts[0] if browser.contexts else browser.new_context()
     page = context.new_page()
     try:
         q = urllib.parse.quote(query)
-        prices = _scrape_prices(
-            page, _NAVER_URL.format(q=q), _NAVER_SELECTORS, on_log
-        )
-        if prices:
-            log(f"[팩트체크] 네이버쇼핑 '{query}' 가격 {len(prices)}개: {prices}")
-            return prices
-
-        log(f"[팩트체크] 네이버쇼핑 결과 없음 → 쿠팡 폴백")
-        prices = _scrape_prices(
-            page, _COUPANG_URL.format(q=q), _COUPANG_SELECTORS, on_log
-        )
-        if prices:
-            log(f"[팩트체크] 쿠팡 '{query}' 가격 {len(prices)}개: {prices}")
-        return prices
+        for site in sites:
+            url = site["url"].format(q=q)
+            label = site["label"]
+            prices = _scrape_prices(page, url, site["selectors"], on_log)
+            if prices:
+                log(f"[팩트체크] {label} '{query}' 가격 {len(prices)}개: {prices}")
+                return prices
+            log(f"[팩트체크] {label} 결과 없음 → 다음 사이트 폴백")
+        return []
     finally:
         try:
             page.close()
@@ -144,7 +248,7 @@ def _fetch_actual_prices(browser, query: str, on_log=None) -> list:
             pass
 
 
-# ── 3. 비교 및 수정 ──────────────────────────────────────────────────────────
+# ── 4. 비교 및 수정 ──────────────────────────────────────────────────────────
 
 MISMATCH_THRESHOLD = 0.25  # 25% 이상 차이 시 자동 수정
 
@@ -178,10 +282,16 @@ def _apply_corrections(body: str, corrections: list) -> str:
     return body
 
 
-# ── 4. 메인 진입점 ───────────────────────────────────────────────────────────
+# ── 5. 메인 진입점 ───────────────────────────────────────────────────────────
 
-def run(body: str, keyword: str, on_log=None) -> dict:
+def run(body: str, keyword: str, blog_name: str = "", on_log=None) -> dict:
     """팩트체크 실행.
+
+    Args:
+        body: 검증할 블로그 본문
+        keyword: 검색 키워드
+        blog_name: 블로그 식별자 (goodisak / nolja100 / salim1su / baremi542)
+        on_log: 로그 콜백
 
     Returns:
         {"body": str, "corrections": list, "checked": bool}
@@ -211,7 +321,7 @@ def run(body: str, keyword: str, on_log=None) -> dict:
     corrections = []
     try:
         # 중복 검색 방지: keyword 당 1회만 조회
-        actual_prices = _fetch_actual_prices(browser, keyword, on_log)
+        actual_prices = _fetch_actual_prices(browser, keyword, blog_name, on_log)
 
         if not actual_prices:
             log("[팩트체크] 실제 가격 조회 실패 — 원본 유지")

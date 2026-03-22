@@ -700,25 +700,32 @@ def crawl_keywords(blog_id: str = None, on_log=None) -> dict:
 
         # 2단계: 자동완성 2단계 파생 (씨드 → 1차 파생 → 2차 파생)
         _log(f"\n[2단계] 자동완성 키워드 파생 (2단계)...", on_log)
-        all_keywords = list(trending)  # 원본 포함
         first_gen = []
         for kw in trending:
             suggestions = fetch_autocomplete(kw, on_log)
             if suggestions:
                 _log(f"[1차] {kw} → {suggestions}", on_log)
-                all_keywords.extend(suggestions)
                 first_gen.extend(suggestions)
             time.sleep(0.2)
 
         # 2차 파생: 1차 결과를 다시 자동완성
+        second_gen = []
         for kw in first_gen:
             suggestions = fetch_autocomplete(kw, on_log)
             if suggestions:
                 _log(f"[2차] {kw} → {suggestions}", on_log)
-                all_keywords.extend(suggestions)
+                second_gen.extend(suggestions)
             time.sleep(0.2)
 
-        # 중복 제거
+        # salim1su: 2차 파생 키워드만 저장 (1차 메인키워드 제외)
+        # 그 외 블로그: 기존대로 씨드+1차+2차 전체 저장
+        if bid == "salim1su":
+            _log(f"[salim1su] 2차 파생 키워드만 저장 모드: {len(second_gen)}개", on_log)
+            all_keywords = list(dict.fromkeys(second_gen))
+        else:
+            all_keywords = list(dict.fromkeys(list(trending) + first_gen + second_gen))
+
+        # 중복 제거 후 최종 후보
         all_keywords = list(dict.fromkeys(all_keywords))
         _log(f"[수집] 총 {len(all_keywords)}개 후보 키워드", on_log)
 
