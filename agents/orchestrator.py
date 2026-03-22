@@ -117,11 +117,13 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
     # ── 전용 writer 에이전트 동적 로드 (없으면 기본 writer_agent 폴백) ──
     agent_module_name = BLOG_AGENT_MAP.get(blog_id)
     active_writer = writer_agent  # 기본값
+    is_dedicated_agent = False    # 전용 에이전트 여부
     if agent_module_name:
         agent_file = AGENTS_DIR / f"{agent_module_name}.py"
         if agent_file.exists():
             try:
                 active_writer = importlib.import_module(agent_module_name)
+                is_dedicated_agent = True
                 log(f"[오케스트레이터] 전용 에이전트 로드: {agent_module_name}")
             except Exception as e:
                 log(f"[오케스트레이터] 전용 에이전트 로드 실패 ({agent_module_name}): {e} — writer_agent 폴백")
@@ -151,7 +153,10 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
                 log(f"[오케스트레이터] === 재생성 {attempt}/{MAX_WRITER_RETRIES} ===")
 
             # 2. 글 생성
-            result = active_writer.run(blog_id, keyword, on_log=log, on_status=on_status)
+            if is_dedicated_agent:
+                result = active_writer.run(keyword, on_log=log, on_status=on_status)
+            else:
+                result = active_writer.run(blog_id, keyword, on_log=log, on_status=on_status)
             if not result:
                 continue
 
@@ -177,7 +182,10 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
             if attempt > 1:
                 log(f"[오케스트레이터] === 최종검토 재시도 {attempt}/{MAX_FINAL_RETRIES} ===")
                 # 재생성
-                result = active_writer.run(blog_id, keyword, on_log=log, on_status=on_status)
+                if is_dedicated_agent:
+                    result = active_writer.run(keyword, on_log=log, on_status=on_status)
+                else:
+                    result = active_writer.run(blog_id, keyword, on_log=log, on_status=on_status)
                 if not result:
                     break
 
