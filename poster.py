@@ -1087,7 +1087,16 @@ def post_single(blog_id: str, title: str, content: str,
     log(f"[순환] {blog_id} ({account['platform']}) 시작")
     log(f"{'='*50}")
 
-    # 1. 로그인
+    # WordPress는 REST API 직접 호출 — 로그인/로그아웃 불필요
+    if account["platform"] == "wordpress":
+        log(f"[순환] {blog_id} WordPress REST API 발행...")
+        ok = _post_wordpress(account, title, content, tags,
+                             keyword=keyword, on_log=on_log)
+        status = "성공" if ok else "실패"
+        log(f"[순환] {blog_id} 완료 ({status})")
+        return ok
+
+    # 1. 로그인 (Playwright 기반 플랫폼)
     log(f"[순환] {blog_id} 로그인...")
     ok = login_blog(blog_id, on_log)
     if not ok:
@@ -1106,9 +1115,6 @@ def post_single(blog_id: str, title: str, content: str,
         ok = _post_naver(account, title, content, tags,
                          image_paths=image_paths, image_infos=image_infos,
                          on_log=on_log)
-    elif account["platform"] == "wordpress":
-        ok = _post_wordpress(account, title, content, tags,
-                             keyword=keyword, on_log=on_log)
     else:
         log(f"[순환] 지원하지 않는 플랫폼: {account['platform']}")
         ok = False
