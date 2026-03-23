@@ -1138,6 +1138,9 @@ def _post_wordpress(account, title, content, tags=None,
         idx = int(m.group(1))
         filepath = image_paths.get(idx, "")
         alt = info_map.get(idx, {}).get("alt", "")
+        # 첫 번째 이미지 alt에 키워드 강제 포함 (Rank Math 이미지 alt 체크)
+        if idx == 1 and keyword and keyword not in alt:
+            alt = f"{keyword} {alt}".strip()
         if filepath:
             url = _wp_upload_image(site_url, auth_header, filepath, alt=alt, on_log=on_log)
             if url:
