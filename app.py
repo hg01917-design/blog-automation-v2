@@ -3,6 +3,7 @@ import os
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QTextEdit, QPushButton, QFrame, QSizePolicy,
+    QDialog, QLineEdit, QFormLayout, QDialogButtonBox, QMessageBox,
 )
 from PyQt5.QtCore import (
     Qt, QThread, pyqtSignal, QTimer, QPoint, QSize,
@@ -640,6 +641,122 @@ QPushButton {
 """
 
 
+class SettingsDialog(QDialog):
+    """API 키 / 환경변수 설정 다이얼로그 — 저장 시 .env 파일에 반영"""
+
+    _ENV_PATH = Path(__file__).parent / ".env"
+
+    # 표시할 키 목록: (env_key, 레이블, placeholder, 비밀번호여부)
+    _FIELDS = [
+        ("WP_USER",         "WordPress 사용자명",      "admin",                   False),
+        ("WP_APP_PASSWORD", "WordPress 애플리케이션 비밀번호", "xxxx xxxx xxxx xxxx xxxx xxxx", True),
+        ("NOTION_TOKEN",    "Notion API 토큰",         "secret_...",              True),
+        ("GEMINI_API_KEY",  "Gemini API 키",           "AIza...",                 True),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("⚙ 설정 — API 키 관리")
+        self.setMinimumWidth(520)
+        self._inputs: dict[str, QLineEdit] = {}
+
+        env_vals = self._load_env()
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        # 안내 문구
+        hint = QLabel("저장 버튼을 누르면 .env 파일에 즉시 반영됩니다.")
+        hint.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addWidget(hint)
+
+        form = QFormLayout()
+        form.setSpacing(8)
+        for key, label, placeholder, is_pw in self._FIELDS:
+            edit = QLineEdit()
+            edit.setPlaceholderText(placeholder)
+            edit.setText(env_vals.get(key, ""))
+            edit.setMinimumHeight(30)
+            if is_pw:
+                edit.setEchoMode(QLineEdit.Password)
+            self._inputs[key] = edit
+            form.addRow(f"{label}:", edit)
+        layout.addLayout(form)
+
+        # 비밀번호 표시 토글
+        toggle_btn = QPushButton("🔑  비밀번호 표시 / 숨기기")
+        toggle_btn.setFixedHeight(28)
+        toggle_btn.clicked.connect(self._toggle_pw_visibility)
+        layout.addWidget(toggle_btn)
+
+        # 버튼 박스
+        btn_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        btn_box.button(QDialogButtonBox.Save).setText("저장")
+        btn_box.button(QDialogButtonBox.Cancel).setText("취소")
+        btn_box.accepted.connect(self._save)
+        btn_box.rejected.connect(self.reject)
+        layout.addWidget(btn_box)
+
+    def _toggle_pw_visibility(self):
+        for key, _, _, is_pw in self._FIELDS:
+            if is_pw:
+                edit = self._inputs[key]
+                edit.setEchoMode(
+                    QLineEdit.Normal if edit.echoMode() == QLineEdit.Password
+                    else QLineEdit.Password
+                )
+
+    def _load_env(self) -> dict:
+        """현재 .env 파일에서 key=value 파싱"""
+        vals = {}
+        if self._ENV_PATH.exists():
+            for line in self._ENV_PATH.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, _, v = line.partition("=")
+                    vals[k.strip()] = v.strip()
+        return vals
+
+    def _save(self):
+        """입력값을 .env 파일에 반영 (기존 다른 키는 유지)"""
+        # 현재 .env 전체 줄 읽기
+        if self._ENV_PATH.exists():
+            lines = self._ENV_PATH.read_text(encoding="utf-8").splitlines()
+        else:
+            lines = []
+
+        new_vals = {key: self._inputs[key].text().strip() for key in self._inputs}
+
+        # 기존 줄 중 해당 키 업데이트
+        updated_keys = set()
+        new_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and "=" in stripped:
+                k, _, _ = stripped.partition("=")
+                k = k.strip()
+                if k in new_vals:
+                    new_lines.append(f"{k}={new_vals[k]}")
+                    updated_keys.add(k)
+                    continue
+            new_lines.append(line)
+
+        # 없던 키는 파일 끝에 추가
+        for key, val in new_vals.items():
+            if key not in updated_keys:
+                new_lines.append(f"{key}={val}")
+
+        self._ENV_PATH.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+        # os.environ 즉시 반영
+        for key, val in new_vals.items():
+            if val:
+                os.environ[key] = val
+
+        QMessageBox.information(self, "저장 완료", ".env 파일에 저장되었습니다.\n앱 재시작 없이 즉시 적용됩니다.")
+        self.accept()
+
+
 class BlogAutomationApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -691,12 +808,29 @@ class BlogAutomationApp(QMainWindow):
         self.log_box.setFont(QFont("Menlo", 11))
         root.addWidget(self.log_box)
 
-        # 로그 지우기
+        # 하단 버튼 행
+        bottom_row = QHBoxLayout()
+
+        settings_btn = QPushButton("⚙  설정")
+        settings_btn.setObjectName("clearBtn")
+        settings_btn.setFixedWidth(80)
+        settings_btn.clicked.connect(self._open_settings)
+        bottom_row.addWidget(settings_btn, alignment=Qt.AlignLeft)
+
+        bottom_row.addStretch()
+
         clear_btn = QPushButton("로그 지우기")
         clear_btn.setObjectName("clearBtn")
         clear_btn.setFixedWidth(100)
         clear_btn.clicked.connect(self.log_box.clear)
-        root.addWidget(clear_btn, alignment=Qt.AlignRight)
+        bottom_row.addWidget(clear_btn, alignment=Qt.AlignRight)
+
+        root.addLayout(bottom_row)
+
+    # ── 설정 ──
+    def _open_settings(self):
+        dlg = SettingsDialog(self)
+        dlg.exec_()
 
     # ── 블로그 ON/OFF ──
     def _on_blog_toggled(self, blog_id: str, enabled: bool):
