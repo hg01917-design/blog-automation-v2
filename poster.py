@@ -48,17 +48,23 @@ def _chunked_type(page, text, chunk_size=50, delay_per_char=None):
         time.sleep(0.3)  # 청크 사이 0.3초 대기
 
 
-# .env에서 애드센스 코드 읽기
-_env_path = Path(__file__).parent / ".env"
+# .env 로드 (.app 번들 실행 시 프로젝트 루트 우선)
+import os as _os
+_env_path = Path(_os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(Path(__file__).parent))) / ".env"
+if not _env_path.exists():
+    _env_path = Path(__file__).parent / ".env"
 _adsense_pub = ""
 _adsense_slot = ""
 if _env_path.exists():
-    for line in _env_path.read_text().splitlines():
-        line = line.strip()
-        if line.startswith("ADSENSE_CODE="):
-            _adsense_pub = line.split("=", 1)[1].strip()
-        if line.startswith("ADSENSE_SLOT="):
-            _adsense_slot = line.split("=", 1)[1].strip()
+    for _line in _env_path.read_text().splitlines():
+        _line = _line.strip()
+        if _line.startswith("ADSENSE_CODE="):
+            _adsense_pub = _line.split("=", 1)[1].strip()
+        if _line.startswith("ADSENSE_SLOT="):
+            _adsense_slot = _line.split("=", 1)[1].strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _, _v = _line.partition("=")
+            _os.environ.setdefault(_k.strip(), _v.strip())
 
 
 # ─────────────────────────────────────────────
