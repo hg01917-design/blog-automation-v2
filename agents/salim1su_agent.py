@@ -214,9 +214,12 @@ def run(keyword: str = None, on_log=None, on_status=None, _page_id=None):
         shortage = required_count - len(result["images"])
         log(f"[작성] 이미지 프롬프트 부족 ({len(result['images'])}개) → {shortage}개 기본 항목 추가")
         for i in range(shortage):
+            idx = len(result["images"]) + 1
             result["images"].append({
-                "prompt": f"{actual_keyword} 관련 생활 절약 정보 이미지 {len(result['images']) + 1}",
-                "filename": f"img_{len(result['images']) + 1:02d}.jpg",
+                "index": idx,
+                "prompt": f"{actual_keyword} 관련 생활 절약 정보 이미지 {idx}",
+                "filename": f"img_{idx:02d}.jpg",
+                "alt": f"{actual_keyword} 이미지 {idx}",
             })
 
     if result["images"]:
