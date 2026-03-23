@@ -1150,6 +1150,23 @@ def _post_wordpress(account, title, content, tags=None,
 
     html_content = re.sub(r"\{\{이미지(\d+)\}\}", _replace_image, html_content)
 
+    # 2-1. H2 소제목에 키워드 없는 경우 자동 보정 (Rank Math "keyword in subheading" 체크)
+    if keyword:
+        def fix_h2_keyword(m):
+            inner = m.group(1)
+            inner_text = re.sub(r"<[^>]+>", "", inner).strip()
+            if keyword in inner_text or not inner_text:
+                return m.group(0)
+            return m.group(0).replace(inner, f"{keyword} {inner_text}", 1)
+        html_content = re.sub(
+            r"(<h2[^>]*>)(.*?)(</h2>)",
+            lambda m: m.group(1) + (
+                m.group(2) if keyword in re.sub(r"<[^>]+>", "", m.group(2))
+                else f"{keyword} — {re.sub(r'<[^>]+>', '', m.group(2)).strip()}"
+            ) + m.group(3),
+            html_content, flags=re.DOTALL
+        )
+
     # 3. 본문에서 실제 사용된 키워드 형태 감지 (띄어쓰기 변형 대응)
     plain = re.sub(r"<[^>]+>", "", html_content)
     plain = re.sub(r"\s+", " ", plain).strip()
