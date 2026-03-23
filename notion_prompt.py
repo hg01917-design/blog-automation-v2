@@ -208,7 +208,16 @@ def fetch_prompt(blog_id: str, keyword: str, on_log=None) -> str:
 - 애드센스 삽입 위치는 반드시 [애드센스] 으로 표시. 반드시 소제목(##) 바로 아래 또는 표 바로 아래에만 배치. 링크·이미지 근처 절대 금지
 - 표는 마크다운 표 형식으로 작성 (| 열1 | 열2 | 형식)
 - HTML 태그 사용 금지 — 위 마커 형식만 사용
-- 일반 텍스트는 그대로 작성"""
+- 일반 텍스트는 그대로 작성
+
+**이미지 다양성 규칙 (Gemini 프롬프트 작성 시 필수)**:
+- 이미지1과 이미지2는 반드시 완전히 다른 시각적 주제로 생성할 것
+- 같은 오브젝트(예: 전화기, 서류, 달력)를 두 이미지에 반복 사용 절대 금지
+- 이미지1: 신청자격·조건 관련 — 서류/체크리스트/사람 등 구체적 장면
+- 이미지2: 금액·혜택·절차 관련 — 달력/지폐/통장/온라인신청 화면 등 다른 소재
+- Gemini 프롬프트에 배경색, 오브젝트, 분위기까지 구체적으로 명시할 것
+  좋은 예: "A clean infographic showing a checklist on blue background, Korean government document style"
+  나쁜 예: "An image related to unemployment benefits" (너무 추상적 → 같은 이미지 반복 생성됨)"""
 
     # AI 패턴 금지 규칙 (강화)
     prompt_text += (
