@@ -973,8 +973,123 @@ def _post_naver(account, title, content, tags=None,
 # ─────────────────────────────────────────────
 # WordPress REST API 포스팅 (baremi542)
 # ─────────────────────────────────────────────
+def _md_to_wp_html(content: str) -> str:
+    """마크다운 본문을 WordPress HTML로 변환.
+
+    처리 항목:
+    - ## H2 / ### H3 → <h2> / <h3>
+    - **bold** → <strong>
+    - *italic* → <em>
+    - | table | → <table>
+    - [애드센스] → 제거
+    - {{이미지N}} → 플레이스홀더 유지 (이미지 업로드 후 교체)
+    - 일반 텍스트 → <p>
+    """
+    import re
+
+    lines = content.split("\n")
+    html_parts = []
+    table_buf = []
+
+    def flush_table():
+        if not table_buf:
+            return ""
+        return _markdown_table_to_html(table_buf)
+
+    def inline(text: str) -> str:
+        text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+        text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
+        return text
+
+    for line in lines:
+        stripped = line.strip()
+
+        # 표 줄
+        if stripped.startswith("|"):
+            table_buf.append(stripped)
+            continue
+        else:
+            if table_buf:
+                html_parts.append(flush_table())
+                table_buf = []
+
+        if not stripped:
+            continue
+
+        if stripped.startswith("### "):
+            html_parts.append(f"<h3>{inline(stripped[4:])}</h3>")
+        elif stripped.startswith("## "):
+            html_parts.append(f"<h2>{inline(stripped[3:])}</h2>")
+        elif stripped == "[애드센스]":
+            continue  # 애드센스 블록 제거
+        elif re.match(r"^\{\{이미지\d+\}\}$", stripped):
+            html_parts.append(stripped)  # 이미지 플레이스홀더 유지
+        else:
+            html_parts.append(f"<p>{inline(stripped)}</p>")
+
+    if table_buf:
+        html_parts.append(flush_table())
+
+    return "\n".join(html_parts)
+
+
+def _wp_upload_image(site_url: str, auth_header: str, filepath: str,
+                     alt: str = "", on_log=None) -> str:
+    """이미지를 WordPress 미디어 라이브러리에 업로드하고 URL을 반환한다."""
+    import urllib.request
+    import json
+    import mimetypes
+    import os
+
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    if not os.path.exists(filepath):
+        log(f"[WordPress] 이미지 파일 없음: {filepath}")
+        return ""
+
+    filename = os.path.basename(filepath)
+    mime, _ = mimetypes.guess_type(filepath)
+    mime = mime or "image/webp"
+
+    with open(filepath, "rb") as f:
+        data = f.read()
+
+    upload_headers = {
+        "Authorization": auth_header,
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Content-Type": mime,
+    }
+    try:
+        req = urllib.request.Request(
+            f"{site_url}/wp-json/wp/v2/media",
+            data=data,
+            headers=upload_headers,
+            method="POST",
+        )
+        resp = json.loads(urllib.request.urlopen(req, timeout=30).read())
+        url = resp.get("source_url", "")
+        media_id = resp.get("id", "")
+        # alt 텍스트 업데이트
+        if media_id and alt:
+            patch_req = urllib.request.Request(
+                f"{site_url}/wp-json/wp/v2/media/{media_id}",
+                data=json.dumps({"alt_text": alt, "caption": alt}).encode(),
+                headers={"Authorization": auth_header, "Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(patch_req, timeout=10)
+        log(f"[WordPress] 이미지 업로드 완료: {filename} → {url}")
+        return url
+    except Exception as e:
+        log(f"[WordPress] 이미지 업로드 실패 ({filename}): {e}")
+        return ""
+
+
 def _post_wordpress(account, title, content, tags=None,
-                    keyword: str = "", on_log=None):
+                    keyword: str = "", image_paths=None,
+                    image_infos=None, on_log=None):
     """WordPress REST API로 글을 발행하고 Rank Math 메타를 설정한다.
 
     .env 필요:
@@ -985,7 +1100,11 @@ def _post_wordpress(account, title, content, tags=None,
     import base64
     import re
     import urllib.request
+    import urllib.parse
     import os
+
+    image_paths = image_paths or {}
+    image_infos = image_infos or []
 
     def log(msg):
         if on_log:
@@ -1003,17 +1122,45 @@ def _post_wordpress(account, title, content, tags=None,
         return False
 
     token = base64.b64encode(f"{wp_user}:{wp_pass}".encode()).decode()
+    auth_header = f"Basic {token}"
     headers = {
-        "Authorization": f"Basic {token}",
+        "Authorization": auth_header,
         "Content-Type": "application/json",
     }
 
-    # 메타 설명: 본문 첫 200자 (마크다운 기호 제거)
-    plain = re.sub(r"##.*|{{.*?}}|\[애드센스\]|\|.*|\*+|`+", "", content)
-    plain = re.sub(r"\s+", " ", plain).strip()
-    meta_desc = plain[:160]
+    # 1. 마크다운 → HTML 변환
+    html_content = _md_to_wp_html(content)
 
-    # 태그 ID 조회 (없으면 생성)
+    # 2. 이미지 업로드 후 {{이미지N}} 플레이스홀더 교체
+    info_map = {img["index"]: img for img in image_infos}
+    def _replace_image(m):
+        idx = int(m.group(1))
+        filepath = image_paths.get(idx, "")
+        alt = info_map.get(idx, {}).get("alt", "")
+        if filepath:
+            url = _wp_upload_image(site_url, auth_header, filepath, alt=alt, on_log=on_log)
+            if url:
+                return f'<figure class="wp-block-image"><img src="{url}" alt="{alt}"/></figure>'
+        log(f"[WordPress] {{이미지{idx}}} — 파일 없음, 플레이스홀더 제거")
+        return ""
+
+    html_content = re.sub(r"\{\{이미지(\d+)\}\}", _replace_image, html_content)
+
+    # 3. 메타 설명: 키워드로 시작하도록
+    plain = re.sub(r"<[^>]+>", "", html_content)
+    plain = re.sub(r"\s+", " ", plain).strip()
+    if keyword and not plain.startswith(keyword):
+        meta_desc = f"{keyword} — {plain}"[:160]
+    else:
+        meta_desc = plain[:160]
+
+    # 4. SEO 제목: 키워드 포함 보장
+    seo_title = title if keyword in title else f"{keyword} | {title}"
+
+    # 5. slug: 키워드 기반
+    slug = urllib.parse.quote(keyword.replace(" ", "-"), safe="")
+
+    # 6. 태그 ID 조회 (없으면 생성)
     tag_ids = []
     if tags:
         for tag_name in tags[:10]:
@@ -1024,7 +1171,6 @@ def _post_wordpress(account, title, content, tags=None,
                 if res:
                     tag_ids.append(res[0]["id"])
                 else:
-                    # 태그 생성
                     create_req = urllib.request.Request(
                         f"{site_url}/wp-json/wp/v2/tags",
                         data=json.dumps({"name": tag_name}).encode(),
@@ -1036,23 +1182,24 @@ def _post_wordpress(account, title, content, tags=None,
             except Exception:
                 pass
 
-    # 글 발행
+    # 7. 글 발행
     post_body = {
         "title": title,
-        "content": content,
+        "content": html_content,
         "status": "publish",
+        "slug": slug,
         "tags": tag_ids,
         "meta": {
             "rank_math_focus_keyword": keyword,
+            "rank_math_title": seo_title,
             "rank_math_description": meta_desc,
         },
     }
 
     log(f"[WordPress] REST API 발행 시작: \"{title}\"")
-    log(f"[WordPress] Focus Keyword: {keyword}")
+    log(f"[WordPress] Focus Keyword: {keyword} / SEO Title: {seo_title}")
 
     try:
-        import urllib.parse
         req = urllib.request.Request(
             f"{site_url}/wp-json/wp/v2/posts",
             data=json.dumps(post_body).encode(),
@@ -1091,7 +1238,8 @@ def post_single(blog_id: str, title: str, content: str,
     if account["platform"] == "wordpress":
         log(f"[순환] {blog_id} WordPress REST API 발행...")
         ok = _post_wordpress(account, title, content, tags,
-                             keyword=keyword, on_log=on_log)
+                             keyword=keyword, image_paths=image_paths,
+                             image_infos=image_infos, on_log=on_log)
         status = "성공" if ok else "실패"
         log(f"[순환] {blog_id} 완료 ({status})")
         return ok
