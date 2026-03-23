@@ -6,83 +6,89 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from browser import connect_cdp, get_or_create_page
+from browser import connect_cdp
 
-# ── 블로그별 키워드 라우팅 규칙 ─────────────────────────────────────────────
-# 각 항목: (트리거 단어 리스트, 검색 URL 템플릿 or None)
-# None이면 네이버 통합검색 사용
-# {q} 자리에 URL 인코딩된 키워드가 들어감
-_ROUTES = {
-    # ── 살림/절약 블로그 ──
-    "salim1su": [
-        (["전기", "kWh", "kwh", "한전", "전력", "누진"],
-         "https://www.kepco.co.kr/search/index.do?searchWord={q}"),
-        (["가스", "도시가스", "난방", "보일러"],
-         "https://www.kogas.or.kr/search/search.do?q={q}"),
-        (["건강보험", "의료비", "병원비", "보험료", "건보"],
-         "https://www.nhis.or.kr/search/search.do?q={q}"),
-        (["국민연금", "연금", "노령연금"],
-         "https://www.nps.or.kr/jsppage/search/total_search.jsp?q={q}"),
-        (["수도", "상수도", "하수도", "물값"], None),   # 지자체별 → 네이버
-        (["식비", "마트", "장보기", "식재료"], None),   # 네이버
-    ],
+# ── 키워드 → 공식 사이트 라우팅 테이블 ───────────────────────────────────────
+# (트리거 단어 리스트, 검색 URL 템플릿)
+# 트리거가 빈 리스트면 기본값(무조건 매칭)
+# None URL이면 네이버 사용
+_KEYWORD_ROUTES = [
+    # OTT / 스트리밍
+    (["넷플릭스", "Netflix", "netflix"],
+     "https://www.netflix.com/kr/search?q={q}"),
+    (["티빙", "tving", "TVING"],
+     "https://www.tving.com/search?keyword={q}"),
+    (["웨이브", "wavve", "Wavve"],
+     "https://www.wavve.com/search?keyword={q}"),
+    (["쿠팡플레이", "CoupangPlay"],
+     "https://www.coupangplay.com/search?keyword={q}"),
+    (["왓챠", "watcha", "Watcha"],
+     "https://watcha.com/search?query={q}"),
+    (["디즈니플러스", "Disney+", "disney+"],
+     "https://www.disneyplus.com/ko-kr/search?q={q}"),
 
-    # ── IT/가전 블로그 ──
-    "goodisak": [
-        (["갤럭시", "삼성", "Galaxy", "galaxy"],
-         "https://www.samsung.com/kr/search/?searchvalue={q}"),
-        (["LG", "lg", "엘지", "그램", "올레드", "oled", "OLED"],
-         "https://www.lg.com/kr/search/?query={q}"),
-        (["아이폰", "맥북", "아이패드", "애플", "Apple", "apple", "iPhone", "MacBook"],
-         "https://www.apple.com/kr/search/{q}?src=serp"),
-        (["다나와", "최저가", "가격비교"],
-         "https://search.danawa.com/dsearch.php?query={q}"),
-        (["인텔", "AMD", "엔비디아", "CPU", "GPU", "RAM"],
-         None),  # 네이버
-    ],
+    # 전기 (전기요금·전기세·kWh 등 구체적 단어만)
+    (["전기요금", "전기세", "kWh", "kwh", "한전", "전력요금", "누진세", "누진요금"],
+     "https://www.kepco.co.kr/search/index.do?searchWord={q}"),
 
-    # ── 여행 블로그 ──
-    "nolja100": [
-        (["국립공원", "설악산", "지리산", "한라산", "북한산", "소백산", "태백산",
-          "오대산", "내장산", "계룡산", "덕유산", "가야산", "월악산", "속리산",
-          "치악산", "주왕산", "월출산", "변산반도", "다도해", "한려수도", "태안"],
-         "https://www.knps.or.kr/portal/search/search.do?searchWord={q}"),
-        (["제주", "jeju"],
-         "https://www.jejutour.go.kr/contents/search.do?keyword={q}"),
-        (["관광", "여행", "입장료", "운영시간", "축제", "명소", "관광지"],
-         "https://korean.visitkorea.or.kr/search/search_list.do?keyword={q}"),
-    ],
+    # 가스 (도시가스요금 등)
+    (["가스요금", "도시가스요금", "가스비", "도시가스비"],
+     "https://www.kogas.or.kr/search/search.do?q={q}"),
 
-    # ── 복지 블로그 ──
-    "baremi542": [
-        (["실업급여", "고용보험", "육아휴직", "출산휴가", "고용"],
-         "https://www.ei.go.kr/ei/eih/cm/hm/main.do"),  # 고용보험 → 키워드 검색 없이 메인만
-        (["연금", "국민연금", "노령연금", "장애연금"],
-         "https://www.nps.or.kr/jsppage/search/total_search.jsp?q={q}"),
-        (["장애인", "장애", "바우처"],
-         "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?searchWord={q}"),
-        # 기본: 복지로 검색
-        ([], "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?searchWord={q}"),
-    ],
-}
+    # 건강보험
+    (["건강보험료", "건보료", "보험료 계산", "건강보험 납부"],
+     "https://www.nhis.or.kr/search/search.do?q={q}"),
 
-# 네이버 사용 시 추가할 보조 쿼리
+    # 국민연금
+    (["국민연금", "노령연금", "연금 수령"],
+     "https://www.nps.or.kr/jsppage/search/total_search.jsp?q={q}"),
+
+    # 복지·지원금
+    (["지원금", "보조금", "복지급여", "기초생활", "차상위", "실업급여", "고용보험"],
+     "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?searchWord={q}"),
+
+    # IT 제품 — 제조사 공식
+    (["갤럭시", "삼성 갤럭시", "Galaxy"],
+     "https://www.samsung.com/kr/search/?searchvalue={q}"),
+    (["아이폰", "맥북", "아이패드", "애플워치", "iPhone", "MacBook", "iPad"],
+     "https://www.apple.com/kr/search/{q}?src=serp"),
+    (["그램", "LG 그램", "LG TV", "LG 냉장고", "LG 세탁기"],
+     "https://www.lg.com/kr/search/?query={q}"),
+
+    # 가격비교 (다나와)
+    (["최저가", "가격비교", "다나와"],
+     "https://search.danawa.com/dsearch.php?query={q}"),
+
+    # 여행 — 국립공원
+    (["국립공원", "설악산", "지리산", "한라산", "북한산", "소백산", "내장산",
+      "가야산", "치악산", "주왕산", "덕유산", "오대산"],
+     "https://www.knps.or.kr/portal/search/search.do?searchWord={q}"),
+
+    # 여행 — 제주
+    (["제주도", "제주 여행", "제주 관광"],
+     "https://www.jejutour.go.kr/contents/search.do?keyword={q}"),
+
+    # 여행 — 일반 관광
+    (["입장료", "관람료", "운영시간", "개장시간"],
+     "https://korean.visitkorea.or.kr/search/search_list.do?keyword={q}"),
+]
+
+# 네이버 사용 시 블로그별 보조 쿼리
 _SEARCH_SUFFIX = {
-    "salim1su": " 절약 방법",
+    "salim1su":  " 절약 방법",
     "goodisak":  " 스펙 가격",
-    "nolja100":  " 여행정보 운영시간 입장료",
-    "baremi542": " 지원금 신청방법",
+    "nolja100":  " 여행정보 운영시간",
+    "baremi542": " 신청방법 조건",
 }
 
-# 네이버 결과에서 우선 방문할 공식 도메인
+# 네이버 결과에서 우선 방문할 공식 도메인 (블로그별)
 _PRIORITY_DOMAINS = {
-    "salim1su": ["kepco.co.kr", "kogas.or.kr", "nhis.or.kr", "nps.or.kr", "gov.kr"],
-    "goodisak":  ["samsung.com", "lg.com", "apple.com", "microsoft.com", "danawa.com"],
+    "salim1su":  ["kepco.co.kr", "kogas.or.kr", "nhis.or.kr", "nps.or.kr", "gov.kr"],
+    "goodisak":  ["samsung.com", "lg.com", "apple.com", "danawa.com"],
     "nolja100":  ["visitkorea.or.kr", "knps.or.kr", "tour.go.kr", "jejutour.go.kr"],
     "baremi542": ["bokjiro.go.kr", "ei.go.kr", "nps.or.kr", "mohw.go.kr"],
 }
 
-# 네이버 검색 결과 스니펫 셀렉터 (UI 버전별 대응)
 _NAVER_SNIPPET_SEL = [
     "[class*='api_txt_lines']",
     "[class*='dsc_txt']",
@@ -105,16 +111,14 @@ def _clean(text):
     return text.strip()
 
 
-def _resolve_url(keyword, blog_id):
-    """키워드와 블로그 ID로 공식 검색 URL 결정. None이면 네이버 사용."""
-    routes = _ROUTES.get(blog_id, [])
+def _resolve_url(keyword):
+    """키워드를 보고 공식 검색 URL 결정. 매칭 없으면 None(→ 네이버)."""
     q = urllib.parse.quote(keyword)
-    for triggers, url_tpl in routes:
-        # 트리거 없으면 기본값 (무조건 매칭)
-        if not triggers or any(t in keyword for t in triggers):
+    for triggers, url_tpl in _KEYWORD_ROUTES:
+        if triggers and any(t in keyword for t in triggers):
             if url_tpl:
                 return url_tpl.format(q=q)
-            return None  # 명시적으로 네이버
+            return None
     return None
 
 
@@ -136,7 +140,7 @@ def _fetch_url_direct(page, url, on_log=None):
             if el.count() > 0:
                 text = _clean(el.inner_text(timeout=3000))
                 if len(text) > 200:
-                    log(f"[팩트수집] 공식 사이트 {len(text)}자 수집")
+                    log(f"[팩트수집] {len(text)}자 수집")
                     return text[:3000]
         except Exception:
             continue
@@ -161,7 +165,6 @@ def _search_naver(page, keyword, blog_id, on_log=None):
         return ""
 
     snippets = []
-
     for sel in _NAVER_SNIPPET_SEL:
         try:
             els = page.locator(sel)
@@ -188,7 +191,7 @@ def _search_naver(page, keyword, blog_id, on_log=None):
             }""")
             if raw and len(raw) > 50:
                 snippets.append(raw)
-                log(f"[팩트수집] JS 폴백으로 {len(raw)}자 수집")
+                log(f"[팩트수집] JS 폴백 {len(raw)}자 수집")
         except Exception:
             pass
 
@@ -199,7 +202,7 @@ def _search_naver(page, keyword, blog_id, on_log=None):
             if link_el.count() > 0:
                 target_url = link_el.get_attribute("href")
                 if target_url:
-                    log(f"[팩트수집] 공식 페이지 방문: {target_url[:80]}")
+                    log(f"[팩트수집] 공식 페이지: {target_url[:80]}")
                     page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
                     page.wait_for_timeout(2000)
                     for sel in ["main", "article", "#content", "body"]:
@@ -242,7 +245,7 @@ def collect(keyword, blog_id, on_log=None):
         context = browser.contexts[0] if browser.contexts else browser.new_context()
         page = context.new_page()
         try:
-            direct_url = _resolve_url(keyword, blog_id)
+            direct_url = _resolve_url(keyword)
             if direct_url:
                 log(f"[팩트수집] 공식 사이트 라우팅: {direct_url[:70]}")
                 raw_text = _fetch_url_direct(page, direct_url, on_log)

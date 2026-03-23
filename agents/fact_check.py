@@ -69,139 +69,160 @@ def extract_spec_claims(body: str) -> list:
     return claims
 
 
-# ── 2. 블로그별 팩트체크 사이트 매핑 ─────────────────────────────────────────
+# ── 2. 키워드 기반 팩트체크 사이트 결정 ─────────────────────────────────────
 
-def get_fact_check_sites(blog_name: str) -> list:
-    """blog_name 에 따라 크롤링 대상 사이트 목록 반환.
+# (트리거 단어 리스트, 사이트 목록)
+_FACT_CHECK_ROUTES = [
+    # OTT / 스트리밍
+    (["넷플릭스", "Netflix", "netflix"], [
+        {"url": "https://www.netflix.com/kr/search?q={q}",
+         "selectors": [".price", "[class*='price']", "[class*='plan']"], "label": "넷플릭스"},
+    ]),
+    (["티빙", "tving", "TVING"], [
+        {"url": "https://www.tving.com/search?keyword={q}",
+         "selectors": [".price", "[class*='price']"], "label": "티빙"},
+    ]),
+    (["웨이브", "wavve", "Wavve"], [
+        {"url": "https://www.wavve.com/search?keyword={q}",
+         "selectors": [".price", "[class*='price']"], "label": "웨이브"},
+    ]),
+    (["쿠팡플레이", "CoupangPlay"], [
+        {"url": "https://www.coupangplay.com/search?keyword={q}",
+         "selectors": [".price", "[class*='price']"], "label": "쿠팡플레이"},
+    ]),
+    (["왓챠", "watcha"], [
+        {"url": "https://watcha.com/search?query={q}",
+         "selectors": [".price", "[class*='price']"], "label": "왓챠"},
+    ]),
+    (["디즈니플러스", "Disney+", "disney+"], [
+        {"url": "https://www.disneyplus.com/ko-kr/search?q={q}",
+         "selectors": [".price", "[class*='price']"], "label": "디즈니+"},
+    ]),
+    # OTT 묶음 (요금제 비교)
+    (["OTT", "ott", "스트리밍 요금", "구독 요금"], [
+        {"url": "https://search.naver.com/search.naver?query={q}+요금제",
+         "selectors": ["[class*='dsc_txt']", "[class*='api_txt_lines']"], "label": "네이버검색(OTT)"},
+    ]),
+
+    # 전기
+    (["전기요금", "전기세", "kWh", "kwh", "누진세", "전력요금"], [
+        {"url": "https://www.kepco.co.kr/search/index.do?searchWord={q}",
+         "selectors": [".price", "[class*='price']", ".cost"], "label": "한전"},
+    ]),
+
+    # 가스
+    (["가스요금", "도시가스요금", "가스비", "도시가스비"], [
+        {"url": "https://www.kogas.or.kr/search/search.do?q={q}",
+         "selectors": [".price", "[class*='price']", ".cost"], "label": "한국가스공사"},
+    ]),
+
+    # 건강보험
+    (["건강보험료", "건보료", "보험료 계산"], [
+        {"url": "https://www.nhis.or.kr/search/search.do?q={q}",
+         "selectors": [".price", "[class*='amount']"], "label": "건보공단"},
+    ]),
+
+    # 국민연금
+    (["국민연금", "노령연금", "연금 수령"], [
+        {"url": "https://www.nps.or.kr/jsppage/search/total_search.jsp?q={q}",
+         "selectors": [".price", "[class*='amount']"], "label": "국민연금공단"},
+    ]),
+
+    # 복지·지원금
+    (["지원금", "보조금", "복지급여", "기초생활", "실업급여", "고용보험"], [
+        {"url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?searchWord={q}",
+         "selectors": [".price", "[class*='amount']"], "label": "복지로"},
+        {"url": "https://www.gov.kr/search?srchWord={q}",
+         "selectors": [".price", "[class*='amount']"], "label": "정부24"},
+    ]),
+
+    # IT 제품 — 삼성
+    (["갤럭시", "삼성 갤럭시", "Galaxy", "삼성 TV", "삼성 냉장고"], [
+        {"url": "https://www.samsung.com/kr/search/?searchvalue={q}",
+         "selectors": [".price", "[class*='price']"], "label": "삼성공식"},
+        {"url": "https://search.shopping.naver.com/search/all?query={q}",
+         "selectors": ["strong.price_num", ".price_num"], "label": "네이버쇼핑"},
+    ]),
+
+    # IT 제품 — 애플
+    (["아이폰", "맥북", "아이패드", "iPhone", "MacBook", "iPad"], [
+        {"url": "https://www.apple.com/kr/search/{q}?src=serp",
+         "selectors": [".price", "[class*='price']"], "label": "애플공식"},
+        {"url": "https://search.shopping.naver.com/search/all?query={q}",
+         "selectors": ["strong.price_num", ".price_num"], "label": "네이버쇼핑"},
+    ]),
+
+    # 여행 — 입장료/운영
+    (["입장료", "관람료", "국립공원", "설악산", "지리산", "한라산"], [
+        {"url": "https://search.naver.com/search.naver?query={q}+입장료",
+         "selectors": ["[class*='dsc_txt']", "[class*='api_txt_lines']"],
+         "label": "네이버검색(입장료)", "max_price": 29999},
+        {"url": "https://www.knps.or.kr/portal/search/search.do?searchWord={q}",
+         "selectors": [".price", "[class*='fee']"], "label": "국립공원공단",
+         "max_price": 29999},
+    ]),
+
+    # 여행 — 숙박
+    (["호텔", "리조트", "펜션", "숙박"], [
+        {"url": "https://hotel.naver.com/hotels/search?query={q}",
+         "selectors": [".price", "[class*='price']"], "label": "네이버호텔",
+         "min_price": 30000},
+        {"url": "https://www.yanolja.com/search?keyword={q}",
+         "selectors": [".price", "[class*='price']"], "label": "야놀자",
+         "min_price": 30000},
+    ]),
+]
+
+# 블로그별 기본 사이트 (키워드 매칭 안 될 때 폴백)
+_DEFAULT_SITES = {
+    "goodisak": [
+        {"url": "https://search.shopping.naver.com/search/all?query={q}",
+         "selectors": ["strong.price_num", ".price_num"], "label": "네이버쇼핑"},
+        {"url": "https://search.danawa.com/dsearch.php?query={q}",
+         "selectors": [".price_sect strong", ".low_price strong"], "label": "다나와"},
+    ],
+    "nolja100": [
+        {"url": "https://search.naver.com/search.naver?query={q}+입장료",
+         "selectors": ["[class*='dsc_txt']", "[class*='api_txt_lines']"],
+         "label": "네이버검색", "max_price": 29999},
+        {"url": "https://hotel.naver.com/hotels/search?query={q}",
+         "selectors": [".price", "[class*='price']"], "label": "네이버호텔",
+         "min_price": 30000},
+    ],
+    "salim1su": [
+        {"url": "https://search.naver.com/search.naver?query={q}",
+         "selectors": ["[class*='dsc_txt']", "[class*='api_txt_lines']"], "label": "네이버검색"},
+    ],
+    "baremi542": [
+        {"url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?searchWord={q}",
+         "selectors": [".price", "[class*='amount']"], "label": "복지로"},
+        {"url": "https://www.gov.kr/search?srchWord={q}",
+         "selectors": [".price", "[class*='amount']"], "label": "정부24"},
+    ],
+}
+
+
+def get_fact_check_sites(blog_name, keyword=""):
+    """키워드 우선, 없으면 블로그 기본 사이트 반환.
 
     Returns:
         [{"url": str, "selectors": list, "label": str}, ...]
     """
+    kw = keyword or ""
+    for triggers, sites in _FACT_CHECK_ROUTES:
+        if triggers and any(t in kw for t in triggers):
+            return sites
+
+    # 키워드 매칭 없음 → 블로그 기본값
     blog = (blog_name or "").lower().strip()
+    for key in _DEFAULT_SITES:
+        if key in blog:
+            return _DEFAULT_SITES[key]
 
-    if "goodisak" in blog:
-        # IT/제품: 네이버쇼핑 우선, 쿠팡 폴백
-        return [
-            {
-                "url": "https://search.shopping.naver.com/search/all?query={q}",
-                "selectors": ["strong.price_num", ".price_num", "[class*='price'] strong"],
-                "label": "네이버쇼핑",
-            },
-            {
-                "url": "https://www.coupang.com/np/search?q={q}&channel=auto",
-                "selectors": [".price-value", ".sale-price"],
-                "label": "쿠팡",
-            },
-        ]
-
-    if "nolja100" in blog:
-        # 여행: 가격 규모에 따라 검증 사이트 분리
-        # - 3만원 미만(입장료·교통비 등): 네이버 검색 + 한국관광공사
-        # - 3만원 이상(숙박 등): 네이버호텔 + 야놀자
-        return [
-            {
-                "url": "https://search.naver.com/search.naver?query={q}+입장료",
-                "selectors": [
-                    ".total_wrap .api_txt_lines",
-                    ".total_wrap .dsc_txt",
-                    ".sh_blog_passage",
-                    ".news_dsc",
-                ],
-                "label": "네이버검색(입장료)",
-                "max_price": 29999,  # 3만원 미만만
-            },
-            {
-                "url": "https://korean.visitkorea.or.kr/search/search_list.do?keyword={q}",
-                "selectors": [".price", "[class*='price']", ".fee"],
-                "label": "한국관광공사",
-                "max_price": 29999,
-            },
-            {
-                "url": "https://hotel.naver.com/hotels/search?query={q}",
-                "selectors": [".price", "[class*='price']", ".room-price"],
-                "label": "네이버호텔",
-                "min_price": 30000,
-            },
-            {
-                "url": "https://www.yanolja.com/search?keyword={q}",
-                "selectors": [".price", "[class*='price']", ".sale-price"],
-                "label": "야놀자",
-                "min_price": 30000,
-            },
-        ]
-
-    if "salim1su" in blog:
-        # 살림/고정비: 공공기관·통신사 — 네이버쇼핑 절대 사용 금지
-        return [
-            {
-                "url": "https://www.kepco.co.kr/kepco/search/searchList.do?searchWord={q}",
-                "selectors": [".price", "[class*='price']", ".cost"],
-                "label": "한전",
-            },
-            {
-                "url": "https://www.kogas.or.kr/search/search.do?query={q}",
-                "selectors": [".price", "[class*='price']", ".cost"],
-                "label": "한국가스공사",
-            },
-            {
-                "url": "https://www.sktelecom.com/search/search.do?query={q}",
-                "selectors": [".price", "[class*='price']", ".monthly-fee"],
-                "label": "SKT",
-            },
-            {
-                "url": "https://www.kt.com/search/search.do?query={q}",
-                "selectors": [".price", "[class*='price']", ".monthly-fee"],
-                "label": "KT",
-            },
-            {
-                "url": "https://www.lguplus.com/search?query={q}",
-                "selectors": [".price", "[class*='price']", ".monthly-fee"],
-                "label": "LGU+",
-            },
-            {
-                "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?searchWord={q}",
-                "selectors": [".price", "[class*='amount']", ".benefit"],
-                "label": "복지로",
-            },
-            {
-                "url": "https://www.gov.kr/search?srchWord={q}",
-                "selectors": [".price", "[class*='amount']", ".benefit"],
-                "label": "정부24",
-            },
-        ]
-
-    if "baremi542" in blog:
-        # 정부지원금: 공공기관만 — 네이버쇼핑 절대 사용 금지
-        return [
-            {
-                "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?searchWord={q}",
-                "selectors": [".price", "[class*='amount']", ".benefit"],
-                "label": "복지로",
-            },
-            {
-                "url": "https://www.gov.kr/search?srchWord={q}",
-                "selectors": [".price", "[class*='amount']", ".benefit"],
-                "label": "정부24",
-            },
-            {
-                "url": "https://www.korea.kr/search/search.do?query={q}",
-                "selectors": [".price", "[class*='amount']", ".benefit"],
-                "label": "대한민국정책브리핑",
-            },
-        ]
-
-    # 기본값: 네이버쇼핑 + 쿠팡
+    # 최종 폴백
     return [
-        {
-            "url": "https://search.shopping.naver.com/search/all?query={q}",
-            "selectors": ["strong.price_num", ".price_num", "[class*='price'] strong"],
-            "label": "네이버쇼핑",
-        },
-        {
-            "url": "https://www.coupang.com/np/search?q={q}&channel=auto",
-            "selectors": [".price-value", ".sale-price"],
-            "label": "쿠팡",
-        },
+        {"url": "https://search.shopping.naver.com/search/all?query={q}",
+         "selectors": ["strong.price_num", ".price_num"], "label": "네이버쇼핑"},
     ]
 
 
@@ -242,13 +263,13 @@ def _scrape_prices(page, url: str, selectors: list, on_log=None) -> list:
     return []
 
 
-def _fetch_actual_prices(browser, query: str, blog_name: str = "", on_log=None, claim_value: float = 0) -> list:
-    """블로그별 팩트체크 사이트에서 가격 조회 — 첫 번째 결과 반환 후 폴백"""
+def _fetch_actual_prices(browser, query, blog_name="", keyword="", on_log=None, claim_value=0):
+    """키워드 기반 팩트체크 사이트에서 가격 조회 — 첫 번째 결과 반환 후 폴백"""
     def log(msg):
         if on_log:
             on_log(msg)
 
-    sites = get_fact_check_sites(blog_name)
+    sites = get_fact_check_sites(blog_name, keyword)
     context = browser.contexts[0] if browser.contexts else browser.new_context()
     page = context.new_page()
     try:
@@ -360,7 +381,7 @@ def run(body: str, keyword: str, blog_name: str = "", on_log=None) -> dict:
             search_query = product_query if len(product_query) > 3 else keyword
             log(f"[팩트체크] 검색어: '{search_query}' (원문: '{ctx_text[-20:]}')")
 
-            actual_prices = _fetch_actual_prices(browser, search_query, blog_name, on_log, claim_value=claim["value"])
+            actual_prices = _fetch_actual_prices(browser, search_query, blog_name, keyword, on_log, claim_value=claim["value"])
 
             if not actual_prices:
                 log(f"[팩트체크] '{search_query}' 가격 조회 실패 — 건너뜀")
