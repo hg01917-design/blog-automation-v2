@@ -35,13 +35,21 @@ _PRIORITY_DOMAINS = {
     ],
 }
 
-# 네이버 검색 결과에서 텍스트 추출 셀렉터
+# 네이버 검색 결과에서 텍스트 추출 셀렉터 (UI 버전별 대응)
 _NAVER_SNIPPET_SEL = [
-    ".total_wrap .api_txt_lines",   # 통합검색 본문 발췌
+    # 최신 버전
+    "[class*='api_txt_lines']",
+    "[class*='dsc_txt']",
+    "[class*='total_dsc']",
+    "[class*='news_dsc']",
+    "[class*='slog_dsc']",
+    "[class*='txt_inline']",
+    # 구버전 폴백
+    ".total_wrap .api_txt_lines",
     ".total_wrap .dsc_txt",
-    ".sh_blog_passage",             # 블로그 발췌
+    ".sh_blog_passage",
     ".total_area .dsc_txt_lines",
-    ".news_dsc",                    # 뉴스 요약
+    ".news_dsc",
     "._slog_dsc",
 ]
 
@@ -121,6 +129,27 @@ def _search_naver(page, keyword: str, blog_id: str, on_log=None) -> str:
                     snippets.append(txt)
         except Exception:
             continue
+
+    # 셀렉터 수집 실패 시 JS로 직접 텍스트 추출 (폴백)
+    if not snippets:
+        try:
+            raw = page.evaluate("""() => {
+                const blocks = document.querySelectorAll(
+                    '[id*="sp_"] p, [class*="dsc"] p, [class*="desc"] p, ' +
+                    '[class*="summary"], [class*="snippet"], [class*="txt"] p, ' +
+                    '.news_area p, .blog_area p, .kin_area p'
+                );
+                return Array.from(blocks)
+                    .map(el => el.innerText.trim())
+                    .filter(t => t.length > 30)
+                    .slice(0, 10)
+                    .join('\\n\\n');
+            }""")
+            if raw and len(raw) > 50:
+                snippets.append(raw)
+                log(f"[팩트수집] JS 폴백으로 {len(raw)}자 수집")
+        except Exception:
+            pass
 
     # 우선 도메인 링크 발견 시 해당 페이지 접근
     priority_domains = _PRIORITY_DOMAINS.get(blog_id, [])
