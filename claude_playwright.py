@@ -155,10 +155,11 @@ def _extract_response(page, prev_response_count, log):
 
 
 def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
-                   on_log=None):
+                   on_log=None, extra_context: str = None):
     """claude.ai에 프롬프트를 보내고 응답 텍스트를 반환한다.
 
     blog_id + keyword가 주어지면 Notion에서 프롬프트를 가져와 사용.
+    extra_context가 있으면 프롬프트 맨 앞에 참고 자료로 주입.
     응답 500자 미만이면 최대 2회 재시도.
     """
 
@@ -173,6 +174,11 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         except Exception as e:
             log(f"[Notion] 프롬프트 가져오기 실패: {e}")
             log("[Notion] 기본 프롬프트로 진행합니다.")
+
+    # 사전 수집된 팩트 정보를 프롬프트 맨 앞에 주입
+    if extra_context:
+        prompt = f"{extra_context}\n\n---\n\n{prompt}"
+        log(f"[Playwright] 팩트 컨텍스트 주입: {len(extra_context)}자")
 
     # 프롬프트 내용 확인 로그
     log(f"[Playwright] 프롬프트 길이: {len(prompt)}자")

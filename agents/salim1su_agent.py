@@ -15,6 +15,11 @@ from overnight_run import _truncate_title, fetch_next_keyword, update_keyword_st
 from keyword_crawler import _is_banned
 
 try:
+    from agents import fact_collect as _fact_collect
+except ImportError:
+    import fact_collect as _fact_collect
+
+try:
     import coupang_api
     _COUPANG_AVAILABLE = True
 except ImportError:
@@ -174,9 +179,14 @@ def run(keyword: str = None, on_log=None, on_status=None, _page_id=None):
     # 1단계: 단어 1개 키워드면 세부 롱테일로 확장
     actual_keyword = _expand_keyword(keyword, on_log=log)
 
-    # 2단계: Claude.ai 글 생성 (확장된 키워드로)
+    # 2단계: 사전 팩트 수집
+    fc = _fact_collect.collect(actual_keyword, blog_id, on_log=log)
+
+    # 3단계: Claude.ai 글 생성 (확장된 키워드로)
     log(f"[작성] {blog_id} / '{actual_keyword}' — Claude.ai 글 생성")
-    raw = generate_text("", blog_id=blog_id, keyword=actual_keyword, on_log=log)
+    raw = generate_text("", blog_id=blog_id, keyword=actual_keyword,
+                        extra_context=fc["context"] if fc["success"] else None,
+                        on_log=log)
 
     if not raw or "추출 실패" in raw:
         log("[작성] 글 생성 실패")

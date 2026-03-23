@@ -10,6 +10,11 @@ from claude_playwright import generate_text
 from gemini_image import generate_images
 from overnight_run import _truncate_title
 
+try:
+    from agents import fact_collect as _fact_collect
+except ImportError:
+    import fact_collect as _fact_collect
+
 BLOG_ID = "goodisak"
 PERSONA_RULE = (
     "굳이삭 IT 블로그 운영자 본인 시점 — 트러블슈터(해결사) 페르소나. "
@@ -44,9 +49,14 @@ def run(keyword: str, on_log=None, on_status=None):
 
     log(f"[{blog_id}] 페르소나 규칙 적용: {PERSONA_RULE}")
 
-    # 1. Claude.ai 글 생성
+    # 1. 사전 팩트 수집
+    fc = _fact_collect.collect(keyword, blog_id, on_log=log)
+
+    # 2. Claude.ai 글 생성
     log(f"[작성] {blog_id} / '{keyword}' — Claude.ai 글 생성")
-    raw = generate_text("", blog_id=blog_id, keyword=keyword, on_log=log)
+    raw = generate_text("", blog_id=blog_id, keyword=keyword,
+                        extra_context=fc["context"] if fc["success"] else None,
+                        on_log=log)
 
     if not raw or "추출 실패" in raw:
         log("[작성] ⚠ 글 생성 실패")
