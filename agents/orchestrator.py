@@ -25,8 +25,14 @@ if _env_path.exists():
             key, _, val = line.partition("=")
             os.environ.setdefault(key.strip(), val.strip())
 
-LOG_DIR = Path(__file__).parent.parent / "logs"
-LOG_DIR.mkdir(exist_ok=True)
+# .app 번들 안에서 실행 시 logs 폴더를 번들 밖(프로젝트 루트)으로 설정
+if getattr(sys, "frozen", False):
+    # sys.executable = .../Blog Automation v2.app/Contents/MacOS/Blog Automation v2
+    _base_dir = Path(sys.executable).parent.parent.parent.parent.parent
+else:
+    _base_dir = Path(__file__).parent.parent
+LOG_DIR = _base_dir / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 CHECKPOINT_FILE = LOG_DIR / "checkpoint.json"
 
