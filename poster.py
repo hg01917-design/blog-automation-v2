@@ -1002,8 +1002,13 @@ def _md_to_wp_html(content: str) -> str:
             return ""
         return _markdown_table_to_html(table_buf)
 
+    h2_count = [0]  # H2 순번 (id="section-N" 용)
+
     def inline(text: str) -> str:
+        # 외부 링크: [텍스트](https://...)
         text = re.sub(r"\[([^\]]+)\]\((https?://[^\)]+)\)", r'<a href="\2" target="_blank" rel="noopener">\1</a>', text)
+        # 앵커 링크: [텍스트](#section-N)
+        text = re.sub(r"\[([^\]]+)\]\((#[^\)]+)\)", r'<a href="\2">\1</a>', text)
         text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
         text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
         return text
@@ -1026,7 +1031,8 @@ def _md_to_wp_html(content: str) -> str:
         if stripped.startswith("### "):
             html_parts.append(f"<h3>{inline(stripped[4:])}</h3>")
         elif stripped.startswith("## "):
-            html_parts.append(f"<h2>{inline(stripped[3:])}</h2>")
+            h2_count[0] += 1
+            html_parts.append(f'<h2 id="section-{h2_count[0]}">{inline(stripped[3:])}</h2>')
         elif stripped == "[애드센스]":
             html_parts.append(_get_adsense_html())
         elif re.match(r"^\{\{이미지\d+\}\}$", stripped):
