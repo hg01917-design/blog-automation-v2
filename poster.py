@@ -1238,6 +1238,8 @@ def _post_wordpress(account, title, content, tags=None,
                         "rank_math_focus_keyword": rm_keyword,
                         "rank_math_title": seo_title,
                         "rank_math_description": meta_desc,
+                        "rank_math_rich_snippet": "article",
+                        "rank_math_snippet_article_type": "BlogPosting",
                     },
                 }
                 rm_req = urllib.request.Request(
@@ -1250,6 +1252,48 @@ def _post_wordpress(account, title, content, tags=None,
                 log(f"[WordPress] ✓ Rank Math 메타 설정 완료")
             except Exception as e:
                 log(f"[WordPress] ⚠ Rank Math 메타 설정 실패 (스킵): {e}")
+
+            # JSON-LD Article 스키마 직접 삽입 (Rank Math updateSchemas API 불안정 우회)
+            try:
+                import datetime
+                now_iso = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S+09:00")
+                schema_obj = {
+                    "@context": "https://schema.org",
+                    "@type": "BlogPosting",
+                    "headline": seo_title,
+                    "description": meta_desc,
+                    "url": post_url,
+                    "datePublished": now_iso,
+                    "dateModified": now_iso,
+                    "inLanguage": "ko-KR",
+                    "author": {
+                        "@type": "Person",
+                        "name": wp_user,
+                    },
+                    "publisher": {
+                        "@type": "Organization",
+                        "name": site_url.replace("https://", "").replace("http://", "").split("/")[0],
+                    },
+                }
+                jsonld_block = (
+                    "\n<!-- wp:html -->\n"
+                    '<script type="application/ld+json">\n'
+                    + json.dumps(schema_obj, ensure_ascii=False, indent=2)
+                    + "\n</script>\n"
+                    "<!-- /wp:html -->\n"
+                )
+                updated_content = html_content + jsonld_block
+                update_body = {"content": updated_content}
+                upd_req = urllib.request.Request(
+                    f"{site_url}/wp-json/wp/v2/posts/{post_id}",
+                    data=json.dumps(update_body).encode(),
+                    headers=headers,
+                    method="POST",
+                )
+                urllib.request.urlopen(upd_req, timeout=30)
+                log(f"[WordPress] ✓ JSON-LD Article 스키마 삽입 완료")
+            except Exception as e:
+                log(f"[WordPress] ⚠ JSON-LD 스키마 삽입 실패 (스킵): {e}")
 
         return True
     except Exception as e:
