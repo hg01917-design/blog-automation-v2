@@ -1022,7 +1022,7 @@ def _md_to_wp_html(content: str) -> str:
         elif stripped.startswith("## "):
             html_parts.append(f"<h2>{inline(stripped[3:])}</h2>")
         elif stripped == "[애드센스]":
-            continue  # 애드센스 블록 제거
+            html_parts.append(_get_adsense_html())
         elif re.match(r"^\{\{이미지\d+\}\}$", stripped):
             html_parts.append(stripped)  # 이미지 플레이스홀더 유지
         else:
