@@ -56,7 +56,7 @@ _PRIORITY_DOMAINS = {
 }
 
 
-def _resolve_salim1su_url(keyword: str) -> str | None:
+def _resolve_salim1su_url(keyword: str):
     """키워드를 보고 salim1su에 적합한 공식 검색 URL을 반환. 없으면 None(→ 네이버 사용)."""
     q = urllib.parse.quote(keyword)
     for triggers, url_tpl in _SALIM1SU_ROUTES:
