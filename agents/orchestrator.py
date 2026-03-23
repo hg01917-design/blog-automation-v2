@@ -15,8 +15,9 @@ import keyword_agent
 import common_review_agent
 import poster_agent
 
-# .env 로드
-_env_path = Path(__file__).parent.parent / ".env"
+# .env 로드 (.app 번들 실행 시 프로젝트 루트 사용)
+import os as _os
+_env_path = Path(_os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(Path(__file__).parent.parent))) / ".env"
 if _env_path.exists():
     import os
     for line in _env_path.read_text().splitlines():

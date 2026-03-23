@@ -5,7 +5,7 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets', 'assets'), ('agents', 'agents'), ('config.py', '.'), ('notion_prompt.py', '.'), ('poster.py', '.'), ('browser.py', '.'), ('keyword_crawler.py', '.'), ('.env', '.')],
+    datas=[('assets', 'assets'), ('agents', 'agents'), ('config.py', '.'), ('notion_prompt.py', '.'), ('poster.py', '.'), ('browser.py', '.'), ('keyword_crawler.py', '.')],
     hiddenimports=['PyQt5', 'PyQt5.QtWidgets', 'PyQt5.QtCore', 'PyQt5.QtGui', 'playwright', 'requests', 'anthropic'],
     hookspath=[],
     hooksconfig={},

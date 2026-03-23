@@ -1,5 +1,16 @@
 import sys
 import os
+from pathlib import Path as _Path
+
+# ── 프로젝트 루트 경로 설정 (.app 번들 / 일반 실행 모두 대응) ──────────────
+if getattr(sys, "frozen", False):
+    # .app/Contents/MacOS/executable → 5단계 위가 프로젝트 루트
+    _PROJECT_ROOT = _Path(sys.executable).parent.parent.parent.parent.parent
+else:
+    _PROJECT_ROOT = _Path(__file__).parent
+
+os.environ["BLOG_AUTO_PROJECT_ROOT"] = str(_PROJECT_ROOT)
+
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QTextEdit, QPushButton, QFrame, QSizePolicy,
@@ -655,7 +666,7 @@ QPushButton {
 class SettingsDialog(QDialog):
     """API 키 / 환경변수 설정 다이얼로그 — 저장 시 .env 파일에 반영"""
 
-    _ENV_PATH = Path(__file__).parent / ".env"
+    _ENV_PATH = _Path(os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(_Path(__file__).parent))) / ".env"
 
     # 표시할 키 목록: (env_key, 레이블, placeholder, 비밀번호여부)
     _FIELDS = [
