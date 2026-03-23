@@ -90,6 +90,48 @@ def fetch_next_keyword(blog_id):
         return None, None
 
 
+def fetch_failed_keywords(blog_id):
+    """Notion 키워드 큐에서 blog_id의 '실패' 상태 키워드 전체 가져오기.
+
+    Returns: list of (keyword: str, page_id: str)
+    """
+    body = {
+        "filter": {
+            "and": [
+                {"property": "블로그", "select": {"equals": blog_id}},
+                {"property": "상태", "select": {"equals": "실패"}},
+            ]
+        },
+        "sorts": [{"property": "검색량", "direction": "descending"}],
+        "page_size": 50,
+    }
+    req = urllib.request.Request(
+        f"{NOTION_API}/databases/{KEYWORD_DB_ID}/query",
+        data=json.dumps(body).encode(),
+        headers=_notion_headers(),
+        method="POST",
+    )
+    try:
+        resp = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(resp.read())
+        results = data.get("results", [])
+        keywords = []
+        for page in results:
+            page_id = page["id"]
+            props = page.get("properties", {})
+            for prop_name in ["키워드", "Name", "name", "제목"]:
+                prop = props.get(prop_name, {})
+                if prop.get("type") == "title":
+                    texts = prop.get("title", [])
+                    if texts:
+                        keywords.append((texts[0].get("plain_text", ""), page_id))
+                        break
+        return keywords
+    except Exception as e:
+        log(f"[Notion] 실패 키워드 조회 실패: {e}")
+        return []
+
+
 def update_keyword_status(page_id, status, memo=None):
     """Notion 키워드 상태 업데이트 (메모 옵션)"""
     props = {"상태": {"select": {"name": status}}}
