@@ -200,11 +200,17 @@ def check_keyword_duplicate_in_notion(blog_id, keyword):
                         done_keywords.append(texts[0].get("plain_text", ""))
                         break
 
-        kw_no_space = keyword.replace(" ", "")
+        kw_words = set(keyword.split())
         for done in done_keywords:
-            done_no_space = done.replace(" ", "")
-            # 한 쪽이 다른 쪽을 포함하면 중복
-            if kw_no_space in done_no_space or done_no_space in kw_no_space:
+            done_words = set(done.split())
+            # 공백 제거 후 완전 동일 (예: "실업급여계산기" == "실업급여 계산기")
+            if keyword.replace(" ", "") == done.replace(" ", ""):
+                return True, done
+            # 단어 단위로 한 쪽이 다른 쪽의 완전한 부분집합 (예: {"실업급여"} ⊂ {"실업급여","계산기"})
+            # 단, 단어가 1개짜리 키워드는 제외 (너무 광범위한 차단 방지)
+            if len(kw_words) >= 2 and kw_words <= done_words:
+                return True, done
+            if len(done_words) >= 2 and done_words <= kw_words:
                 return True, done
         return False, None
     except Exception:
