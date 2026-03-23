@@ -1174,8 +1174,21 @@ def _post_wordpress(account, title, content, tags=None,
     else:
         meta_desc = plain[:160]
 
-    # 5. SEO 제목: 키워드 포함 보장
-    seo_title = title if rm_keyword in title else f"{rm_keyword} | {title}"
+    # 5. SEO 제목: 키워드 + 파워워드 + 감성어 포함 (Rank Math 체크 대응)
+    _power_words = ["핵심", "완벽", "필수", "쉬운", "빠른", "정확한"]
+    _sentiment_words = ["쉽게", "간단히", "완벽하게", "빠르게", "정확히"]
+    base_seo = title if rm_keyword in title else f"{rm_keyword} | {title}"
+    has_power = any(w in base_seo for w in _power_words)
+    has_sentiment = any(w in base_seo for w in _sentiment_words)
+    if not has_power and not has_sentiment:
+        seo_title = f"{rm_keyword} 핵심 정리 | {title} 쉽게 확인"
+    elif not has_power:
+        seo_title = f"{rm_keyword} 핵심 정리 | {title}"
+    elif not has_sentiment:
+        seo_title = base_seo.rstrip() + " — 쉽게 확인"
+    else:
+        seo_title = base_seo
+    seo_title = seo_title[:60]  # SEO 제목 60자 이내
 
     # 6. slug: rm_keyword 기반 (공백→하이픈)
     slug = urllib.parse.quote(rm_keyword.replace(" ", "-"), safe="")
