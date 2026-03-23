@@ -127,8 +127,7 @@ def _get_adsense_html():
     return (
         '<div class="ad-container" style="margin:1.5em 0;text-align:center;">'
         f'<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={pub}" crossorigin="anonymous"></script>'
-        f'<ins class="adsbygoogle" style="display:block;text-align:center;" '
-        f'data-ad-layout="in-article" data-ad-format="fluid" '
+        f'<ins class="adsbygoogle" style="display:inline-block;width:300px;height:250px" '
         f'data-ad-client="{pub}" data-ad-slot="{slot}"></ins>'
         '<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>'
         '</div><p>&nbsp;</p>'
