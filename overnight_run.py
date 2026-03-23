@@ -166,6 +166,51 @@ def _extract_core_words(keyword):
     return core if core else words[:2]
 
 
+def check_keyword_duplicate_in_notion(blog_id, keyword):
+    """노션 큐에서 이미 완료된 유사 키워드가 있는지 확인한다.
+
+    한 키워드가 다른 키워드를 포함하거나(부분 문자열) 핵심 단어가 겹치면 중복으로 판단.
+    예: "실업급여" ↔ "실업급여 계산기" → 중복
+    """
+    body = {
+        "filter": {
+            "and": [
+                {"property": "블로그", "select": {"equals": blog_id}},
+                {"property": "상태", "select": {"equals": "완료"}},
+            ]
+        },
+        "page_size": 100,
+    }
+    req = urllib.request.Request(
+        f"{NOTION_API}/databases/{KEYWORD_DB_ID}/query",
+        data=json.dumps(body).encode(),
+        headers=_notion_headers(),
+        method="POST",
+    )
+    try:
+        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        done_keywords = []
+        for page in data.get("results", []):
+            props = page.get("properties", {})
+            for prop_name in ["키워드", "Name", "name", "제목"]:
+                prop = props.get(prop_name, {})
+                if prop.get("type") == "title":
+                    texts = prop.get("title", [])
+                    if texts:
+                        done_keywords.append(texts[0].get("plain_text", ""))
+                        break
+
+        kw_no_space = keyword.replace(" ", "")
+        for done in done_keywords:
+            done_no_space = done.replace(" ", "")
+            # 한 쪽이 다른 쪽을 포함하면 중복
+            if kw_no_space in done_no_space or done_no_space in kw_no_space:
+                return True, done
+        return False, None
+    except Exception:
+        return False, None
+
+
 def check_duplicate_post(blog_id, keyword, on_log=None):
     """네이버 블로그에서 유사 주제 글이 이미 있는지 확인한다.
 
@@ -272,7 +317,16 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     from gemini_image import generate_images
     from poster import post_single
 
-    # 0. 유사문서 체크
+    # 0-1. 노션 큐 내 중복 키워드 체크 (완료된 유사 키워드 존재 여부)
+    log(f"[파이프라인] {blog_id} / '{keyword}' — 노션 키워드 중복 체크")
+    is_notion_dup, notion_matched = check_keyword_duplicate_in_notion(blog_id, keyword)
+    if is_notion_dup:
+        log(f"[파이프라인] ⚠ 유사 키워드 이미 완료됨: '{notion_matched}' — '{keyword}' 건너뜀")
+        if page_id:
+            update_keyword_status(page_id, "실패", memo=f"유사키워드 중복: {notion_matched[:30]}")
+        return False
+
+    # 0-2. 유사문서 체크 (블로그 내 기존 글)
     log(f"[파이프라인] {blog_id} / '{keyword}' — 유사문서 체크")
     is_dup, matched = check_duplicate_post(blog_id, keyword, on_log=log)
     if is_dup:
