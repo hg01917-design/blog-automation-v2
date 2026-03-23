@@ -8,6 +8,7 @@ from overnight_run import (
     fetch_next_keyword,
     update_keyword_status,
     check_duplicate_post,
+    check_keyword_duplicate_in_notion,
 )
 from keyword_crawler import _is_banned
 
@@ -38,6 +39,13 @@ def run(blog_id: str, on_log=None, on_status=None):
             return None
 
         log(f"[키워드] 후보: '{kw}'")
+
+        # 노션 큐 내 중복 키워드 체크 (이미 완료된 유사 키워드)
+        is_notion_dup, notion_matched = check_keyword_duplicate_in_notion(blog_id, kw)
+        if is_notion_dup:
+            log(f"[키워드] ⚠ 이미 완료된 유사 키워드: '{notion_matched}' — '{kw}' 실패 처리")
+            update_keyword_status(page_id, "실패", memo=f"유사키워드 중복: {notion_matched[:30]}")
+            continue
 
         # 금지 카테고리 필터
         if _is_banned(kw, blog_id):

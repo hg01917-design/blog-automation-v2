@@ -8,32 +8,31 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from browser import connect_cdp, get_or_create_page
 
-# 블로그별 우선 검색 도메인 (검색 결과에서 이 도메인 링크 우선 추출)
+# 블로그별 직접 검색 URL (쿠팡 등 쇼핑 광고가 없는 공식 사이트 직접 검색)
+# None이면 Naver 통합검색 사용
+_DIRECT_SEARCH_URL = {
+    "baremi542": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?searchWord={q}",
+    "salim1su":  "https://www.gov.kr/search?srchWord={q}",
+    "goodisak":  None,  # Naver 사용
+    "nolja100":  None,  # Naver 사용
+}
+
+# 검색에 추가할 블로그별 보조 쿼리 (Naver 사용 시)
+_SEARCH_SUFFIX = {
+    "goodisak": " 스펙 가격",
+    "nolja100": " 여행정보 운영시간",
+}
+
+# Naver 사용 블로그에서 우선 찾을 도메인
 _PRIORITY_DOMAINS = {
-    "baremi542": [
-        "bokjiro.go.kr", "gov.kr", "korea.kr", "moel.go.kr",
-        "nts.go.kr", "hometax.go.kr", "molit.go.kr", "mohw.go.kr",
-    ],
-    "salim1su": [
-        "bokjiro.go.kr", "gov.kr", "kepco.co.kr", "kogas.or.kr",
-        "korea.kr", "mohw.go.kr",
-    ],
     "goodisak": [
         "samsung.com", "lg.com", "apple.com", "microsoft.com",
-        "naver.com", "danawa.com",
+        "danawa.com",
     ],
     "nolja100": [
         "visitkorea.or.kr", "knps.or.kr", "tour.go.kr",
         "korea.net", "jejutour.go.kr",
     ],
-}
-
-# 검색에 추가할 블로그별 보조 쿼리
-_SEARCH_SUFFIX = {
-    "baremi542": " 신청방법 지원금액",
-    "salim1su": " 신청방법 혜택",
-    "goodisak": " 스펙 가격",
-    "nolja100": " 여행정보 운영시간",
 }
 
 # 네이버 검색 결과에서 텍스트 추출 셀렉터
@@ -54,8 +53,46 @@ def _clean(text: str) -> str:
     return text.strip()
 
 
+def _fetch_official_site(page, keyword: str, blog_id: str, on_log=None) -> str:
+    """공식 사이트 직접 검색 (baremi542/salim1su 전용 — 쇼핑 광고 없는 정부 사이트)"""
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    direct_url_tpl = _DIRECT_SEARCH_URL.get(blog_id)
+    if not direct_url_tpl:
+        return ""
+
+    q = urllib.parse.quote(keyword)
+    url = direct_url_tpl.format(q=q)
+
+    log(f"[팩트수집] 공식 사이트 검색: {url[:80]}")
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        page.wait_for_timeout(3000)
+    except Exception as e:
+        log(f"[팩트수집] 공식 사이트 접근 실패: {e}")
+        return ""
+
+    body_text = ""
+    for body_sel in ["main", "article", "#content", ".content", ".result", "body"]:
+        try:
+            el = page.locator(body_sel).first
+            if el.count() > 0:
+                body_text = _clean(el.inner_text(timeout=3000))
+                if len(body_text) > 200:
+                    break
+        except Exception:
+            continue
+
+    if body_text:
+        log(f"[팩트수집] 공식 사이트 텍스트 {len(body_text)}자 수집")
+        return body_text[:3000]
+    return ""
+
+
 def _search_naver(page, keyword: str, blog_id: str, on_log=None) -> str:
-    """네이버 통합검색에서 스니펫 텍스트 수집"""
+    """네이버 통합검색에서 스니펫 텍스트 수집 (goodisak/nolja100 전용)"""
     def log(msg):
         if on_log:
             on_log(msg)
@@ -73,7 +110,7 @@ def _search_naver(page, keyword: str, blog_id: str, on_log=None) -> str:
 
     snippets = []
 
-    # 1. 스니펫 텍스트 수집
+    # 스니펫 텍스트 수집
     for sel in _NAVER_SNIPPET_SEL:
         try:
             els = page.locator(sel)
@@ -85,41 +122,34 @@ def _search_naver(page, keyword: str, blog_id: str, on_log=None) -> str:
         except Exception:
             continue
 
-    # 2. 우선 도메인 링크 발견 시 해당 페이지 접근해서 본문 추출
+    # 우선 도메인 링크 발견 시 해당 페이지 접근
     priority_domains = _PRIORITY_DOMAINS.get(blog_id, [])
-    if priority_domains:
+    if priority_domains and snippets:
         try:
-            links = page.locator("a[href]").all()
-            target_url = None
-            for link in links[:30]:
+            # 특정 도메인을 포함하는 링크만 직접 셀렉터로 찾기
+            for domain in priority_domains:
                 try:
-                    href = link.get_attribute("href") or ""
-                    if any(d in href for d in priority_domains):
-                        target_url = href
-                        break
+                    link_el = page.locator(f'a[href*="{domain}"]').first
+                    if link_el.count() > 0:
+                        target_url = link_el.get_attribute("href")
+                        if target_url:
+                            log(f"[팩트수집] 공식 페이지: {target_url[:80]}")
+                            page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
+                            page.wait_for_timeout(2000)
+                            for body_sel in ["main", "article", "#content", "body"]:
+                                try:
+                                    el = page.locator(body_sel).first
+                                    if el.count() > 0:
+                                        body_text = _clean(el.inner_text(timeout=3000))
+                                        if len(body_text) > 200:
+                                            snippets.append(f"[공식 출처]\n{body_text[:2000]}")
+                                            log(f"[팩트수집] 공식 페이지 {len(body_text)}자 수집")
+                                            break
+                                except Exception:
+                                    continue
+                            break
                 except Exception:
                     continue
-
-            if target_url:
-                log(f"[팩트수집] 공식 페이지 접근: {target_url[:80]}")
-                page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
-                page.wait_for_timeout(2000)
-
-                # 본문 텍스트 추출 (최대 2000자)
-                body_text = ""
-                for body_sel in ["main", "article", "#content", ".content", "body"]:
-                    try:
-                        el = page.locator(body_sel).first
-                        if el.count() > 0:
-                            body_text = _clean(el.inner_text(timeout=3000))
-                            if len(body_text) > 200:
-                                break
-                    except Exception:
-                        continue
-
-                if body_text:
-                    snippets.append(f"[공식 출처 발췌]\n{body_text[:2000]}")
-                    log(f"[팩트수집] 공식 페이지 텍스트 {len(body_text)}자 수집")
         except Exception as e:
             log(f"[팩트수집] 공식 페이지 접근 실패: {e}")
 
@@ -153,7 +183,11 @@ def collect(keyword: str, blog_id: str, on_log=None) -> dict:
         context = browser.contexts[0] if browser.contexts else browser.new_context()
         page = context.new_page()
         try:
-            raw_text = _search_naver(page, keyword, blog_id, on_log)
+            # 공식 사이트 직접 검색 우선 (baremi542/salim1su), 없으면 Naver
+            if _DIRECT_SEARCH_URL.get(blog_id):
+                raw_text = _fetch_official_site(page, keyword, blog_id, on_log)
+            else:
+                raw_text = _search_naver(page, keyword, blog_id, on_log)
         finally:
             try:
                 page.close()
