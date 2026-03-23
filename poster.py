@@ -997,6 +997,7 @@ def _md_to_wp_html(content: str) -> str:
         return _markdown_table_to_html(table_buf)
 
     def inline(text: str) -> str:
+        text = re.sub(r"\[([^\]]+)\]\((https?://[^\)]+)\)", r'<a href="\2" target="_blank" rel="noopener">\1</a>', text)
         text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
         text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
         return text
