@@ -657,6 +657,8 @@ QPushButton {
     padding: 8px 18px; border: none; border-radius: 6px;
     font-size: 13px; color: #fff;
 }
+#startBtn { background: #16a34a; }
+#startBtn:disabled { background: #555; }
 #stopBtn  { background: #dc2626; }
 #stopBtn:disabled { background: #555; }
 #clearBtn { background: #333; }
@@ -917,7 +919,13 @@ class BlogAutomationApp(QMainWindow):
             cards_row.addWidget(card)
         cards_row.addStretch()
 
-        # 스케줄러 중지 버튼
+        # 스케줄러 시작/중지 버튼
+        self.start_btn = QPushButton("▶  스케줄러 시작")
+        self.start_btn.setObjectName("startBtn")
+        self.start_btn.setFixedHeight(36)
+        self.start_btn.clicked.connect(self._run_scheduler)
+        cards_row.addWidget(self.start_btn, alignment=Qt.AlignVCenter)
+
         self.stop_btn = QPushButton("⏹  스케줄러 중지")
         self.stop_btn.setObjectName("stopBtn")
         self.stop_btn.setFixedHeight(36)
@@ -972,6 +980,7 @@ class BlogAutomationApp(QMainWindow):
             self.log_box.append("[스케줄러] 활성 블로그 없음 — 시작 안 함")
             return
 
+        self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.scene.reset_all()
 
@@ -986,10 +995,12 @@ class BlogAutomationApp(QMainWindow):
         if self.sched_worker and self.sched_worker.isRunning():
             self.sched_worker.stop()
             self.log_box.append("[스케줄러] 중지 요청...")
+        self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
 
     def _on_scheduler_done(self, text):
         self.log_box.append(text)
+        self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.scene.reset_all()
 
