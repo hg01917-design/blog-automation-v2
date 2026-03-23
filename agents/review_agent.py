@@ -155,7 +155,7 @@ def run(result: dict, keyword: str, blog_id: str,
 
         # ── 팩트체크 (가격/스펙 검증 및 자동 수정) ──
         try:
-            fc = _fact_check.run(body, keyword, on_log=on_log)
+            fc = _fact_check.run(body, keyword, blog_name=blog_id, on_log=on_log)
             if fc["corrections"]:
                 log(f"[팩트체크] {len(fc['corrections'])}건 수정됨:")
                 for c in fc["corrections"]:
