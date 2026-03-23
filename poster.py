@@ -1208,8 +1208,33 @@ def _post_wordpress(account, title, content, tags=None,
             method="POST",
         )
         resp = json.loads(urllib.request.urlopen(req, timeout=30).read())
+        post_id = resp.get("id")
         post_url = resp.get("link", "")
         log(f"[WordPress] ✓ 발행 완료: {post_url}")
+
+        # Rank Math updateMeta — REST API meta 필드가 비활성화된 경우 전용 엔드포인트 사용
+        if post_id and keyword:
+            try:
+                rm_body = {
+                    "objectID": post_id,
+                    "objectType": "post",
+                    "meta": {
+                        "rank_math_focus_keyword": keyword,
+                        "rank_math_title": seo_title,
+                        "rank_math_description": meta_desc,
+                    },
+                }
+                rm_req = urllib.request.Request(
+                    f"{site_url}/wp-json/rankmath/v1/updateMeta",
+                    data=json.dumps(rm_body).encode(),
+                    headers=headers,
+                    method="POST",
+                )
+                urllib.request.urlopen(rm_req, timeout=15)
+                log(f"[WordPress] ✓ Rank Math 메타 설정 완료")
+            except Exception as e:
+                log(f"[WordPress] ⚠ Rank Math 메타 설정 실패 (스킵): {e}")
+
         return True
     except Exception as e:
         log(f"[WordPress] ⚠ 발행 실패: {e}")
