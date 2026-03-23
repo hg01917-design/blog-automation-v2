@@ -1147,19 +1147,35 @@ def _post_wordpress(account, title, content, tags=None,
 
     html_content = re.sub(r"\{\{이미지(\d+)\}\}", _replace_image, html_content)
 
-    # 3. 메타 설명: 키워드로 시작하도록
+    # 3. 본문에서 실제 사용된 키워드 형태 감지 (띄어쓰기 변형 대응)
     plain = re.sub(r"<[^>]+>", "", html_content)
     plain = re.sub(r"\s+", " ", plain).strip()
-    if keyword and not plain.startswith(keyword):
-        meta_desc = f"{keyword} — {plain}"[:160]
+    rm_keyword = keyword  # Rank Math에 전달할 키워드
+    if keyword and keyword not in plain:
+        # 공백 추가/제거 변형 탐색
+        spaced = re.sub(r"(?<=\S)(?=\S)", " ", keyword)   # 각 글자 사이 공백 삽입 시도
+        no_space = keyword.replace(" ", "")
+        # 실제 본문에 있는 형태 우선 사용
+        for variant in [no_space, spaced] + [keyword]:
+            if variant and variant in plain:
+                rm_keyword = variant
+                break
+        else:
+            # 없으면 키워드를 본문 맨 앞에 삽입
+            html_content = f"<p>{keyword}에 대해 정리했습니다.</p>\n" + html_content
+            plain = keyword + " " + plain
+
+    # 4. 메타 설명: 키워드로 시작하도록
+    if not plain.startswith(rm_keyword):
+        meta_desc = f"{rm_keyword} — {plain}"[:160]
     else:
         meta_desc = plain[:160]
 
-    # 4. SEO 제목: 키워드 포함 보장
-    seo_title = title if keyword in title else f"{keyword} | {title}"
+    # 5. SEO 제목: 키워드 포함 보장
+    seo_title = title if rm_keyword in title else f"{rm_keyword} | {title}"
 
-    # 5. slug: 키워드 기반
-    slug = urllib.parse.quote(keyword.replace(" ", "-"), safe="")
+    # 6. slug: rm_keyword 기반 (공백→하이픈)
+    slug = urllib.parse.quote(rm_keyword.replace(" ", "-"), safe="")
 
     # 6. 태그 ID 조회 (없으면 생성)
     tag_ids = []
@@ -1213,13 +1229,13 @@ def _post_wordpress(account, title, content, tags=None,
         log(f"[WordPress] ✓ 발행 완료: {post_url}")
 
         # Rank Math updateMeta — REST API meta 필드가 비활성화된 경우 전용 엔드포인트 사용
-        if post_id and keyword:
+        if post_id and rm_keyword:
             try:
                 rm_body = {
                     "objectID": post_id,
                     "objectType": "post",
                     "meta": {
-                        "rank_math_focus_keyword": keyword,
+                        "rank_math_focus_keyword": rm_keyword,
                         "rank_math_title": seo_title,
                         "rank_math_description": meta_desc,
                     },

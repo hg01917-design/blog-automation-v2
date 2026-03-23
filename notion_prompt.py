@@ -307,9 +307,10 @@ def fetch_prompt(blog_id: str, keyword: str, on_log=None) -> str:
 - 확인되지 않은 수치·날짜 단정 금지
 
 **Rank Math SEO 최적화 규칙 (baremi542)**:
-- 본문 첫 문단(100자 이내)에 반드시 메인 키워드({keyword})를 자연스럽게 포함
-- 예시: '{keyword}에 대해 찾아보시는 분들이 많아서 직접 정리해봤어요.'
-- 메타 설명은 본문 첫 문단 내용 기반으로 160자 이내로 작성"""
+- 본문 첫 문장(50자 이내)에 메인 키워드 '{keyword}'를 **정확히 그대로(띄어쓰기·철자 변형 절대 금지)** 포함
+- 예시: '{keyword}를 찾고 계신 분들을 위해 직접 정리해봤어요.'
+- 본문 전체에서도 '{keyword}' 표현을 최소 3회 이상 그대로 사용
+- 메타 설명은 '{keyword}'로 시작하며 160자 이내로 작성"""
 
     # {keyword} 치환
     prompt_text = prompt_text.replace("{keyword}", keyword)
