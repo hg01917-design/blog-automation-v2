@@ -12,14 +12,29 @@ from browser import connect_cdp, get_or_create_page
 # None이면 Naver 통합검색 사용
 _DIRECT_SEARCH_URL = {
     "baremi542": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?searchWord={q}",
-    "salim1su":  None,  # Naver 사용
+    "salim1su":  None,  # 키워드 기반 라우팅 (_resolve_salim1su_url 사용)
     "goodisak":  None,  # Naver 사용
     "nolja100":  None,  # Naver 사용
 }
 
+# salim1su 키워드 → 공식 사이트 라우팅 규칙
+# (키워드, 검색 URL 템플릿) 순서대로 매칭
+_SALIM1SU_ROUTES = [
+    # 전기 관련
+    (["전기", "kWh", "kwh", "한전", "전력", "누진"], "https://www.kepco.co.kr/search/index.do?searchWord={q}"),
+    # 가스 관련
+    (["가스", "도시가스", "난방", "보일러"], "https://www.kogas.or.kr/search/search.do?q={q}"),
+    # 수도 관련
+    (["수도", "상수도", "하수도", "물값"], None),  # 지자체별 → 네이버
+    # 건강보험·의료비
+    (["건강보험", "의료비", "병원비", "실비", "보험료"], "https://www.nhis.or.kr/search/search.do?q={q}"),
+    # 식비·마트
+    (["장보기", "식비", "마트", "식재료", "음식"], None),  # 네이버
+]
+
 # 검색에 추가할 블로그별 보조 쿼리 (Naver 사용 시)
 _SEARCH_SUFFIX = {
-    "salim1su": " 방법 절약 팁",
+    "salim1su": " 절약 방법",
     "goodisak": " 스펙 가격",
     "nolja100": " 여행정보 운영시간",
 }
@@ -27,8 +42,8 @@ _SEARCH_SUFFIX = {
 # Naver 사용 블로그에서 우선 찾을 도메인
 _PRIORITY_DOMAINS = {
     "salim1su": [
-        "gov.kr", "kepco.co.kr", "moef.go.kr",
-        "energysaving.or.kr", "kea.kr",
+        "kepco.co.kr", "kogas.or.kr", "nhis.or.kr",
+        "energysaving.or.kr", "gov.kr",
     ],
     "goodisak": [
         "samsung.com", "lg.com", "apple.com", "microsoft.com",
@@ -39,6 +54,17 @@ _PRIORITY_DOMAINS = {
         "korea.net", "jejutour.go.kr",
     ],
 }
+
+
+def _resolve_salim1su_url(keyword: str) -> str | None:
+    """키워드를 보고 salim1su에 적합한 공식 검색 URL을 반환. 없으면 None(→ 네이버 사용)."""
+    q = urllib.parse.quote(keyword)
+    for triggers, url_tpl in _SALIM1SU_ROUTES:
+        if any(t in keyword for t in triggers):
+            if url_tpl:
+                return url_tpl.format(q=q)
+            return None  # 명시적으로 네이버 사용
+    return None  # 기본값: 네이버
 
 # 네이버 검색 결과에서 텍스트 추출 셀렉터 (UI 버전별 대응)
 _NAVER_SNIPPET_SEL = [
@@ -64,6 +90,31 @@ def _clean(text: str) -> str:
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+
+def _fetch_url_direct(page, url: str, on_log=None) -> str:
+    """완성된 URL에 직접 접근해서 본문 텍스트 추출."""
+    def log(msg):
+        if on_log:
+            on_log(msg)
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        page.wait_for_timeout(3000)
+    except Exception as e:
+        log(f"[팩트수집] 직접 접근 실패: {e}")
+        return ""
+
+    for body_sel in ["main", "article", "#content", ".content", ".result", "body"]:
+        try:
+            el = page.locator(body_sel).first
+            if el.count() > 0:
+                body_text = _clean(el.inner_text(timeout=3000))
+                if len(body_text) > 200:
+                    log(f"[팩트수집] 텍스트 {len(body_text)}자 수집")
+                    return body_text[:3000]
+        except Exception:
+            continue
+    return ""
 
 
 def _fetch_official_site(page, keyword: str, blog_id: str, on_log=None) -> str:
@@ -217,8 +268,20 @@ def collect(keyword: str, blog_id: str, on_log=None) -> dict:
         context = browser.contexts[0] if browser.contexts else browser.new_context()
         page = context.new_page()
         try:
-            # 공식 사이트 직접 검색 우선 (baremi542/salim1su), 없으면 Naver
-            if _DIRECT_SEARCH_URL.get(blog_id):
+            # salim1su: 키워드 기반으로 공식 사이트 URL 결정
+            if blog_id == "salim1su":
+                direct_url = _resolve_salim1su_url(keyword)
+                if direct_url:
+                    log(f"[팩트수집] 공식 사이트 라우팅: {direct_url[:60]}")
+                    raw_text = _fetch_url_direct(page, direct_url, on_log)
+                    # 결과 부족 시 네이버로 폴백
+                    if not raw_text or len(raw_text) < 200:
+                        log("[팩트수집] 공식 사이트 결과 부족 — 네이버 폴백")
+                        raw_text = _search_naver(page, keyword, blog_id, on_log)
+                else:
+                    raw_text = _search_naver(page, keyword, blog_id, on_log)
+            # baremi542: 고정 공식 사이트 직접 검색
+            elif _DIRECT_SEARCH_URL.get(blog_id):
                 raw_text = _fetch_official_site(page, keyword, blog_id, on_log)
             else:
                 raw_text = _search_naver(page, keyword, blog_id, on_log)
