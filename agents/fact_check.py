@@ -95,17 +95,38 @@ def get_fact_check_sites(blog_name: str) -> list:
         ]
 
     if "nolja100" in blog:
-        # 여행: 네이버호텔 우선, 야놀자 폴백 (관광지 공식 홈페이지는 키워드 기반이라 목록 포함)
+        # 여행: 가격 규모에 따라 검증 사이트 분리
+        # - 3만원 미만(입장료·교통비 등): 네이버 검색 + 한국관광공사
+        # - 3만원 이상(숙박 등): 네이버호텔 + 야놀자
         return [
+            {
+                "url": "https://search.naver.com/search.naver?query={q}+입장료",
+                "selectors": [
+                    ".total_wrap .api_txt_lines",
+                    ".total_wrap .dsc_txt",
+                    ".sh_blog_passage",
+                    ".news_dsc",
+                ],
+                "label": "네이버검색(입장료)",
+                "max_price": 29999,  # 3만원 미만만
+            },
+            {
+                "url": "https://korean.visitkorea.or.kr/search/search_list.do?keyword={q}",
+                "selectors": [".price", "[class*='price']", ".fee"],
+                "label": "한국관광공사",
+                "max_price": 29999,
+            },
             {
                 "url": "https://hotel.naver.com/hotels/search?query={q}",
                 "selectors": [".price", "[class*='price']", ".room-price"],
                 "label": "네이버호텔",
+                "min_price": 30000,
             },
             {
                 "url": "https://www.yanolja.com/search?keyword={q}",
                 "selectors": [".price", "[class*='price']", ".sale-price"],
                 "label": "야놀자",
+                "min_price": 30000,
             },
         ]
 
@@ -221,7 +242,7 @@ def _scrape_prices(page, url: str, selectors: list, on_log=None) -> list:
     return []
 
 
-def _fetch_actual_prices(browser, query: str, blog_name: str = "", on_log=None) -> list:
+def _fetch_actual_prices(browser, query: str, blog_name: str = "", on_log=None, claim_value: float = 0) -> list:
     """블로그별 팩트체크 사이트에서 가격 조회 — 첫 번째 결과 반환 후 폴백"""
     def log(msg):
         if on_log:
@@ -233,6 +254,16 @@ def _fetch_actual_prices(browser, query: str, blog_name: str = "", on_log=None) 
     try:
         q = urllib.parse.quote(query)
         for site in sites:
+            # 가격 범위에 맞는 사이트만 사용
+            min_price = site.get("min_price", 0)
+            max_price = site.get("max_price", 0)
+            if claim_value > 0:
+                if min_price > 0 and claim_value < min_price:
+                    log(f"[팩트체크] {site['label']} 스킵 — {claim_value:,.0f}원 < 최소 {min_price:,}원")
+                    continue
+                if max_price > 0 and claim_value > max_price:
+                    log(f"[팩트체크] {site['label']} 스킵 — {claim_value:,.0f}원 > 최대 {max_price:,}원")
+                    continue
             url = site["url"].format(q=q)
             label = site["label"]
             prices = _scrape_prices(page, url, site["selectors"], on_log)
@@ -320,22 +351,24 @@ def run(body: str, keyword: str, blog_name: str = "", on_log=None) -> dict:
 
     corrections = []
     try:
-        # 중복 검색 방지: keyword 당 1회만 조회
-        actual_prices = _fetch_actual_prices(browser, keyword, blog_name, on_log)
-
-        if not actual_prices:
-            log("[팩트체크] 실제 가격 조회 실패 — 원본 유지")
-            return {**FALLBACK, "checked": True}
-
-        actual_median = _median(actual_prices)
-        actual_min = min(actual_prices)
-        actual_max = max(actual_prices)
-        log(
-            f"[팩트체크] 실제 가격 범위: {actual_min:,.0f}~{actual_max:,.0f}원 "
-            f"(중앙값: {actual_median:,.0f}원)"
-        )
-
         for claim in price_claims[:3]:  # 최대 3건 (시간 제한)
+            # 가격 주변 텍스트에서 제품명 추출 (앞 40자)
+            ctx_start = max(0, claim["start"] - 40)
+            ctx_text = body[ctx_start:claim["start"]].strip()
+            # 제품명: 마지막 명사구 (쉼표/마침표 이후)
+            product_query = re.split(r"[,\.。\n]", ctx_text)[-1].strip()
+            search_query = product_query if len(product_query) > 3 else keyword
+            log(f"[팩트체크] 검색어: '{search_query}' (원문: '{ctx_text[-20:]}')")
+
+            actual_prices = _fetch_actual_prices(browser, search_query, blog_name, on_log, claim_value=claim["value"])
+
+            if not actual_prices:
+                log(f"[팩트체크] '{search_query}' 가격 조회 실패 — 건너뜀")
+                continue
+
+            actual_median = _median(actual_prices)
+            actual_min = min(actual_prices)
+            actual_max = max(actual_prices)
             stated = claim["value"]
             ratio = abs(stated - actual_median) / actual_median if actual_median else 0
 

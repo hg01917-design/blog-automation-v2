@@ -8,10 +8,24 @@ from notion_prompt import fetch_prompt
 
 CLAUDE_URL = "https://claude.ai"
 
-# 전송 버튼 (한국어/영어)
-SEND_BTN_SEL = 'button[aria-label="메시지 보내기"], button[aria-label="Send Message"]'
-# assistant 응답 텍스트 셀렉터 (thinking 제외, 본문만)
+# 전송 버튼 (한국어/영어 + 다양한 UI 버전 대응)
+SEND_BTN_SEL = ', '.join([
+    'button[aria-label="메시지 보내기"]',
+    'button[aria-label="Send Message"]',
+    'button[aria-label="Send message"]',
+    'button[data-testid="send-button"]',
+    'button[type="submit"]',
+])
+# assistant 응답 텍스트 셀렉터 (Claude.ai UI 버전별 대응)
 RESPONSE_SEL = "div.standard-markdown"
+RESPONSE_SEL_FALLBACKS = [
+    "div.standard-markdown",
+    "[data-testid='assistant-message-content']",
+    ".font-claude-message div[class*='prose']",
+    "div[class*='assistant'] div[class*='prose']",
+    "div[class*='message-content']",
+    "div[class*='response'] p",
+]
 
 # 응답 완료 판정 기준
 MIN_CHARS_FOR_DONE = 1000   # 이 글자수 미만이면 절대 완료 아님
@@ -66,13 +80,29 @@ def _wait_for_response(page, prev_response_count, log):
     for i in range(MAX_WAIT_SECS):
         page.wait_for_timeout(1000)
 
-        # 현재 응답 길이
+        # 현재 응답 길이 (여러 셀렉터 시도)
         cur_len = 0
         try:
             cur_len = page.evaluate("""(prevCount) => {
-                const els = document.querySelectorAll('div.standard-markdown');
-                if (els.length <= prevCount) return 0;
-                return els[els.length - 1].innerText.length;
+                const sels = [
+                    'div.standard-markdown',
+                    '[data-testid="assistant-message-content"]',
+                    '[class*="assistant-message"] [class*="prose"]',
+                    '[class*="message-content"]',
+                    '[class*="response"] p',
+                ];
+                for (const sel of sels) {
+                    const els = document.querySelectorAll(sel);
+                    if (els.length > prevCount) {
+                        const t = els[els.length - 1].innerText;
+                        if (t && t.length > 0) return t.length;
+                    }
+                    if (els.length > 0) {
+                        const t = els[els.length - 1].innerText;
+                        if (t && t.length > 100) return t.length;
+                    }
+                }
+                return 0;
             }""", prev_response_count)
         except Exception:
             pass
@@ -117,34 +147,41 @@ def _extract_response(page, prev_response_count, log):
     page.wait_for_timeout(2000)
     response_text = ""
 
-    # 1차: div.standard-markdown (새로 생긴 마지막 요소)
-    try:
-        elements = page.locator(RESPONSE_SEL).all()
-        if len(elements) > prev_response_count:
-            response_text = elements[-1].inner_text()
-    except Exception:
-        pass
-
-    # 2차 fallback: div.font-claude-response
-    if not response_text.strip():
+    for sel in RESPONSE_SEL_FALLBACKS:
+        if response_text.strip():
+            break
         try:
-            elements = page.locator("div.font-claude-response").all()
-            if elements:
-                last_resp = elements[-1]
-                md_child = last_resp.locator("div.standard-markdown")
-                if md_child.count() > 0:
-                    response_text = md_child.last.inner_text()
-                else:
-                    response_text = last_resp.inner_text()
+            elements = page.locator(sel).all()
+            if not elements:
+                continue
+            # 새로 생긴 마지막 요소 사용
+            candidate = elements[-1].inner_text()
+            if len(candidate.strip()) > 50:
+                response_text = candidate
+                if sel != RESPONSE_SEL:
+                    log(f"[Playwright] 응답 셀렉터 폴백 사용: {sel}")
         except Exception:
             pass
 
-    # 3차 fallback
+    # 최후 수단: 페이지 전체에서 assistant 역할 텍스트 추출
     if not response_text.strip():
         try:
-            all_els = page.locator(RESPONSE_SEL).all()
-            if all_els:
-                response_text = all_els[-1].inner_text()
+            response_text = page.evaluate("""() => {
+                const sels = [
+                    'div.standard-markdown',
+                    '[data-testid*="assistant"]',
+                    '[class*="assistant-message"]',
+                    '[class*="response-content"]',
+                ];
+                for (const s of sels) {
+                    const els = document.querySelectorAll(s);
+                    if (els.length > 0) {
+                        const t = els[els.length - 1].innerText;
+                        if (t && t.length > 50) return t;
+                    }
+                }
+                return '';
+            }""")
         except Exception:
             pass
 
@@ -152,6 +189,41 @@ def _extract_response(page, prev_response_count, log):
         response_text = "[추출 실패] DOM에서 응답을 찾지 못했습니다."
 
     return response_text.strip()
+
+
+def repair_text(raw: str, issues: list, on_log=None) -> str:
+    """검수 실패한 글을 이슈 목록 기반으로 Claude에 부분 수정 요청.
+
+    전체 재생성 대신 기존 글 + 문제점만 전달해서 빠르게 수정.
+    Returns: 수정된 raw 텍스트 (실패 시 None)
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    issues_str = "\n".join(f"- {i}" for i in issues)
+    repair_prompt = f"""아래 블로그 글에서 검수 실패한 부분만 수정해줘.
+수정 후 동일한 ===섹션=== 형식 그대로 전체 글을 다시 출력해줘.
+
+【수정해야 할 문제점】
+{issues_str}
+
+【수정 규칙】
+- 문제가 없는 부분은 절대 바꾸지 말 것
+- AI 패턴(당연히/살펴보겠습니다 등)은 자연스러운 구어체로 교체
+- 제목에 직장인/주부 등 대상이 있으면 제거하고 검색 의도만 남길 것
+- 형식(===제목===, ===본문===, ===태그===, ===이미지===)은 그대로 유지
+
+【원본 글】
+{raw}"""
+
+    log("[repair] 부분 수정 요청 중...")
+    result = generate_text(repair_prompt, on_log=on_log)
+    if result and "추출 실패" not in result and len(result) > 200:
+        log("[repair] ✓ 부분 수정 완료")
+        return result
+    log("[repair] 부분 수정 실패")
+    return None
 
 
 def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
@@ -241,8 +313,21 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
 
             # 전송
             log("[Playwright] 전송 중...")
-            send_btn = page.locator(SEND_BTN_SEL).first
-            send_btn.click(timeout=5000)
+            sent = False
+            try:
+                send_btn = page.locator(SEND_BTN_SEL).first
+                if send_btn.count() > 0:
+                    send_btn.click(timeout=5000)
+                    sent = True
+                    log("[Playwright] 전송 버튼 클릭")
+            except Exception as e:
+                log(f"[Playwright] 전송 버튼 클릭 실패: {e}")
+
+            if not sent:
+                # 폴백: Enter 키
+                log("[Playwright] 폴백 — Enter 키로 전송")
+                page.keyboard.press("Enter")
+
             page.wait_for_timeout(2000)
 
             prev_response_count = page.locator(RESPONSE_SEL).count()

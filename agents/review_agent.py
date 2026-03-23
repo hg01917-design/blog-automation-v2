@@ -15,6 +15,12 @@ FORBIDDEN_PATTERNS = [
     "완벽정리", "총정리", "완벽가이드", "완벽 정리", "총 정리",
 ]
 
+# 제목에 대상(타겟)을 직접 노출하면 검색 클릭률 하락 — 제목 전용 금지
+TITLE_TARGET_WORDS = [
+    "직장인", "주부", "혼자", "1인", "초보자", "초보", "입문자",
+    "여성", "남성", "노인", "어르신", "시니어", "대학생", "취준생",
+]
+
 # 네이버 제한어 (salim1su 전용 — 저품질 판정 원인)
 NAVER_RESTRICTED = {
     "의료": ["유발", "진단", "처방", "치료", "완치", "증상", "임상", "효과 있음"],
@@ -104,6 +110,12 @@ def run(result: dict, keyword: str, blog_id: str,
             issues.append(f"제목 금지패턴: '{pattern}'")
         if pattern in body[:200]:
             issues.append(f"본문 금지패턴: '{pattern}'")
+
+    # 5-1. 제목 대상 직접 노출 체크 (직장인/주부 등 타겟을 제목에 넣으면 CTR 하락)
+    for word in TITLE_TARGET_WORDS:
+        if word in title:
+            issues.append(f"제목 대상 노출: '{word}' — 타겟을 제목에 직접 쓰지 말 것")
+            log(f"[검수] 제목 대상 노출: '{word}'")
 
     # N가지/N종류 패턴
     n_pattern = re.search(r'\d+가지|\d+종류', title)
