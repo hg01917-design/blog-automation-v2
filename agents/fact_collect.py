@@ -12,19 +12,24 @@ from browser import connect_cdp, get_or_create_page
 # None이면 Naver 통합검색 사용
 _DIRECT_SEARCH_URL = {
     "baremi542": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?searchWord={q}",
-    "salim1su":  "https://www.gov.kr/search?srchWord={q}",
+    "salim1su":  None,  # Naver 사용
     "goodisak":  None,  # Naver 사용
     "nolja100":  None,  # Naver 사용
 }
 
 # 검색에 추가할 블로그별 보조 쿼리 (Naver 사용 시)
 _SEARCH_SUFFIX = {
+    "salim1su": " 방법 절약 팁",
     "goodisak": " 스펙 가격",
     "nolja100": " 여행정보 운영시간",
 }
 
 # Naver 사용 블로그에서 우선 찾을 도메인
 _PRIORITY_DOMAINS = {
+    "salim1su": [
+        "gov.kr", "kepco.co.kr", "moef.go.kr",
+        "energysaving.or.kr", "kea.kr",
+    ],
     "goodisak": [
         "samsung.com", "lg.com", "apple.com", "microsoft.com",
         "danawa.com",
