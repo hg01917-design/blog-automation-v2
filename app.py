@@ -567,9 +567,26 @@ class SchedulerWorker(QThread):
         from agents import orchestrator
 
         START_HOUR, END_HOUR   = 7, 23
+        KEYWORD_ENGINE_HOUR    = 8   # 매일 오전 8시 키워드 수집
         MIN_INTERVAL, MAX_INTERVAL = 60, 180
 
-        self._log(f"[스케줄러] 시작 (7:00~23:00, 60~180분 간격)")
+        _keyword_engine_last_run = None  # 오늘 날짜 (str) 저장
+
+        def _run_keyword_engine():
+            nonlocal _keyword_engine_last_run
+            today = datetime.now().strftime("%Y-%m-%d")
+            if _keyword_engine_last_run == today:
+                return  # 오늘 이미 실행
+            self._log("[키워드수집] 오전 8시 키워드 엔진 시작...")
+            try:
+                from keyword_engine.main import run as run_engine
+                run_engine(on_log=self._log)
+                _keyword_engine_last_run = today
+                self._log("[키워드수집] ✓ 키워드 수집 완료")
+            except Exception as e:
+                self._log(f"[키워드수집] 오류: {e}")
+
+        self._log(f"[스케줄러] 시작 (7:00~23:00, 60~180분 간격, 8시 키워드수집)")
         self._log(f"[스케줄러] 활성 블로그: {self.enabled_blogs}")
 
         while not self._stop_flag:
@@ -585,6 +602,10 @@ class SchedulerWorker(QThread):
                 self._log(f"[스케줄러] 비활동 시간 — {target.strftime('%H:%M')}까지 대기")
                 self._sleep(wait)
                 continue
+
+            # 오전 8시: 키워드 수집 (하루 1회)
+            if datetime.now().hour == KEYWORD_ENGINE_HOUR:
+                _run_keyword_engine()
 
             blogs = [b for b in self.enabled_blogs
                      if b in orchestrator.DEFAULT_BLOG_ORDER
