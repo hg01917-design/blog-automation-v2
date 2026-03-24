@@ -10,8 +10,11 @@ IMAGES_DIR = Path(__file__).parent / "images"
 IMAGES_DIR.mkdir(exist_ok=True)
 
 
-def generate_images(image_infos: list, on_log=None) -> dict:
-    """이미지 프롬프트 리스트로 Gemini에서 이미지 생성 후 webp 저장.
+def generate_images(image_infos: list, on_log=None, skip_webp=False) -> dict:
+    """이미지 프롬프트 리스트로 Gemini에서 이미지 생성 후 저장.
+
+    Args:
+        skip_webp: True면 webp 변환 없이 PNG 그대로 저장 (네이버 블로그용)
 
     Returns:
         {index: filepath} 딕셔너리 (성공한 것만)
@@ -32,13 +35,21 @@ def generate_images(image_infos: list, on_log=None) -> dict:
             idx = info["index"]
             prompt = info["prompt"]
             filename = info["filename"]
-            if not filename.endswith(".webp"):
-                filename += ".webp"
+            # 파일명 영문+숫자+하이픈만 허용 (한글 제거)
+            import re as _re
+            filename = _re.sub(r'[^\w\-.]', '-', filename)
+            filename = _re.sub(r'-+', '-', filename).strip('-')
+            if skip_webp:
+                if not filename.endswith(".jpg") and not filename.endswith(".png"):
+                    filename = filename.rsplit(".", 1)[0] + ".jpg"
+            else:
+                if not filename.endswith(".webp"):
+                    filename += ".webp"
 
             log(f"[이미지 {idx}] 생성 시작: {prompt[:50]}...")
 
             try:
-                filepath = _generate_single(browser, prompt, filename, on_log)
+                filepath = _generate_single(browser, prompt, filename, on_log, skip_webp=skip_webp)
                 if filepath:
                     results[idx] = filepath
                     log(f"[이미지 {idx}] 저장 완료: {filepath}")
@@ -53,8 +64,8 @@ def generate_images(image_infos: list, on_log=None) -> dict:
     return results
 
 
-def _generate_single(browser, prompt: str, filename: str, on_log=None):
-    """단일 이미지 생성 → 스크린샷 캡처 → webp 변환"""
+def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp=False):
+    """단일 이미지 생성 → 스크린샷 캡처 → webp 변환 (skip_webp=True면 PNG 그대로)"""
     def log(msg):
         if on_log:
             on_log(msg)
@@ -121,17 +132,23 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None):
     png_path = IMAGES_DIR / f"temp_{filename}.png"
     img_el.screenshot(path=str(png_path))
 
-    # 하단 10% 워터마크 잘라내기 + webp 변환
+    # 하단 10% 워터마크 잘라내기
     final_path = IMAGES_DIR / filename
     try:
         img = Image.open(png_path)
         w, h = img.size
         cropped = img.crop((0, 0, w, int(h * 0.9)))
-        cropped.save(str(final_path), "WEBP", quality=85)
-        png_path.unlink()
-        log(f"[이미지] webp 변환 완료: {final_path.name}")
+        if skip_webp:
+            # 네이버: 변환 없이 JPG로 저장
+            cropped.save(str(final_path), "JPEG", quality=90)
+            png_path.unlink()
+            log(f"[이미지] JPG 저장 완료: {final_path.name}")
+        else:
+            cropped.save(str(final_path), "WEBP", quality=85)
+            png_path.unlink()
+            log(f"[이미지] webp 변환 완료: {final_path.name}")
     except Exception as e:
-        log(f"[이미지] webp 변환 실패: {e}, png 유지")
+        log(f"[이미지] 저장 실패: {e}, png 유지")
         final_path = png_path
 
     return str(final_path)

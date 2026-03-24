@@ -223,8 +223,8 @@ def run(keyword: str = None, on_log=None, on_status=None, _page_id=None):
             })
 
     if result["images"]:
-        log(f"[작성] Gemini 이미지 {len(result['images'])}개 생성 시작")
-        image_paths = generate_images(result["images"], on_log=log)
+        log(f"[작성] Gemini 이미지 {len(result['images'])}개 생성 시작 (네이버 JPG 모드)")
+        image_paths = generate_images(result["images"], on_log=log, skip_webp=True)
         log(f"[작성] 이미지 {len(image_paths)}개 생성 완료")
 
     result["image_paths"] = image_paths
