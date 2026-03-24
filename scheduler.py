@@ -29,7 +29,11 @@ MIN_INTERVAL_MIN = 60    # 최소 간격 (분)
 MAX_INTERVAL_MIN = 180   # 최대 간격 (분)
 BLOG_ORDER = ["goodisak", "nolja100", "salim1su"]
 
+# 키워드 엔진 — 매일 오전 8시 자동 실행
+KEYWORD_ENGINE_HOUR = 8
+
 _running = True
+_keyword_engine_last_run = None  # 마지막 키워드 수집 날짜
 
 
 def _signal_handler(sig, frame):
@@ -153,6 +157,26 @@ def _sleep(seconds):
         time.sleep(min(5, end - time.time()))
 
 
+def run_keyword_engine():
+    """천하무적 키워드 엔진 — 하루 1회 실행"""
+    global _keyword_engine_last_run
+    today = datetime.now().date()
+
+    if _keyword_engine_last_run == today:
+        return  # 오늘 이미 실행함
+
+    log("[키워드엔진] 시작 — pub코드 역분석 + Tistory RSS 수집")
+    try:
+        from keyword_engine.main import run as run_engine
+        # 4개 블로그 전체에 적재
+        for blog_id in ["goodisak", "nolja100", "salim1su", "baremi542"]:
+            run_engine(blog_id=blog_id, push_to_notion=True, on_log=log)
+        _keyword_engine_last_run = today
+        log("[키워드엔진] 완료")
+    except Exception as e:
+        log(f"[키워드엔진] 오류: {e}")
+
+
 def main():
     log("[스케줄러] 시작")
     log(f"[스케줄러] 활동 시간: {START_HOUR}:00 ~ {END_HOUR}:00")
@@ -167,6 +191,10 @@ def main():
             log(f"[스케줄러] 비활동 시간 — {wake_time.strftime('%H:%M')}까지 대기")
             _sleep(wait)
             continue
+
+        # 키워드 엔진 — 매일 오전 8시 1회 실행
+        if datetime.now().hour == KEYWORD_ENGINE_HOUR:
+            run_keyword_engine()
 
         # 사이클 실행
         run_cycle()
