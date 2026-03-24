@@ -577,12 +577,31 @@ class SchedulerWorker(QThread):
             today = datetime.now().strftime("%Y-%m-%d")
             if _keyword_engine_last_run == today:
                 return  # 오늘 이미 실행
-            self._log("[키워드수집] 오전 8시 키워드 엔진 시작...")
+            self._log("[키워드수집] 키워드 엔진 시작 (블로그별 수집)...")
             try:
                 from keyword_engine.main import run as run_engine
-                run_engine(on_log=self._log)
+                from keyword_engine.naver_api import BLOG_QUERIES
+                total = 0
+                for bid in self.enabled_blogs:
+                    if self._stop_flag:
+                        break
+                    queries = BLOG_QUERIES.get(bid)
+                    if not queries:
+                        continue
+                    self._log(f"[키워드수집] {bid} — {len(queries)}개 쿼리 수집 시작")
+                    result = run_engine(
+                        queries=queries,
+                        blog_id=bid,
+                        min_volume=1000,   # 검색량 1,000 이상
+                        min_score=50000,   # 기회점수 5만 이상
+                        top_n=30,
+                        push_to_notion=True,
+                        on_log=self._log,
+                    )
+                    self._log(f"[키워드수집] {bid} ✓ {len(result)}개 키워드 노션 적재")
+                    total += len(result)
                 _keyword_engine_last_run = today
-                self._log("[키워드수집] ✓ 키워드 수집 완료")
+                self._log(f"[키워드수집] ✓ 전체 완료 — 총 {total}개 적재")
             except Exception as e:
                 self._log(f"[키워드수집] 오류: {e}")
 
