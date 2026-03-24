@@ -76,28 +76,42 @@ def _search(endpoint: str, query: str, display: int = 10) -> dict:
     return json.loads(resp.read())
 
 
-def collect_tistory_urls(queries: list = None, display: int = 20, on_log=None) -> set:
-    """다양한 쿼리로 검색 → Tistory URL만 필터해서 반환"""
+def _extract_tistory_root(url: str):
+    m = re.match(r"(https?://[^/]+\.tistory\.com)", url)
+    return m.group(1) if m else None
+
+
+def collect_tistory_urls(queries: list = None, display: int = 100, on_log=None) -> set:
+    """다양한 쿼리로 검색 → Tistory URL만 필터해서 반환 (웹+블로그 API 병용)"""
     queries = queries or SEARCH_QUERIES
     tistory_urls = set()
 
     for query in queries:
+        # 1) 웹 검색
         try:
-            data = _search("webkr.json", query, display)
+            data = _search("webkr.json", query, min(display, 100))
             for item in data.get("items", []):
-                url = item.get("link", "")
-                # tistory.com 도메인만
-                if re.search(r"https?://[^/]+\.tistory\.com", url):
-                    # 블로그 루트 URL만 추출 (포스트 URL → 블로그 루트)
-                    m = re.match(r"(https?://[^/]+\.tistory\.com)", url)
-                    if m:
-                        tistory_urls.add(m.group(1))
-            if on_log:
-                on_log(f"[naver_api] '{query}' → 누적 Tistory {len(tistory_urls)}개")
+                root = _extract_tistory_root(item.get("link", ""))
+                if root:
+                    tistory_urls.add(root)
         except Exception as e:
             if on_log:
-                on_log(f"[naver_api] '{query}' 오류: {e}")
-        time.sleep(0.15)
+                on_log(f"[naver_api] webkr '{query}' 오류: {e}")
+
+        # 2) 블로그 검색 (Tistory 블로그 포스트 URL 추가 확보)
+        try:
+            data = _search("blog.json", query, min(display, 100))
+            for item in data.get("items", []):
+                root = _extract_tistory_root(item.get("link", ""))
+                if root:
+                    tistory_urls.add(root)
+        except Exception as e:
+            if on_log:
+                on_log(f"[naver_api] blog '{query}' 오류: {e}")
+
+        if on_log:
+            on_log(f"[naver_api] '{query}' → 누적 Tistory {len(tistory_urls)}개")
+        time.sleep(0.2)
 
     return tistory_urls
 

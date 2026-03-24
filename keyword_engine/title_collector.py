@@ -25,7 +25,7 @@ def _fetch(url: str, timeout: int = 8) -> str:
     try:
         req = urllib.request.Request(url, headers=HEADERS)
         resp = urllib.request.urlopen(req, timeout=timeout)
-        return resp.read(131072).decode("utf-8", errors="ignore")
+        return resp.read(524288).decode("utf-8", errors="ignore")  # 512KB
     except Exception:
         return ""
 
@@ -41,20 +41,31 @@ def collect_titles_from_rss(blog_url: str, on_log=None) -> list:
         return []
 
     titles = []
-    try:
-        root = ET.fromstring(content)
-        # RSS 2.0
-        for item in root.iter("item"):
-            t = item.find("title")
-            if t is not None and t.text:
-                titles.append(t.text.strip())
-        # Atom
-        for entry in root.iter("{http://www.w3.org/2005/Atom}entry"):
-            t = entry.find("{http://www.w3.org/2005/Atom}title")
-            if t is not None and t.text:
-                titles.append(t.text.strip())
-    except Exception:
-        pass
+    # 정규식으로 먼저 시도 (CDATA/일반 title 모두 처리)
+    found = re.findall(
+        r"<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>",
+        content, re.DOTALL
+    )
+    for t in found:
+        t = t.strip()
+        # 채널 제목(짧은 것)은 제외, RSS 피드 자체 제목 스킵
+        if t and 4 <= len(t) <= 100 and not t.startswith("http"):
+            titles.append(t)
+
+    # 정규식 실패 시 ET 폴백
+    if not titles:
+        try:
+            root = ET.fromstring(content)
+            for item in root.iter("item"):
+                t = item.find("title")
+                if t is not None and t.text:
+                    titles.append(t.text.strip())
+            for entry in root.iter("{http://www.w3.org/2005/Atom}entry"):
+                t = entry.find("{http://www.w3.org/2005/Atom}title")
+                if t is not None and t.text:
+                    titles.append(t.text.strip())
+        except Exception:
+            pass
 
     if on_log and titles:
         on_log(f"[rss] ✓ {blog_url} → {len(titles)}개 제목")
