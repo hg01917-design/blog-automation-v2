@@ -8,7 +8,7 @@ import urllib.request
 from pathlib import Path
 
 # .env 로드
-_env = Path(__file__).parent.parent / ".env"
+_env = Path(os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(Path(__file__).parent.parent))) / ".env"
 if _env.exists():
     for line in _env.read_text().splitlines():
         line = line.strip()

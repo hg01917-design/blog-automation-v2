@@ -5,8 +5,8 @@ from pathlib import Path as _Path
 # ── 프로젝트 루트 경로 설정 (.app 번들 / 일반 실행 모두 대응) ──────────────
 if getattr(sys, "frozen", False):
     if sys.platform == "darwin":
-        # .app/Contents/MacOS/executable → 4단계 위 = .app이 있는 폴더
-        _PROJECT_ROOT = _Path(sys.executable).parent.parent.parent.parent
+        # .app/Contents/MacOS/executable → 5단계 위 = 프로젝트 루트 (dist/의 부모)
+        _PROJECT_ROOT = _Path(sys.executable).parent.parent.parent.parent.parent
     else:
         # Windows: .exe가 있는 폴더
         _PROJECT_ROOT = _Path(sys.executable).parent
@@ -717,10 +717,12 @@ class SettingsDialog(QDialog):
 
     # 표시할 키 목록: (env_key, 레이블, placeholder, 비밀번호여부)
     _FIELDS = [
-        ("WP_USER",         "WordPress 사용자명",      "admin",                   False),
-        ("WP_APP_PASSWORD", "WordPress 애플리케이션 비밀번호", "xxxx xxxx xxxx xxxx xxxx xxxx", True),
-        ("NOTION_TOKEN",    "Notion API 토큰",         "secret_...",              True),
-        ("GEMINI_API_KEY",  "Gemini API 키",           "AIza...",                 True),
+        ("WP_USER",                  "WordPress 사용자명",           "admin",                        False),
+        ("WP_APP_PASSWORD",          "WordPress 애플리케이션 비밀번호",  "xxxx xxxx xxxx xxxx xxxx xxxx", True),
+        ("NOTION_TOKEN",             "Notion API 토큰",              "secret_...",                   True),
+        ("GEMINI_API_KEY",           "Gemini API 키",                "AIza...",                      True),
+        ("NAVER_SEARCH_CLIENT_ID",   "Naver 검색 Client ID",         "25wb2T...",                    False),
+        ("NAVER_SEARCH_CLIENT_SECRET","Naver 검색 Client Secret",    "_bSa7...",                     True),
     ]
 
     def __init__(self, parent=None):
