@@ -1161,8 +1161,18 @@ class KeywordEngineDialog(QDialog):
         self._collect_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
         self._collecting_label.setText("")
-        # 완료 후 DB에서 재로드 (점수 정렬 포함)
-        self._load_all_from_db()
+        # 완료 후 DB에서 재로드 — DB에 데이터 있는 카테고리만 덮어씀
+        # (DB 저장 조건 미달인 경우 in-memory 데이터 유지)
+        try:
+            from keyword_engine.db_handler import get_keywords_by_category
+            for cat in self.CATEGORIES:
+                rows = get_keywords_by_category(cat, n=200)
+                if rows:
+                    self._cat_keywords[cat] = rows
+                self._update_cat_btn(cat)
+            self._render_table(self._selected_category)
+        except Exception as e:
+            self._status_label.setText(f"DB 로드 오류: {e}")
 
     # ── 선택 키워드 → Notion 큐 전송 ──
     def _push_selected_to_notion(self):
