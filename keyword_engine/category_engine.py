@@ -150,23 +150,27 @@ def run_category(
         _log("[엔진] 키워드 추출 실패 — 종료", on_log)
         return []
 
-    # ── 6단계: 기회점수 계산 ──────────────────────────────
+    # ── 6단계: 기회점수 계산 + 실시간 필터 표시 ─────────────
     _log(f"\n[6단계] 기회점수 계산 중 ({len(candidates)}개)...", on_log)
+
+    def _realtime_kw(item):
+        """점수 계산 즉시 필터 통과하면 UI로 전달"""
+        if item["volume"] >= min_volume and item["score"] >= min_score:
+            if on_keyword:
+                on_keyword(item)
+
     scored = keyword_scorer.score_keywords(
         candidates,
         get_pub_count_fn=naver_api.get_blog_count,
         on_log=on_log,
+        on_keyword=_realtime_kw,
     )
 
-    # ── 7단계: 필터링 + 실시간 표시 ───────────────────────
+    # ── 7단계: 필터링 ─────────────────────────────────────
     filtered = [
         k for k in scored
         if k["volume"] >= min_volume and k["score"] >= min_score
     ]
-    # 필터 통과한 키워드만 실시간으로 UI에 전달
-    if on_keyword:
-        for item in filtered:
-            on_keyword(item)
     _log(
         f"\n[7단계] 필터 후 {len(filtered)}개 "
         f"(검색량 {min_volume:,}+, 점수 {min_score:,}+)",

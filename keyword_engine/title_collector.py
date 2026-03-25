@@ -86,23 +86,24 @@ def collect_from_all(blog_urls: set, on_log=None) -> list:
     return all_titles
 
 
-def extract_keywords_from_titles(titles: list) -> list:
-    """제목 리스트에서 검색 키워드 후보 추출"""
-    keywords = set()
+def extract_keywords_from_titles(titles: list, top_n: int = 100) -> list:
+    """제목 리스트에서 검색 키워드 후보 추출 — 빈도 높은 순 top_n개 반환"""
+    from collections import Counter
+    freq: Counter = Counter()
 
     for title in titles:
-        # HTML 태그, 특수문자 제거
         title = re.sub(r"<[^>]+>", "", title)
         title = re.sub(r"[^\w\s가-힣a-zA-Z0-9]", " ", title)
         title = re.sub(r"\s+", " ", title).strip()
-
         if not title or len(title) < 2:
             continue
 
-        # 전체 제목 (2~20자, 한글 포함)
+        candidates = set()
+
+        # 전체 제목
         clean = title.strip()
         if 2 <= len(clean.replace(" ", "")) <= 20 and re.search(r"[가-힣]{2,}", clean):
-            keywords.add(clean)
+            candidates.add(clean)
 
         # 구분자로 분리
         parts = re.split(r"[\|\-·:,\[\]()【】『』「」::ㅣ]", title)
@@ -111,7 +112,7 @@ def extract_keywords_from_titles(titles: list) -> list:
             if part in STOPWORDS:
                 continue
             if re.search(r"[가-힣]{2,}", part) and 2 <= len(part.replace(" ", "")) <= 20:
-                keywords.add(part)
+                candidates.add(part)
 
         # 2~3어절 조합
         words = [w for w in title.split() if len(w) >= 2 and re.search(r"[가-힣]", w)]
@@ -121,18 +122,18 @@ def extract_keywords_from_titles(titles: list) -> list:
                     phrase = " ".join(words[i: i + n])
                     char_len = len(phrase.replace(" ", ""))
                     if re.search(r"[가-힣]{2,}", phrase) and 4 <= char_len <= 20:
-                        keywords.add(phrase)
+                        candidates.add(phrase)
 
-    result = []
-    for k in keywords:
-        if any(sw in k for sw in STOPWORDS):
-            continue
-        if _BAD_ENDINGS.search(k):
-            continue
-        if _BAD_STARTS.match(k):
-            continue
-        # 한글 2자 이상 포함 필수
-        if not re.search(r"[가-힣]{2,}", k):
-            continue
-        result.append(k)
-    return result
+        for k in candidates:
+            if any(sw in k for sw in STOPWORDS):
+                continue
+            if _BAD_ENDINGS.search(k):
+                continue
+            if _BAD_STARTS.match(k):
+                continue
+            if not re.search(r"[가-힣]{2,}", k):
+                continue
+            freq[k] += 1
+
+    # 빈도 높은 순으로 top_n개 반환
+    return [kw for kw, _ in freq.most_common(top_n)]
