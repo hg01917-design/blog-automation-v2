@@ -13,8 +13,8 @@ from datetime import datetime, timedelta
 from blog_stats import get_blog_level
 import blog_visitor
 
-# .env 로드
-_env_path = Path(__file__).parent / ".env"
+# .env 로드 (번들 실행 시 PROJECT_ROOT 우선)
+_env_path = Path(os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(Path(__file__).parent))) / ".env"
 if _env_path.exists():
     for line in _env_path.read_text().splitlines():
         line = line.strip()

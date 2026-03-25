@@ -4,8 +4,12 @@ from pathlib import Path as _Path
 
 # ── 프로젝트 루트 경로 설정 (.app 번들 / 일반 실행 모두 대응) ──────────────
 if getattr(sys, "frozen", False):
-    # .app/Contents/MacOS/executable → 5단계 위가 프로젝트 루트
-    _PROJECT_ROOT = _Path(sys.executable).parent.parent.parent.parent.parent
+    if sys.platform == "darwin":
+        # .app/Contents/MacOS/executable → 4단계 위 = .app이 있는 폴더
+        _PROJECT_ROOT = _Path(sys.executable).parent.parent.parent.parent
+    else:
+        # Windows: .exe가 있는 폴더
+        _PROJECT_ROOT = _Path(sys.executable).parent
 else:
     _PROJECT_ROOT = _Path(__file__).parent
 

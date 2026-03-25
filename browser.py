@@ -39,15 +39,28 @@ def _get_cdp_profile():
 def _kill_cdp_chrome():
     """9222 포트를 사용 중인 Chrome 프로세스를 종료한다."""
     try:
-        result = subprocess.run(
-            ["lsof", "-ti", f":{CDP_PORT}"],
-            capture_output=True, text=True
-        )
-        pids = result.stdout.strip().split("\n")
-        for pid in pids:
-            if pid.strip():
-                subprocess.run(["kill", "-9", pid.strip()],
-                               capture_output=True)
+        import sys as _sys
+        if _sys.platform == "win32":
+            result = subprocess.run(
+                ["netstat", "-ano"],
+                capture_output=True, text=True
+            )
+            for line in result.stdout.splitlines():
+                if f":{CDP_PORT}" in line and "LISTENING" in line:
+                    parts = line.split()
+                    pid = parts[-1]
+                    subprocess.run(["taskkill", "/F", "/PID", pid],
+                                   capture_output=True)
+        else:
+            result = subprocess.run(
+                ["lsof", "-ti", f":{CDP_PORT}"],
+                capture_output=True, text=True
+            )
+            pids = result.stdout.strip().split("\n")
+            for pid in pids:
+                if pid.strip():
+                    subprocess.run(["kill", "-9", pid.strip()],
+                                   capture_output=True)
         time.sleep(2)
     except Exception:
         pass
@@ -72,10 +85,16 @@ def ensure_chrome_cdp(on_log=None):
             _kill_cdp_chrome()
 
     log(f"[Chrome] {PROFILE_DIR}로 Chrome 실행 중...")
-    import os
-    user_data_dir = os.path.expanduser(
-        "~/Library/Application Support/Google/ChromeDebug"
-    )
+    import os, sys as _sys
+    if _sys.platform == "win32":
+        user_data_dir = os.path.join(
+            os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
+            "Google", "ChromeDebug"
+        )
+    else:
+        user_data_dir = os.path.expanduser(
+            "~/Library/Application Support/Google/ChromeDebug"
+        )
     subprocess.Popen(
         [
             CHROME_PATH,

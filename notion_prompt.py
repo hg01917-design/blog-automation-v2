@@ -5,8 +5,9 @@ import os
 from pathlib import Path
 from config import PROMPT_PAGES
 
-# .env 파일 로드
-_env_path = Path(__file__).parent / ".env"
+# .env 파일 로드 (번들 실행 시 PROJECT_ROOT 우선)
+import os as _os
+_env_path = Path(_os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(Path(__file__).parent))) / ".env"
 if _env_path.exists():
     for line in _env_path.read_text().splitlines():
         line = line.strip()

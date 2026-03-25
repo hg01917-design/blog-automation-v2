@@ -1,8 +1,29 @@
 """계정 및 블로그 설정"""
+import sys
+import os
+
+
+def _find_chrome() -> str:
+    """OS별 Chrome 실행 파일 경로 자동 탐지"""
+    if sys.platform == "darwin":
+        return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    elif sys.platform == "win32":
+        candidates = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            os.path.expanduser(r"~\AppData\Local\Google\Chrome\Application\chrome.exe"),
+        ]
+        for p in candidates:
+            if os.path.exists(p):
+                return p
+        return candidates[0]  # 기본값
+    else:
+        return "google-chrome"
+
 
 # Chrome CDP 설정 — 블로그 전용 프로필
 CHROME_CONFIG = {
-    "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "executable": _find_chrome(),
     "profile": "Profile 1",
     "port": 9222,
     "debug_url": "http://localhost:9222",
