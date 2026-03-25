@@ -39,8 +39,18 @@ KEYWORD_DB_ID = "d6bb5b753f1b4963891de02427411276"
 
 # 블로그별 카테고리 키워드 (세분화 씨드 포함)
 BLOG_CATEGORIES = {
-    "goodisak": ["노트북", "스마트폰", "태블릿", "이어폰", "스마트워치"],
-    "nolja100": ["국내여행", "해외여행", "일본여행", "동남아여행", "유럽여행"],
+    "goodisak": [
+        # IT 실사용 후기 중심
+        "갤럭시 추천", "아이폰 추천", "노트북 추천", "태블릿 추천", "이어폰 추천",
+        "스마트워치 추천", "앱 추천", "유틸리티 앱", "무료 앱 추천",
+        "유튜브 광고 차단", "윈도우 단축키", "맥북 설정", "아이패드 활용",
+    ],
+    "nolja100": [
+        # 국내 여행 실용 정보 중심
+        "국내여행 추천", "당일치기 여행", "주말 여행", "가족여행 추천",
+        "입장료 할인", "펜션 추천", "글램핑 추천", "캠핑 추천",
+        "지역 축제", "봄 여행지", "여름 여행지", "가을 여행지",
+    ],
     "salim1su": [
         # 전기/가스 — 고정지출 절약
         "전기요금", "전기요금 절약", "전기세 폭탄", "에어컨 전기요금",
@@ -201,6 +211,18 @@ def _update_page_status(page_id: str, status: str):
 # 블로그별 금지 키워드 필터링
 # ─────────────────────────────────────────────
 BANNED_WORDS = {
+    "goodisak": [
+        # 주식/투자 (IT 블로그와 무관)
+        "주가", "주식", "코인", "ETF", "펀드", "투자", "증권",
+        "부동산", "청약", "대출", "금리", "환율",
+        "장려금", "지원금", "실업급여", "육아휴직",
+    ],
+    "nolja100": [
+        # 주식/투자/금융 (여행 블로그와 무관)
+        "주가", "주식", "코인", "ETF", "투자", "증권",
+        "대출", "금리", "부동산", "청약",
+        "장려금", "지원금", "실업급여",
+    ],
     "salim1su": [
         # 금융/투자 (baremi542도 아님, 완전 금지)
         "카드", "신용카드", "체크카드", "실비", "실비보험", "종신보험", "암보험",
@@ -717,13 +739,9 @@ def crawl_keywords(blog_id: str = None, on_log=None) -> dict:
                 second_gen.extend(suggestions)
             time.sleep(0.2)
 
-        # salim1su: 2차 파생 키워드만 저장 (1차 메인키워드 제외)
-        # 그 외 블로그: 기존대로 씨드+1차+2차 전체 저장
-        if bid == "salim1su":
-            _log(f"[salim1su] 2차 파생 키워드만 저장 모드: {len(second_gen)}개", on_log)
-            all_keywords = list(dict.fromkeys(second_gen))
-        else:
-            all_keywords = list(dict.fromkeys(list(trending) + first_gen + second_gen))
+        # 전체 블로그: 2차 파생 키워드만 저장 (씨드/1차는 중간 재료로만 사용)
+        _log(f"[{bid}] 2차 파생 키워드만 저장 모드: {len(second_gen)}개", on_log)
+        all_keywords = list(dict.fromkeys(second_gen))
 
         # 중복 제거 후 최종 후보
         all_keywords = list(dict.fromkeys(all_keywords))
