@@ -877,7 +877,7 @@ class KeywordCollectWorker(QThread):
                     top_n=50,
                     min_score=50_000,
                     min_volume=500,
-                    push_to_notion=True,
+                    push_to_notion=False,
                     use_playwright=self.use_playwright,
                     on_log=on_log,
                     on_keyword=on_keyword,
@@ -892,6 +892,29 @@ class KeywordCollectWorker(QThread):
 
 
 # ─── 키워드 엔진 다이얼로그 ────────────────────────────────────────────────
+
+class _KeywordWriteWorker(QThread):
+    """키워드 직접 작성 워커 (Notion 큐 없이 바로 실행)"""
+    log_signal = pyqtSignal(str)
+    finished   = pyqtSignal(bool, str)  # success, title_or_reason
+
+    def __init__(self, blog_id: str, keyword: str):
+        super().__init__()
+        self.blog_id = blog_id
+        self.keyword = keyword
+
+    def run(self):
+        try:
+            from agents import orchestrator
+            result = orchestrator.run_single(
+                self.blog_id,
+                keyword=self.keyword,
+                on_log=self.log_signal.emit,
+            )
+            self.finished.emit(result["success"], result.get("title") or result.get("reason", ""))
+        except Exception as e:
+            self.finished.emit(False, str(e))
+
 
 class KeywordEngineDialog(QDialog):
     """4개 카테고리 전체 수집 + 카테고리 탭별 분류 표시"""
@@ -970,12 +993,13 @@ class KeywordEngineDialog(QDialog):
         splitter = QSplitter(Qt.Horizontal)
 
         self._table = QTableWidget()
-        self._table.setColumnCount(4)
-        self._table.setHorizontalHeaderLabels(["키워드", "점수", "검색량", "발행량"])
+        self._table.setColumnCount(5)
+        self._table.setHorizontalHeaderLabels(["키워드", "점수", "검색량", "발행량", "상태"])
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self._table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
@@ -1016,13 +1040,21 @@ class KeywordEngineDialog(QDialog):
         sel_all_btn.clicked.connect(self._table.selectAll)
         btn_row.addWidget(sel_all_btn)
 
-        self._notion_btn = QPushButton("📤  선택 → 노션 큐 전송")
-        self._notion_btn.setFixedHeight(28)
-        self._notion_btn.setStyleSheet(
-            "background:#2563eb;color:#fff;border-radius:4px;"
-            "font-size:11px;padding:0 12px;border:none;")
-        self._notion_btn.clicked.connect(self._push_selected_to_notion)
-        btn_row.addWidget(self._notion_btn)
+        write_btn = QPushButton("✍  선택 키워드 작성")
+        write_btn.setFixedHeight(28)
+        write_btn.setStyleSheet(
+            "background:#16a34a;color:#fff;border-radius:4px;"
+            "font-size:11px;padding:0 12px;border:none;font-weight:bold;")
+        write_btn.clicked.connect(self._write_selected)
+        btn_row.addWidget(write_btn)
+
+        del_btn = QPushButton("🗑  삭제")
+        del_btn.setFixedHeight(28)
+        del_btn.setStyleSheet(
+            "background:#7f1d1d;color:#fca5a5;border-radius:4px;"
+            "font-size:11px;padding:0 10px;border:none;")
+        del_btn.clicked.connect(self._delete_selected)
+        btn_row.addWidget(del_btn)
 
         btn_row.addStretch()
 
@@ -1069,6 +1101,10 @@ class KeywordEngineDialog(QDialog):
             p = QTableWidgetItem(f"{item.get('pub_count', 0):,}")
             p.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self._table.setItem(row_idx, 3, p)
+            status = item.get("status", "pending")
+            st = QTableWidgetItem("✓ 발행됨" if status == "published" else "")
+            st.setForeground(QColor("#86efac" if status == "published" else "#888"))
+            self._table.setItem(row_idx, 4, st)
         n = len(keywords)
         self._status_label.setText(
             f"[{category}]  {n}개 키워드"
@@ -1174,36 +1210,97 @@ class KeywordEngineDialog(QDialog):
         except Exception as e:
             self._status_label.setText(f"DB 로드 오류: {e}")
 
-    # ── 선택 키워드 → Notion 큐 전송 ──
-    def _push_selected_to_notion(self):
-        selected_rows = set(idx.row() for idx in self._table.selectedIndexes())
+    # ── 선택 키워드 작성 시작 ──
+    def _write_selected(self):
+        selected_rows = sorted(set(idx.row() for idx in self._table.selectedIndexes()))
         if not selected_rows:
-            QMessageBox.information(self, "선택 없음", "전송할 키워드 행을 선택해주세요.")
+            QMessageBox.information(self, "선택 없음", "작성할 키워드 행을 선택해주세요.")
             return
 
         from keyword_engine.category_engine import CATEGORY_MAP
-        from keyword_engine.queue_pusher import push
-
         blog_id = CATEGORY_MAP.get(self._selected_category)
         if not blog_id:
+            QMessageBox.warning(self, "오류", "블로그 ID를 찾을 수 없습니다.")
             return
 
-        items = []
-        for row in sorted(selected_rows):
-            kw    = self._table.item(row, 0).text()
-            score = float(self._table.item(row, 1).text().replace(",", ""))
-            vol   = int(self._table.item(row, 2).text().replace(",", ""))
-            pub   = int(self._table.item(row, 3).text().replace(",", ""))
-            items.append({"keyword": kw, "score": score, "volume": vol, "pub_count": pub})
+        # 첫 번째 선택 행의 키워드만 처리 (한 번에 1개씩)
+        row = selected_rows[0]
+        kw_item = self._table.item(row, 0)
+        if not kw_item:
+            return
+        keyword = kw_item.text()
 
-        try:
-            saved = push(items, blog_id, on_log=self._log_box.append)
-            QMessageBox.information(
-                self, "전송 완료",
-                f"{saved}/{len(items)}개 키워드를 {blog_id} 노션 큐에 전송했습니다.",
-            )
-        except Exception as e:
-            QMessageBox.warning(self, "오류", str(e))
+        reply = QMessageBox.question(
+            self, "작성 시작",
+            f"[{self._selected_category}] '{keyword}' 키워드로 글을 작성할까요?\n\n블로그: {blog_id}",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        # 상태 표시
+        status_item = QTableWidgetItem("작성중...")
+        status_item.setForeground(QColor("#facc15"))
+        self._table.setItem(row, 4, status_item)
+        self._log_box.append(f"\n[작성] '{keyword}' 시작 → {blog_id}")
+
+        # 워커 실행
+        self._write_worker = _KeywordWriteWorker(blog_id, keyword)
+        self._write_worker.log_signal.connect(self._log_box.append)
+        self._write_worker.finished.connect(lambda ok, title, kw=keyword, r=row: self._on_write_done(ok, title, kw, r))
+        self._write_worker.start()
+
+    def _on_write_done(self, success: bool, title: str, keyword: str, row: int):
+        if success:
+            self._log_box.append(f"[완료] '{keyword}' → {title}")
+            # DB 상태 업데이트
+            from keyword_engine.db_handler import set_keyword_status
+            set_keyword_status(keyword, "published")
+            # in-memory 업데이트
+            cat_list = self._cat_keywords[self._selected_category]
+            for item in cat_list:
+                if item["keyword"] == keyword:
+                    item["status"] = "published"
+                    break
+            # 테이블 행 상태 표시
+            if row < self._table.rowCount():
+                status_item = QTableWidgetItem("✓ 발행됨")
+                status_item.setForeground(QColor("#86efac"))
+                self._table.setItem(row, 4, status_item)
+        else:
+            self._log_box.append(f"[실패] '{keyword}' → {title}")
+            if row < self._table.rowCount():
+                status_item = QTableWidgetItem("✗ 실패")
+                status_item.setForeground(QColor("#fca5a5"))
+                self._table.setItem(row, 4, status_item)
+
+    # ── 선택 키워드 삭제 ──
+    def _delete_selected(self):
+        selected_rows = sorted(set(idx.row() for idx in self._table.selectedIndexes()), reverse=True)
+        if not selected_rows:
+            QMessageBox.information(self, "선택 없음", "삭제할 키워드 행을 선택해주세요.")
+            return
+
+        keywords = [self._table.item(r, 0).text() for r in selected_rows if self._table.item(r, 0)]
+        reply = QMessageBox.question(
+            self, "삭제 확인",
+            f"{len(keywords)}개 키워드를 삭제할까요?\n{', '.join(keywords[:5])}{'...' if len(keywords) > 5 else ''}",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        from keyword_engine.db_handler import delete_keyword
+        for kw in keywords:
+            delete_keyword(kw)
+
+        # in-memory 및 테이블에서 제거
+        cat_list = self._cat_keywords[self._selected_category]
+        self._cat_keywords[self._selected_category] = [k for k in cat_list if k["keyword"] not in keywords]
+        for row in selected_rows:
+            self._table.removeRow(row)
+        self._update_cat_btn(self._selected_category)
+        self._status_label.setText(f"[{self._selected_category}] {len(keywords)}개 삭제됨")
 
     def closeEvent(self, event):
         if self._worker and self._worker.isRunning():

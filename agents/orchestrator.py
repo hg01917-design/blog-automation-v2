@@ -137,7 +137,7 @@ def _generate_agent_template(blog_id: str, module_name: str, category: str):
 
         sys.path.insert(0, str(Path(__file__).parent.parent))
 
-        from claude_playwright import generate_text
+        from claude_playwright import generate_text_with_fallback as generate_text
         from gemini_image import generate_images
         from overnight_run import _truncate_title
 
@@ -283,8 +283,8 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
 
     try:
         # ── 1. 키워드 선택 ──
-        if keyword and page_id:
-            kw_result = {"keyword": keyword, "page_id": page_id}
+        if keyword:
+            kw_result = {"keyword": keyword, "page_id": page_id or ""}
             log(f"[키워드] 지정 키워드: '{keyword}'")
         else:
             kw_result = keyword_agent.run(blog_id, on_log=log, on_status=on_status)
@@ -354,8 +354,9 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
             result = None
 
         if not result:
-            from overnight_run import update_keyword_status
-            update_keyword_status(page_id, "실패", memo="검수 불합격")
+            if page_id:
+                from overnight_run import update_keyword_status
+                update_keyword_status(page_id, "실패", memo="검수 불합격")
             return _fail(blog_id, keyword, f"검수 불합격 ({MAX_WRITER_RETRIES}회)", logs)
 
         # ── 4. 포스팅 ──

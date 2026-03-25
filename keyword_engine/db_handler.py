@@ -39,11 +39,15 @@ def init_db():
                 UNIQUE(site_url, title)
             );
         """)
-        # 기존 테이블에 category 컬럼이 없으면 추가 (마이그레이션)
-        try:
-            db.execute("ALTER TABLE keywords ADD COLUMN category TEXT DEFAULT ''")
-        except Exception:
-            pass
+        # 마이그레이션: 기존 테이블에 컬럼 추가
+        for col, dflt in [
+            ("category", "''"),
+            ("status",   "'pending'"),
+        ]:
+            try:
+                db.execute(f"ALTER TABLE keywords ADD COLUMN {col} TEXT DEFAULT {dflt}")
+            except Exception:
+                pass
         try:
             db.execute("ALTER TABLE sites ADD COLUMN category TEXT DEFAULT ''")
         except Exception:
@@ -111,7 +115,8 @@ def get_keywords_by_category(category: str, n: int = 50, min_score: float = 0) -
     with _conn() as db:
         rows = db.execute(
             """
-            SELECT keyword, score, volume, pub_count, category
+            SELECT keyword, score, volume, pub_count, category,
+                   COALESCE(status, 'pending') AS status
             FROM keywords
             WHERE category = ? AND score >= ?
             ORDER BY score DESC
@@ -120,6 +125,21 @@ def get_keywords_by_category(category: str, n: int = 50, min_score: float = 0) -
             (category, min_score, n),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def delete_keyword(keyword: str):
+    """키워드 삭제"""
+    with _conn() as db:
+        db.execute("DELETE FROM keywords WHERE keyword = ?", (keyword,))
+
+
+def set_keyword_status(keyword: str, status: str):
+    """키워드 상태 변경 (pending / published)"""
+    with _conn() as db:
+        db.execute(
+            "UPDATE keywords SET status = ? WHERE keyword = ?",
+            (status, keyword),
+        )
 
 
 def get_sites_by_category(category: str) -> list:
