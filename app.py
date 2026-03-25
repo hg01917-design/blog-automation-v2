@@ -1114,25 +1114,44 @@ class KeywordEngineDialog(QDialog):
             self._collecting_label.setText("")
 
     def _on_new_keyword(self, category: str, keyword: str, score: float, volume: int, pub_count: int):
-        """수집된 키워드를 해당 카테고리 캐시에 저장 + 현재 탭이면 테이블에도 추가"""
+        """수집된 키워드를 해당 카테고리 캐시에 저장 + 현재 탭이면 테이블에도 추가/업데이트"""
         item = {"keyword": keyword, "score": score, "volume": volume, "pub_count": pub_count}
-        self._cat_keywords[category].append(item)
+
+        # 캐시에 이미 있으면 업데이트, 없으면 추가
+        cat_list = self._cat_keywords[category]
+        existing_idx = next((i for i, k in enumerate(cat_list) if k["keyword"] == keyword), None)
+        if existing_idx is not None:
+            cat_list[existing_idx] = item
+        else:
+            cat_list.append(item)
+
         self._update_cat_btn(category)
-        # 현재 보고 있는 탭이면 테이블에 바로 추가
+
         if category == self._selected_category:
-            row = self._table.rowCount()
-            self._table.insertRow(row)
-            self._table.setItem(row, 0, QTableWidgetItem(keyword))
-            s = QTableWidgetItem(f"{score:,.0f}")
+            # 테이블에 이미 있는 행이면 업데이트, 없으면 추가
+            existing_row = None
+            for r in range(self._table.rowCount()):
+                if self._table.item(r, 0) and self._table.item(r, 0).text() == keyword:
+                    existing_row = r
+                    break
+
+            if existing_row is None:
+                existing_row = self._table.rowCount()
+                self._table.insertRow(existing_row)
+
+            self._table.setItem(existing_row, 0, QTableWidgetItem(keyword))
+            s = QTableWidgetItem("—" if score == 0 else f"{score:,.0f}")
             s.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self._table.setItem(row, 1, s)
-            v = QTableWidgetItem(f"{volume:,}")
+            self._table.setItem(existing_row, 1, s)
+            v = QTableWidgetItem("조회중" if volume == 0 else f"{volume:,}")
             v.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self._table.setItem(row, 2, v)
-            p = QTableWidgetItem(f"{pub_count:,}")
+            self._table.setItem(existing_row, 2, v)
+            p = QTableWidgetItem("—" if pub_count == 0 else f"{pub_count:,}")
             p.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self._table.setItem(row, 3, p)
-            self._table.scrollToBottom()
+            self._table.setItem(existing_row, 3, p)
+            if existing_row == self._table.rowCount() - 1:
+                self._table.scrollToBottom()
+
         n = len(self._cat_keywords[category])
         if category == self._selected_category:
             self._status_label.setText(f"[{category}]  {n}개 키워드 (수집 중...)")
@@ -1360,6 +1379,29 @@ class BlogAutomationApp(QMainWindow):
         keyword_engine_btn.clicked.connect(self._open_keyword_engine)
         bottom_row.addWidget(keyword_engine_btn, alignment=Qt.AlignLeft)
 
+        # ── AI 선택 토글 (Claude / Gemini) ──
+        ai_frame = QFrame()
+        ai_frame.setFixedHeight(32)
+        ai_frame.setStyleSheet(
+            "background:#1e1e2e; border:1px solid #444; border-radius:8px;")
+        ai_lay = QHBoxLayout(ai_frame)
+        ai_lay.setContentsMargins(3, 2, 3, 2)
+        ai_lay.setSpacing(2)
+
+        self._ai_claude_btn = QPushButton("Claude")
+        self._ai_claude_btn.setFixedHeight(24)
+        self._ai_claude_btn.setFixedWidth(70)
+        self._ai_gemini_btn = QPushButton("Gemini")
+        self._ai_gemini_btn.setFixedHeight(24)
+        self._ai_gemini_btn.setFixedWidth(70)
+
+        self._ai_claude_btn.clicked.connect(lambda: self._set_ai_provider("claude"))
+        self._ai_gemini_btn.clicked.connect(lambda: self._set_ai_provider("gemini"))
+        ai_lay.addWidget(self._ai_claude_btn)
+        ai_lay.addWidget(self._ai_gemini_btn)
+        bottom_row.addWidget(ai_frame, alignment=Qt.AlignLeft)
+        self._set_ai_provider("claude")  # 기본값
+
         bottom_row.addStretch()
 
         clear_btn = QPushButton("로그 지우기")
@@ -1369,6 +1411,15 @@ class BlogAutomationApp(QMainWindow):
         bottom_row.addWidget(clear_btn, alignment=Qt.AlignRight)
 
         root.addLayout(bottom_row)
+
+    # ── AI 프로바이더 선택 ──
+    def _set_ai_provider(self, provider: str):
+        os.environ["AI_PROVIDER"] = provider
+        active   = "background:#2563eb;color:#fff;border-radius:6px;border:none;font-size:11px;font-weight:bold;"
+        inactive = "background:transparent;color:#888;border-radius:6px;border:none;font-size:11px;"
+        self._ai_claude_btn.setStyleSheet(active   if provider == "claude" else inactive)
+        self._ai_gemini_btn.setStyleSheet(active   if provider == "gemini" else inactive)
+        self.log_box.append(f"[AI] {provider.upper()} 선택됨")
 
     # ── 설정 ──
     def _open_settings(self):

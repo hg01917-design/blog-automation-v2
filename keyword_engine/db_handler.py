@@ -1,9 +1,12 @@
 """SQLite 저장소 — 키워드/사이트/제목 중복 제거 (카테고리 지원)"""
+import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "engine.db"
+# .app 번들에서도 프로젝트 루트의 DB 파일 사용 (영구 저장)
+_project_root = Path(os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(Path(__file__).parent.parent)))
+DB_PATH = _project_root / "keyword_engine" / "engine.db"
 
 
 def _conn():
@@ -127,6 +130,31 @@ def get_sites_by_category(category: str) -> list:
             (category,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_multidomain_sites(category: str, min_domains: int = 2, top_owners: int = 10) -> list:
+    """카테고리별 다수 도메인 보유 펍코드 소유자의 사이트 목록 (도메인 많은 순)"""
+    from collections import defaultdict
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT url, pub_code FROM sites "
+            "WHERE category = ? AND pub_code IS NOT NULL AND pub_code != '' "
+            "ORDER BY collected_at DESC",
+            (category,),
+        ).fetchall()
+    pub_to_sites: dict = defaultdict(list)
+    for r in rows:
+        pub_to_sites[r["pub_code"]].append(r["url"])
+    ranked = sorted(pub_to_sites.items(), key=lambda x: len(x[1]), reverse=True)
+    result = []
+    owner_count = 0
+    for pub, sites in ranked:
+        if len(sites) >= min_domains:
+            result.extend(sites)
+            owner_count += 1
+            if owner_count >= top_owners:
+                break
+    return result
 
 
 def get_category_stats() -> dict:
