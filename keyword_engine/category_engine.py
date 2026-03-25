@@ -1,10 +1,10 @@
-"""카테고리별 키워드 수집 엔진 — pub코드 역분석 + 연관 도메인 확장 + DB 저장"""
+"""카테고리별 키워드 수집 엔진 — 빠른 키워드 반환 + 펍코드 백그라운드"""
 import sys
+import threading
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from keyword_engine import analyze_titles
 from keyword_engine import db_handler
 from keyword_engine import gsc_connector
 from keyword_engine import naver_api
@@ -16,13 +16,39 @@ from keyword_engine import related_finder
 
 # 카테고리 ↔ 블로그 ID 매핑
 CATEGORY_MAP = {
-    "IT":      "goodisak",
-    "여행":    "nolja100",
-    "살림":    "salim1su",
+    "IT":         "goodisak",
+    "여행":       "nolja100",
+    "살림":       "salim1su",
     "정부지원금": "baremi542",
 }
 BLOG_TO_CATEGORY = {v: k for k, v in CATEGORY_MAP.items()}
 ALL_CATEGORIES = list(CATEGORY_MAP.keys())
+
+# 카테고리별 제목 필터 — 해당 단어가 하나라도 포함된 제목만 키워드 추출
+CATEGORY_TITLE_KEYWORDS = {
+    "IT": {
+        "추천", "후기", "리뷰", "비교", "사용법", "설정", "갤럭시", "아이폰", "맥북",
+        "노트북", "스마트폰", "이어폰", "태블릿", "청정기", "청소기", "워치", "모니터",
+        "스피커", "웹캠", "OTT", "넷플릭스", "티빙", "요금제", "미니PC", "게이밍",
+        "앱", "프로그램", "소프트웨어", "하드웨어", "CPU", "GPU", "SSD", "RAM",
+    },
+    "여행": {
+        "여행", "코스", "맛집", "숙소", "카페", "관광", "명소", "드라이브", "캠핑",
+        "글램핑", "호텔", "펜션", "리조트", "휴가", "제주", "부산", "강원", "경주",
+        "속초", "전주", "여수", "통영", "남해", "당일치기", "국내여행", "해외여행",
+        "등산", "국립공원", "둘레길", "트레킹", "여행지",
+    },
+    "살림": {
+        "절약", "정리", "청소", "살림", "인테리어", "요리", "레시피", "세탁",
+        "냉장고", "주방", "수납", "에너지", "관리비", "전기", "가스비", "통신비",
+        "식비", "생활비", "가전", "꿀팁", "분리수거", "재활용", "옷",
+    },
+    "정부지원금": {
+        "지원금", "복지", "혜택", "지원", "신청", "급여", "바우처", "수급", "청년",
+        "장애인", "출산", "육아", "노인", "실업", "취업", "주거", "교육", "의료",
+        "정부", "국가", "보조금", "감면", "할인", "무료", "제도", "정책",
+    },
+}
 
 DEFAULT_MIN_SCORE  = 100_000
 DEFAULT_MIN_VOLUME = 500
@@ -41,21 +67,18 @@ def run_category(
     min_score: float = DEFAULT_MIN_SCORE,
     min_volume: int = DEFAULT_MIN_VOLUME,
     push_to_notion: bool = True,
-    use_playwright: bool = True,
+    use_playwright: bool = False,
     on_log=None,
     on_keyword=None,
 ) -> list:
     """
-    카테고리별 전체 파이프라인 실행
+    카테고리별 키워드 수집
 
     흐름:
-      카테고리 쿼리 → Tistory URL 수집 (상위 100위)
-      → pub코드 추출 (AdSense)
-      → pub코드로 연관 도메인 확장
-      → 전체 도메인 RSS 제목 수집
-      → 키워드 추출 + 점수 계산
-      → DB 저장 (category 태그)
-      → Notion 큐 적재 (옵션)
+      1단계: Naver 검색 → Tistory URL 수집
+      2단계: RSS 제목 즉시 수집 (카테고리 제목 필터 적용)
+      3단계: 키워드 추출 + 점수 계산 → 즉시 반환
+      백그라운드: pub코드 추출 + 연관 도메인 확장 (DB 저장용)
     """
     blog_id = CATEGORY_MAP.get(category)
     if not blog_id:
@@ -69,7 +92,7 @@ def run_category(
     queries = naver_api.BLOG_QUERIES.get(blog_id, [])
 
     # ── 1단계: Naver 검색 → Tistory URL 수집 ─────────────
-    _log("\n[1단계] Tistory 상위 도메인 수집 중...", on_log)
+    _log("\n[1단계] Tistory 도메인 수집 중...", on_log)
     tistory_urls = naver_api.collect_tistory_urls(queries, display=100, on_log=on_log)
     _log(f"[1단계] {len(tistory_urls)}개 도메인 확보", on_log)
 
@@ -77,84 +100,58 @@ def run_category(
         _log("[엔진] URL 수집 실패 — 종료", on_log)
         return []
 
-    # ── 2단계: pub코드 추출 ────────────────────────────────
-    _log("\n[2단계] AdSense pub코드 추출 중...", on_log)
-    url_list = list(tistory_urls)
-
-    if use_playwright:
+    # ── 백그라운드: pub코드 추출 + 연관 도메인 (DB 저장용) ──
+    def _bg_pub_job():
         try:
-            pub_map = pub_finder.find_pub_codes_playwright(url_list, on_log)
-        except Exception as e:
-            _log(f"[2단계] Playwright 오류({e}), 경량 모드로 폴백", on_log)
-            pub_map = pub_finder.find_pub_codes_fast(url_list, on_log)
-    else:
-        pub_map = pub_finder.find_pub_codes_fast(url_list, on_log)
+            url_list = list(tistory_urls)
+            pub_map = pub_finder.find_pub_codes_fast(url_list, on_log=None)
+            pub_groups = pub_finder.group_by_pub_code(pub_map)
+            for url, pub in pub_map.items():
+                db_handler.save_site(url, pub, category=category)
+            extra_urls = related_finder.expand_by_pub_codes(pub_groups, on_log=None)
+            top_pub = list(pub_groups.keys())[0] if pub_groups else ""
+            for url in extra_urls:
+                db_handler.save_site(url, top_pub, category=category)
+        except Exception:
+            pass
 
-    _log(f"[2단계] pub코드 발견: {len(pub_map)}/{len(url_list)}개 사이트", on_log)
+    bg = threading.Thread(target=_bg_pub_job, daemon=True)
+    bg.start()
+    _log("[백그라운드] pub코드/연관 도메인 탐색 시작 (결과는 DB에 저장)", on_log)
 
-    # pub코드별 그룹핑
-    pub_groups = pub_finder.group_by_pub_code(pub_map)
-    _log(f"[2단계] 운영자 {len(pub_groups)}명 식별", on_log)
-    for pub, sites in list(pub_groups.items())[:3]:
-        _log(f"  {pub} → {len(sites)}개 사이트", on_log)
-
-    # DB에 사이트 저장
-    for url, pub in pub_map.items():
-        db_handler.save_site(url, pub, category=category)
-
-    # ── 3단계: pub코드로 연관 도메인 확장 ─────────────────
-    _log("\n[3단계] pub코드 연관 도메인 확장 중...", on_log)
-    extra_urls = related_finder.expand_by_pub_codes(pub_groups, on_log=on_log)
-
-    all_urls = tistory_urls | set(pub_map.keys()) | extra_urls
-    _log(f"[3단계] 총 {len(all_urls)}개 도메인 (원본 {len(tistory_urls)} + 확장 {len(extra_urls)})", on_log)
-
-    # 확장된 사이트도 DB 저장
-    for url in extra_urls:
-        # pub코드는 모름 — 가장 많이 나온 pub코드로 임시 태깅
-        top_pub = list(pub_groups.keys())[0] if pub_groups else ""
-        db_handler.save_site(url, top_pub, category=category)
-
-    # ── 4단계: RSS 글 제목 수집 ───────────────────────────
-    _log("\n[4단계] RSS 피드에서 글 제목 수집 중...", on_log)
-    # pub코드 있는 검증 사이트 우선
-    verified = set(pub_map.keys())
-    other    = all_urls - verified
-
-    pub_titles = title_collector.collect_from_all(verified, on_log=on_log)
-    _log(f"[4단계] 검증 사이트 {len(pub_titles)}개 제목", on_log)
-
-    if len(pub_titles) < 200:
-        extra_titles = title_collector.collect_from_all(other, on_log=on_log)
-        all_titles = pub_titles + extra_titles
-        _log(f"[4단계] 보충 후 총 {len(all_titles)}개 제목", on_log)
-    else:
-        all_titles = pub_titles
-        _log(f"[4단계] 총 {len(all_titles)}개 제목", on_log)
+    # ── 2단계: RSS 제목 수집 (즉시) ───────────────────────
+    _log("\n[2단계] RSS 제목 수집 중...", on_log)
+    all_titles = title_collector.collect_from_all(tistory_urls, on_log=on_log)
+    _log(f"[2단계] {len(all_titles)}개 제목 수집", on_log)
 
     if not all_titles:
         _log("[엔진] 제목 수집 실패 — 종료", on_log)
         return []
 
-    # 카테고리 분포 분석
-    _log("\n[분석] 수익 카테고리 분포:", on_log)
-    analysis = analyze_titles.analyze(all_titles)
-    analyze_titles.print_report(analysis)
+    # ── 카테고리 제목 필터 ─────────────────────────────────
+    cat_filter = CATEGORY_TITLE_KEYWORDS.get(category, set())
+    if cat_filter:
+        filtered_titles = [t for t in all_titles if any(kw in t for kw in cat_filter)]
+        _log(f"[필터] {len(all_titles)}개 → {len(filtered_titles)}개 ({category} 관련)", on_log)
+        all_titles = filtered_titles if len(filtered_titles) >= 30 else all_titles
 
-    # ── 5단계: 키워드 추출 ────────────────────────────────
-    _log("\n[5단계] 키워드 추출 중...", on_log)
-    candidates = title_collector.extract_keywords_from_titles(all_titles)
-    _log(f"[5단계] 후보 키워드 {len(candidates)}개", on_log)
+    if not all_titles:
+        _log("[엔진] 제목 필터 후 데이터 없음 — 종료", on_log)
+        return []
+
+    # ── 3단계: 키워드 추출 ────────────────────────────────
+    _log("\n[3단계] 키워드 추출 중...", on_log)
+    candidates = title_collector.extract_keywords_from_titles(all_titles, top_n=100)
+    _log(f"[3단계] 상위 후보 {len(candidates)}개", on_log)
 
     if not candidates:
         _log("[엔진] 키워드 추출 실패 — 종료", on_log)
         return []
 
-    # ── 6단계: 기회점수 계산 + 실시간 필터 표시 ─────────────
-    _log(f"\n[6단계] 기회점수 계산 중 ({len(candidates)}개)...", on_log)
+    # ── 4단계: 점수 계산 + 실시간 반환 ───────────────────
+    _log(f"\n[4단계] 점수 계산 중 ({len(candidates)}개)...", on_log)
 
     def _realtime_kw(item):
-        """점수 계산 즉시 필터 통과하면 UI로 전달"""
         if item["volume"] >= min_volume and item["score"] >= min_score:
             if on_keyword:
                 on_keyword(item)
@@ -166,37 +163,30 @@ def run_category(
         on_keyword=_realtime_kw,
     )
 
-    # ── 7단계: 필터링 ─────────────────────────────────────
-    filtered = [
+    # ── 5단계: 필터링 + DB 저장 ───────────────────────────
+    result = [
         k for k in scored
         if k["volume"] >= min_volume and k["score"] >= min_score
     ]
-    _log(
-        f"\n[7단계] 필터 후 {len(filtered)}개 "
-        f"(검색량 {min_volume:,}+, 점수 {min_score:,}+)",
-        on_log,
-    )
+    _log(f"\n[5단계] 필터 후 {len(result)}개 (검색량 {min_volume:,}+, 점수 {min_score:,}+)", on_log)
 
-    # GSC 교차 부스트 (선택)
     gsc_boost = set(gsc_connector.get_rising_keywords())
     if gsc_boost:
-        filtered = (
-            [k for k in filtered if k["keyword"] in gsc_boost] +
-            [k for k in filtered if k["keyword"] not in gsc_boost]
+        result = (
+            [k for k in result if k["keyword"] in gsc_boost] +
+            [k for k in result if k["keyword"] not in gsc_boost]
         )
 
-    # DB 저장 (category 태그 포함)
-    for item in filtered:
+    for item in result:
         db_handler.upsert_keyword(
             item["keyword"], item["score"], item["volume"], item["pub_count"],
             category=category,
         )
 
-    top = filtered[:top_n]
+    top = result[:top_n]
 
-    # 결과 출력
     _log(f"\n{'═' * 55}", on_log)
-    _log(f"  [{category}] 결과: 상위 {len(top)}개 키워드", on_log)
+    _log(f"  [{category}] 완료: {len(top)}개 키워드", on_log)
     _log(f"{'═' * 55}", on_log)
     for i, item in enumerate(top, 1):
         _log(
@@ -207,11 +197,11 @@ def run_category(
             on_log,
         )
 
-    # ── 8단계: Notion 큐 적재 ────────────────────────────
+    # ── 6단계: Notion 큐 적재 ────────────────────────────
     if push_to_notion and blog_id and top:
-        _log(f"\n[8단계] Notion 큐 적재 → {blog_id}", on_log)
+        _log(f"\n[6단계] Notion 큐 적재 → {blog_id}", on_log)
         saved = queue_pusher.push(top, blog_id, on_log)
-        _log(f"[8단계] {saved}개 저장 완료", on_log)
+        _log(f"[6단계] {saved}개 저장 완료", on_log)
 
     return top
 
@@ -244,7 +234,6 @@ if __name__ == "__main__":
     parser.add_argument("--min-score", type=float, default=DEFAULT_MIN_SCORE)
     parser.add_argument("--min-volume", type=int, default=DEFAULT_MIN_VOLUME)
     parser.add_argument("--no-push", action="store_true")
-    parser.add_argument("--no-playwright", action="store_true")
     parser.add_argument("--query", action="store_true", help="수집 없이 DB에서 조회만")
     args = parser.parse_args()
 
@@ -260,5 +249,4 @@ if __name__ == "__main__":
             min_score=args.min_score,
             min_volume=args.min_volume,
             push_to_notion=not args.no_push,
-            use_playwright=not args.no_playwright,
         )
