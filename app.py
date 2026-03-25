@@ -19,7 +19,8 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QTextEdit, QPushButton, QFrame, QSizePolicy,
     QDialog, QLineEdit, QFormLayout, QDialogButtonBox, QMessageBox,
-    QCheckBox, QScrollArea,
+    QCheckBox, QScrollArea, QTableWidget, QTableWidgetItem, QHeaderView,
+    QAbstractItemView, QSplitter,
 )
 from PyQt5.QtCore import (
     Qt, QThread, pyqtSignal, QTimer, QPoint, QSize,
@@ -825,6 +826,319 @@ class SettingsDialog(QDialog):
         self.accept()
 
 
+# ─── 키워드 수집 백그라운드 워커 ──────────────────────────────────────────
+
+class KeywordCollectWorker(QThread):
+    """카테고리별 키워드 수집 — 백그라운드 실행"""
+    log_signal     = pyqtSignal(str)
+    keyword_signal = pyqtSignal(str, float, int, int)  # keyword, score, volume, pub_count
+    finished       = pyqtSignal(str)
+
+    def __init__(self, category: str, use_playwright: bool = False):
+        super().__init__()
+        self.category       = category
+        self.use_playwright = use_playwright
+        self._stop_flag     = False
+
+    def stop(self):
+        self._stop_flag = True
+
+    def run(self):
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from keyword_engine.category_engine import run_category
+
+            def on_log(msg):
+                if not self._stop_flag:
+                    self.log_signal.emit(msg)
+
+            results = run_category(
+                category=self.category,
+                top_n=50,
+                min_score=50_000,
+                min_volume=500,
+                push_to_notion=True,
+                use_playwright=self.use_playwright,
+                on_log=on_log,
+            )
+            for item in results:
+                self.keyword_signal.emit(
+                    item["keyword"], item["score"],
+                    item["volume"], item["pub_count"],
+                )
+            self.finished.emit(f"[완료] {self.category} — {len(results)}개 키워드 수집")
+        except Exception as e:
+            self.finished.emit(f"[오류] {self.category}: {e}")
+
+
+# ─── 키워드 엔진 다이얼로그 ────────────────────────────────────────────────
+
+class KeywordEngineDialog(QDialog):
+    """카테고리별 키워드 브라우저 + 백그라운드 수집"""
+
+    CATEGORIES = ["IT", "여행", "살림", "정부지원금"]
+    CAT_COLORS  = {
+        "IT":      "#4da6ff",
+        "여행":    "#ff9966",
+        "살림":    "#55dd77",
+        "정부지원금": "#cc88ff",
+    }
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("🔑 키워드 엔진 — 카테고리별 분석")
+        self.resize(960, 640)
+        self._worker = None
+        self._selected_category = self.CATEGORIES[0]
+        self._build_ui()
+        self._load_category(self._selected_category)
+
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(8)
+
+        # ── 상단: 카테고리 선택 + 수집 버튼 ──
+        top_row = QHBoxLayout()
+
+        cat_label = QLabel("카테고리:")
+        cat_label.setStyleSheet("color:#aaa; font-size:12px;")
+        top_row.addWidget(cat_label)
+
+        self._cat_btns = {}
+        for cat in self.CATEGORIES:
+            btn = QPushButton(cat)
+            btn.setFixedHeight(30)
+            btn.setCheckable(True)
+            btn.setChecked(cat == self._selected_category)
+            color = self.CAT_COLORS[cat]
+            btn.setStyleSheet(
+                f"QPushButton{{background:#222;color:#aaa;border:2px solid #444;"
+                f"border-radius:6px;font-size:12px;padding:0 10px;}}"
+                f"QPushButton:checked{{background:{color}33;color:#fff;"
+                f"border:2px solid {color};}}"
+            )
+            btn.clicked.connect(lambda _, c=cat: self._on_cat_clicked(c))
+            self._cat_btns[cat] = btn
+            top_row.addWidget(btn)
+
+        top_row.addStretch()
+
+        self._collect_btn = QPushButton("⬇  수집 시작")
+        self._collect_btn.setFixedHeight(30)
+        self._collect_btn.setStyleSheet(
+            "background:#16a34a;color:#fff;border-radius:6px;"
+            "font-size:12px;padding:0 14px;border:none;")
+        self._collect_btn.clicked.connect(self._start_collect)
+        top_row.addWidget(self._collect_btn)
+
+        self._stop_btn = QPushButton("⏹ 중지")
+        self._stop_btn.setFixedHeight(30)
+        self._stop_btn.setEnabled(False)
+        self._stop_btn.setStyleSheet(
+            "background:#dc2626;color:#fff;border-radius:6px;"
+            "font-size:12px;padding:0 14px;border:none;")
+        self._stop_btn.clicked.connect(self._stop_collect)
+        top_row.addWidget(self._stop_btn)
+
+        root.addLayout(top_row)
+
+        # ── 중단: 스플리터 (테이블 | 로그) ──
+        splitter = QSplitter(Qt.Horizontal)
+
+        # 키워드 테이블
+        self._table = QTableWidget()
+        self._table.setColumnCount(4)
+        self._table.setHorizontalHeaderLabels(["키워드", "점수", "검색량", "발행량"])
+        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._table.setAlternatingRowColors(True)
+        self._table.setStyleSheet(
+            "QTableWidget{background:#0e0e1a;color:#e0e0e0;"
+            "gridline-color:#222;border:1px solid #333;border-radius:6px;}"
+            "QTableWidget::item:selected{background:#2563eb;}"
+            "QHeaderView::section{background:#1a1a2e;color:#aaa;"
+            "border:none;padding:4px;font-size:11px;}"
+            "QTableWidget{alternate-background-color:#12121e;}"
+        )
+        splitter.addWidget(self._table)
+
+        # 로그 패널
+        self._log_box = QTextEdit()
+        self._log_box.setReadOnly(True)
+        self._log_box.setFont(QFont("Menlo", 10))
+        self._log_box.setMaximumWidth(320)
+        self._log_box.setStyleSheet(
+            "background:#0a0a14;color:#888;border:1px solid #333;"
+            "border-radius:6px;padding:6px;font-size:10px;")
+        self._log_box.setPlaceholderText("수집 시작하면 여기에 로그가 출력됩니다...")
+        splitter.addWidget(self._log_box)
+
+        splitter.setSizes([640, 300])
+        root.addWidget(splitter)
+
+        # ── 상태 표시줄 ──
+        self._status_label = QLabel("DB에서 키워드를 불러오는 중...")
+        self._status_label.setStyleSheet("color:#888;font-size:11px;")
+        root.addWidget(self._status_label)
+
+        # ── 하단 버튼 ──
+        btn_row = QHBoxLayout()
+
+        self._sel_all_btn = QPushButton("전체선택")
+        self._sel_all_btn.setFixedHeight(28)
+        self._sel_all_btn.setStyleSheet("background:#333;color:#fff;border-radius:4px;font-size:11px;border:none;")
+        self._sel_all_btn.clicked.connect(self._table.selectAll)
+        btn_row.addWidget(self._sel_all_btn)
+
+        self._notion_btn = QPushButton("📤  선택 → 노션 큐 전송")
+        self._notion_btn.setFixedHeight(28)
+        self._notion_btn.setStyleSheet(
+            "background:#2563eb;color:#fff;border-radius:4px;"
+            "font-size:11px;padding:0 12px;border:none;")
+        self._notion_btn.clicked.connect(self._push_selected_to_notion)
+        btn_row.addWidget(self._notion_btn)
+
+        btn_row.addStretch()
+
+        close_btn = QPushButton("닫기")
+        close_btn.setFixedHeight(28)
+        close_btn.setStyleSheet("background:#555;color:#fff;border-radius:4px;font-size:11px;border:none;")
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+
+        root.addLayout(btn_row)
+
+    # ── 카테고리 선택 ──
+    def _on_cat_clicked(self, category: str):
+        self._selected_category = category
+        for cat, btn in self._cat_btns.items():
+            btn.setChecked(cat == category)
+        self._load_category(category)
+
+    # ── DB에서 즉시 로드 ──
+    def _load_category(self, category: str):
+        try:
+            from keyword_engine.db_handler import get_keywords_by_category, get_category_stats
+            keywords = get_keywords_by_category(category, n=200)
+            stats    = get_category_stats()
+
+            self._table.setRowCount(0)
+            for row_idx, item in enumerate(keywords):
+                self._table.insertRow(row_idx)
+                self._table.setItem(row_idx, 0, QTableWidgetItem(item["keyword"]))
+                score_item = QTableWidgetItem(f"{item['score']:,.0f}")
+                score_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self._table.setItem(row_idx, 1, score_item)
+                vol_item = QTableWidgetItem(f"{item['volume']:,}")
+                vol_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self._table.setItem(row_idx, 2, vol_item)
+                pub_item = QTableWidgetItem(f"{item.get('pub_count', 0):,}")
+                pub_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self._table.setItem(row_idx, 3, pub_item)
+
+            cat_stat = stats.get(category, {})
+            kw_cnt   = cat_stat.get("keywords", len(keywords))
+            site_cnt = cat_stat.get("sites", 0)
+            self._status_label.setText(
+                f"[{category}]  키워드 {kw_cnt}개  |  수집된 사이트 {site_cnt}개"
+                + ("  |  수집 미실행 — 수집 시작 버튼을 눌러주세요" if kw_cnt == 0 else "")
+            )
+        except Exception as e:
+            self._status_label.setText(f"로드 오류: {e}")
+
+    # ── 수집 시작 ──
+    def _start_collect(self):
+        if self._worker and self._worker.isRunning():
+            return
+
+        self._collect_btn.setEnabled(False)
+        self._stop_btn.setEnabled(True)
+        self._log_box.clear()
+        self._log_box.append(f"[수집] {self._selected_category} 시작...")
+
+        self._worker = KeywordCollectWorker(
+            category=self._selected_category,
+            use_playwright=False,  # 백그라운드 — 경량 모드 기본
+        )
+        self._worker.log_signal.connect(self._log_box.append)
+        self._worker.keyword_signal.connect(self._on_new_keyword)
+        self._worker.finished.connect(self._on_collect_done)
+        self._worker.start()
+
+    def _stop_collect(self):
+        if self._worker and self._worker.isRunning():
+            self._worker.stop()
+            self._log_box.append("[수집] 중지 요청...")
+        self._collect_btn.setEnabled(True)
+        self._stop_btn.setEnabled(False)
+
+    def _on_new_keyword(self, keyword: str, score: float, volume: int, pub_count: int):
+        """새 키워드 실시간으로 테이블에 추가"""
+        row = self._table.rowCount()
+        self._table.insertRow(row)
+        self._table.setItem(row, 0, QTableWidgetItem(keyword))
+        score_item = QTableWidgetItem(f"{score:,.0f}")
+        score_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._table.setItem(row, 1, score_item)
+        vol_item = QTableWidgetItem(f"{volume:,}")
+        vol_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._table.setItem(row, 2, vol_item)
+        pub_item = QTableWidgetItem(f"{pub_count:,}")
+        pub_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._table.setItem(row, 3, pub_item)
+        self._table.scrollToBottom()
+
+    def _on_collect_done(self, msg: str):
+        self._log_box.append(msg)
+        self._collect_btn.setEnabled(True)
+        self._stop_btn.setEnabled(False)
+        # 완료 후 DB에서 전체 재로드 (정렬 포함)
+        self._load_category(self._selected_category)
+
+    # ── 선택 키워드 → Notion 큐 전송 ──
+    def _push_selected_to_notion(self):
+        selected_rows = set(idx.row() for idx in self._table.selectedIndexes())
+        if not selected_rows:
+            QMessageBox.information(self, "선택 없음", "전송할 키워드 행을 선택해주세요.")
+            return
+
+        from keyword_engine.naver_api import BLOG_QUERIES
+        from keyword_engine.category_engine import CATEGORY_MAP
+        from keyword_engine.queue_pusher import push
+
+        blog_id = CATEGORY_MAP.get(self._selected_category)
+        if not blog_id:
+            return
+
+        items = []
+        for row in sorted(selected_rows):
+            kw    = self._table.item(row, 0).text()
+            score = float(self._table.item(row, 1).text().replace(",", ""))
+            vol   = int(self._table.item(row, 2).text().replace(",", ""))
+            pub   = int(self._table.item(row, 3).text().replace(",", ""))
+            items.append({"keyword": kw, "score": score, "volume": vol, "pub_count": pub})
+
+        try:
+            saved = push(items, blog_id, on_log=self._log_box.append)
+            QMessageBox.information(
+                self, "전송 완료",
+                f"{saved}/{len(items)}개 키워드를 {blog_id} 노션 큐에 전송했습니다.",
+            )
+        except Exception as e:
+            QMessageBox.warning(self, "오류", str(e))
+
+    def closeEvent(self, event):
+        if self._worker and self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(2000)
+        super().closeEvent(event)
+
+
 class RetryFailedDialog(QDialog):
     """실패 키워드 목록을 보여주고 선택한 항목을 '대기'로 초기화하는 다이얼로그"""
 
@@ -993,6 +1307,15 @@ class BlogAutomationApp(QMainWindow):
         settings_btn.clicked.connect(self._open_settings)
         bottom_row.addWidget(settings_btn, alignment=Qt.AlignLeft)
 
+        keyword_engine_btn = QPushButton("🔑  키워드 엔진")
+        keyword_engine_btn.setObjectName("clearBtn")
+        keyword_engine_btn.setFixedHeight(32)
+        keyword_engine_btn.setStyleSheet(
+            "background:#7c3aed;color:#fff;border-radius:6px;"
+            "font-size:12px;padding:0 14px;border:none;")
+        keyword_engine_btn.clicked.connect(self._open_keyword_engine)
+        bottom_row.addWidget(keyword_engine_btn, alignment=Qt.AlignLeft)
+
         bottom_row.addStretch()
 
         clear_btn = QPushButton("로그 지우기")
@@ -1006,6 +1329,11 @@ class BlogAutomationApp(QMainWindow):
     # ── 설정 ──
     def _open_settings(self):
         dlg = SettingsDialog(self)
+        dlg.exec_()
+
+    # ── 키워드 엔진 ──
+    def _open_keyword_engine(self):
+        dlg = KeywordEngineDialog(self)
         dlg.exec_()
 
     # ── 블로그 ON/OFF ──
