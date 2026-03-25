@@ -3,13 +3,12 @@ import os
 from pathlib import Path as _Path
 
 # ── 프로젝트 루트 경로 설정 (.app 번들 / 일반 실행 모두 대응) ──────────────
+# 사용자 데이터(DB, .env)는 앱 위치와 무관하게 고정 경로에 저장
+_USER_DATA_DIR = _Path.home() / "Library" / "Application Support" / "BlogAutomation"
+_USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
 if getattr(sys, "frozen", False):
-    if sys.platform == "darwin":
-        # .app/Contents/MacOS/executable → 5단계 위 = 프로젝트 루트 (dist/의 부모)
-        _PROJECT_ROOT = _Path(sys.executable).parent.parent.parent.parent.parent
-    else:
-        # Windows: .exe가 있는 폴더
-        _PROJECT_ROOT = _Path(sys.executable).parent
+    _PROJECT_ROOT = _USER_DATA_DIR
 else:
     _PROJECT_ROOT = _Path(__file__).parent
 
@@ -713,7 +712,7 @@ QPushButton {
 class SettingsDialog(QDialog):
     """API 키 / 환경변수 설정 다이얼로그 — 저장 시 .env 파일에 반영"""
 
-    _ENV_PATH = _Path(os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(_Path(__file__).parent))) / ".env"
+    _ENV_PATH = _Path(os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(_Path(__file__).parent.parent))) / ".env"
 
     # 표시할 키 목록: (env_key, 레이블, placeholder, 비밀번호여부)
     _FIELDS = [
