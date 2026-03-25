@@ -152,7 +152,8 @@ def run_category(
     _log(f"\n[4단계] 점수 계산 중 ({len(candidates)}개)...", on_log)
 
     def _realtime_kw(item):
-        if item["volume"] >= min_volume and item["score"] >= min_score:
+        # UI 실시간 표시: 검색량만 체크 (점수와 무관하게 바로 보여줌)
+        if item["volume"] >= min_volume:
             if on_keyword:
                 on_keyword(item)
 
