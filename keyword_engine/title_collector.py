@@ -48,6 +48,8 @@ _NOISE_WORDS = re.compile(r"이것까지|저것까지|모름주의|주의보|난
 
 def _clean_title(title: str) -> str:
     """제목 → 핵심 검색 키워드"""
+    import html
+    title = html.unescape(title)
     title = re.sub(r"<[^>]+>", "", title)
     title = re.sub(r"[^\w\s가-힣a-zA-Z0-9]", " ", title)
     title = re.sub(r"\s+", " ", title).strip()
@@ -91,9 +93,13 @@ def _clean_title(title: str) -> str:
 
 
 def _fetch(url: str, timeout: int = 8) -> str:
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
     try:
         req = urllib.request.Request(url, headers=HEADERS)
-        resp = urllib.request.urlopen(req, timeout=timeout)
+        resp = urllib.request.urlopen(req, timeout=timeout, context=ctx)
         return resp.read(524288).decode("utf-8", errors="ignore")
     except Exception:
         return ""
@@ -113,25 +119,29 @@ def collect_titles_from_rss(blog_url: str, on_log=None) -> list:
         return []
 
     titles = []
-    found = re.findall(r"<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>", content, re.DOTALL)
-    for t in found[1:]:  # 첫 번째는 채널/블로그 이름 → 스킵
-        t = t.strip()
-        if t and 4 <= len(t) <= 100 and not t.startswith("http"):
-            titles.append(t)
 
+    # 1순위: XML 파서로 <item>/<entry> 안 title만 (채널 헤더 제외)
+    try:
+        root = ET.fromstring(content)
+        for item in root.iter("item"):
+            t = item.find("title")
+            if t is not None and t.text:
+                titles.append(t.text.strip())
+        for entry in root.iter("{http://www.w3.org/2005/Atom}entry"):
+            t = entry.find("{http://www.w3.org/2005/Atom}title")
+            if t is not None and t.text:
+                titles.append(t.text.strip())
+    except Exception:
+        pass
+
+    # 2순위: XML 파싱 실패 시 regex — <item> 블록 안 title만
     if not titles:
-        try:
-            root = ET.fromstring(content)
-            for item in root.iter("item"):
-                t = item.find("title")
-                if t is not None and t.text:
-                    titles.append(t.text.strip())
-            for entry in root.iter("{http://www.w3.org/2005/Atom}entry"):
-                t = entry.find("{http://www.w3.org/2005/Atom}title")
-                if t is not None and t.text:
-                    titles.append(t.text.strip())
-        except Exception:
-            pass
+        for block in re.findall(r"<item[^>]*>(.*?)</item>", content, re.DOTALL):
+            m = re.search(r"<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>", block, re.DOTALL)
+            if m:
+                titles.append(m.group(1).strip())
+
+    titles = [t for t in titles if 5 <= len(t) <= 100 and not t.startswith("http")]
 
     if on_log and titles:
         on_log(f"[rss] ✓ {blog_url} → {len(titles)}개 제목")
