@@ -854,6 +854,13 @@ class KeywordCollectWorker(QThread):
                 if not self._stop_flag:
                     self.log_signal.emit(msg)
 
+            def on_keyword(item):
+                if not self._stop_flag:
+                    self.keyword_signal.emit(
+                        item["keyword"], item["score"],
+                        item["volume"], item["pub_count"],
+                    )
+
             results = run_category(
                 category=self.category,
                 top_n=50,
@@ -862,12 +869,8 @@ class KeywordCollectWorker(QThread):
                 push_to_notion=True,
                 use_playwright=self.use_playwright,
                 on_log=on_log,
+                on_keyword=on_keyword,
             )
-            for item in results:
-                self.keyword_signal.emit(
-                    item["keyword"], item["score"],
-                    item["volume"], item["pub_count"],
-                )
             self.finished.emit(f"[완료] {self.category} — {len(results)}개 키워드 수집")
         except Exception as e:
             self.finished.emit(f"[오류] {self.category}: {e}")

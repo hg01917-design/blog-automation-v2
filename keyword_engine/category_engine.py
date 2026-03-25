@@ -43,6 +43,7 @@ def run_category(
     push_to_notion: bool = True,
     use_playwright: bool = True,
     on_log=None,
+    on_keyword=None,
 ) -> list:
     """
     카테고리별 전체 파이프라인 실행
@@ -155,6 +156,7 @@ def run_category(
         candidates,
         get_pub_count_fn=naver_api.get_blog_count,
         on_log=on_log,
+        on_keyword=on_keyword,
     )
 
     # ── 7단계: 필터링 ─────────────────────────────────────

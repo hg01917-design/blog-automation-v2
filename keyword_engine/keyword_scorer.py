@@ -88,10 +88,11 @@ def opportunity_score(volume: int, pub_count: int) -> float:
     return (volume ** 2) / denom if denom > 0 else 0
 
 
-def score_keywords(keywords: list, get_pub_count_fn, on_log=None) -> list:
+def score_keywords(keywords: list, get_pub_count_fn, on_log=None, on_keyword=None) -> list:
     """
     키워드 리스트 점수 계산
 
+    on_keyword: 각 키워드 점수 계산 직후 호출되는 콜백 fn(item) — 실시간 표시용
     Returns:
         [{"keyword", "score", "volume", "pub_count"}, ...] 점수 내림차순
     """
@@ -101,14 +102,17 @@ def score_keywords(keywords: list, get_pub_count_fn, on_log=None) -> list:
         time.sleep(0.3)
         pub_count = get_pub_count_fn(kw)
         score = opportunity_score(volume, pub_count)
-        results.append({
+        item = {
             "keyword": kw,
             "score": score,
             "volume": volume,
             "pub_count": pub_count,
-        })
+        }
+        results.append(item)
         if on_log:
             on_log(
                 f"[scorer] {kw}: 검색량={volume:,}  발행량={pub_count:,}  점수={score:,.0f}"
             )
+        if on_keyword and volume > 0:
+            on_keyword(item)
     return sorted(results, key=lambda x: x["score"], reverse=True)
