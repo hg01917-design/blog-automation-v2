@@ -210,24 +210,36 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         if on_log:
             on_log(msg)
 
+    # 볼드 처리 공통 규칙
+    _BOLD_RULE = (
+        "\n\n[볼드 처리 규칙]\n"
+        "중요한 내용은 반드시 **볼드** 처리해줘.\n"
+        "볼드 처리 대상: 핵심 키워드, 중요 수치/금액, 신청 기간 및 마감일, 자격 조건, 주의사항\n"
+        "볼드 남용 금지: 한 문단에 1~2개 이내\n"
+        "제목(H2/H3)은 볼드 처리 불필요"
+    )
+
     # Gem이 설정된 blog_id면 키워드만 전송 (Gem 지침이 자동 적용됨)
     # Gem 미설정 blog_id면 기존대로 Notion에서 전체 프롬프트 가져오기
     gem_url = BLOG_GEM_URLS.get(blog_id) if blog_id else None
     if blog_id and keyword:
         if gem_url:
-            prompt = f"키워드: {keyword}"
+            prompt = f"키워드: {keyword}{_BOLD_RULE}"
             log(f"[Gemini] Gem 모드 — 키워드만 전송: '{keyword}'")
         else:
             try:
                 prompt = fetch_prompt(blog_id, keyword, on_log)
+                prompt = prompt + _BOLD_RULE
             except Exception as e:
                 log(f"[Notion] 프롬프트 가져오기 실패: {e}")
                 log("[Notion] 기본 프롬프트로 진행합니다.")
 
-    # 팩트 컨텍스트 주입
-    if extra_context:
+    # Gem 모드에서는 extra_context 스킵 (Gem 지침만으로 충분)
+    if extra_context and not gem_url:
         prompt = f"{extra_context}\n\n---\n\n{prompt}"
         log(f"[Gemini] 팩트 컨텍스트 주입: {len(extra_context)}자")
+    elif extra_context and gem_url:
+        log(f"[Gemini] Gem 모드 — 팩트 컨텍스트 스킵")
 
     log(f"[Gemini] 프롬프트 길이: {len(prompt)}자")
     log(f"[Gemini] 프롬프트 처음 200자: {prompt[:200]}...")

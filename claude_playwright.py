@@ -248,24 +248,38 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         if on_log:
             on_log(msg)
 
+    # 볼드 처리 공통 규칙 (전체 에이전트 적용)
+    _BOLD_RULE = (
+        "\n\n[볼드 처리 규칙]\n"
+        "중요한 내용은 반드시 **볼드** 처리해줘.\n"
+        "볼드 처리 대상: 핵심 키워드, 중요 수치/금액, 신청 기간 및 마감일, 자격 조건, 주의사항\n"
+        "볼드 남용 금지: 한 문단에 1~2개 이내\n"
+        "제목(H2/H3)은 볼드 처리 불필요"
+    )
+
     # Claude Project가 설정된 blog_id면 키워드만 전송 (프로젝트 지침이 자동 적용됨)
     # 프로젝트 미설정 blog_id면 기존대로 Notion에서 전체 프롬프트 가져오기
     if blog_id and keyword:
         if blog_id in BLOG_PROJECT_URLS:
-            # 프로젝트 모드: 키워드 + 팩트 컨텍스트만
-            prompt = f"키워드: {keyword}"
+            # 프로젝트 모드: 키워드 + 볼드 규칙
+            prompt = f"키워드: {keyword}{_BOLD_RULE}"
             log(f"[Playwright] 프로젝트 모드 — 키워드만 전송: '{keyword}'")
         else:
             try:
                 prompt = fetch_prompt(blog_id, keyword, on_log)
+                prompt = prompt + _BOLD_RULE
             except Exception as e:
                 log(f"[Notion] 프롬프트 가져오기 실패: {e}")
                 log("[Notion] 기본 프롬프트로 진행합니다.")
 
-    # 사전 수집된 팩트 정보를 프롬프트 맨 앞에 주입
-    if extra_context:
+    # 프로젝트 모드에서는 extra_context 스킵 (프로젝트 지침만으로 충분)
+    # 일반 모드에서는 팩트 정보를 프롬프트 앞에 주입
+    is_project_mode = blog_id in BLOG_PROJECT_URLS if blog_id else False
+    if extra_context and not is_project_mode:
         prompt = f"{extra_context}\n\n---\n\n{prompt}"
         log(f"[Playwright] 팩트 컨텍스트 주입: {len(extra_context)}자")
+    elif extra_context and is_project_mode:
+        log(f"[Playwright] 프로젝트 모드 — 팩트 컨텍스트 스킵")
 
     # 프롬프트 내용 확인 로그
     log(f"[Playwright] 프롬프트 길이: {len(prompt)}자")
@@ -300,24 +314,9 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             page.on("dialog", lambda d: d.dismiss())
 
             if project_url:
-                # 프로젝트 내 새 대화 시작
+                # 프로젝트 페이지로 이동 (입력창이 바로 표시됨)
                 page.goto(project_url, wait_until="domcontentloaded", timeout=30000)
                 page.wait_for_timeout(3000)
-                # "새 채팅" 버튼 클릭 (프로젝트 페이지에 있을 경우)
-                new_chat_sel = ', '.join([
-                    'button[aria-label="새 채팅"]',
-                    'button[aria-label="New chat"]',
-                    'a[aria-label="새 채팅"]',
-                    'a[aria-label="New chat"]',
-                ])
-                try:
-                    btn = page.locator(new_chat_sel).first
-                    if btn.count() > 0:
-                        btn.click()
-                        page.wait_for_timeout(2000)
-                        log("[Playwright] 프로젝트 새 채팅 버튼 클릭")
-                except Exception:
-                    pass
             else:
                 page.goto(f"{CLAUDE_URL}/new", wait_until="domcontentloaded", timeout=30000)
                 page.wait_for_timeout(3000)
@@ -348,7 +347,8 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             }""")
             log(f"[Playwright] 입력창에 {typed_len}자 입력됨")
 
-            if typed_len < 100:
+            min_len = 3 if project_url else 100
+            if typed_len < min_len:
                 log("[Playwright] ⚠ 프롬프트 입력 실패 — 재시도")
                 page.wait_for_timeout(2000)
                 continue

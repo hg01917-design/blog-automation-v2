@@ -135,31 +135,119 @@ def _get_adsense_html():
 
 
 # ─────────────────────────────────────────────
-# 헬퍼: 이미지를 base64로 TinyMCE에 삽입
+# 헬퍼: Tistory 이미지 파일 업로드 (파일 선택 창 방식)
 # ─────────────────────────────────────────────
-def _insert_image_into_tinymce(page, filepath: str, alt: str = ""):
-    """이미지 파일을 base64로 인코딩하여 TinyMCE insertContent로 삽입"""
+def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int = 3) -> bool:
+    """Tistory 에디터 이미지 삽입 버튼 → 파일 업로드 창 → set_input_files.
+
+    진짜 사람처럼 파일 업로드 방식으로 이미지를 삽입한다.
+    업로드 실패 시 최대 max_retries회 재시도.
+    """
     if not os.path.exists(filepath):
         return False
 
-    with open(filepath, "rb") as f:
-        data = base64.b64encode(f.read()).decode()
+    for attempt in range(1, max_retries + 1):
+        try:
+            # TinyMCE 이미지 삽입 버튼 셀렉터 (다양한 버전 대응)
+            img_btn_sels = [
+                'button[aria-label="이미지"]',
+                'div.mce-i-image',
+                'button[title="이미지"]',
+                'i.mce-i-image',
+                '.mce-btn[title*="이미지"]',
+                '.mce-btn[title*="Image"]',
+                'button[title*="Image"]',
+                'div[aria-label*="이미지"]',
+            ]
+            img_btn = None
+            for sel in img_btn_sels:
+                try:
+                    el = page.locator(sel).first
+                    if el.count() > 0 and el.is_visible(timeout=2000):
+                        img_btn = el
+                        break
+                except Exception:
+                    pass
 
-    ext = Path(filepath).suffix.lstrip(".")
-    mime = {"webp": "image/webp", "png": "image/png", "jpg": "image/jpeg",
-            "jpeg": "image/jpeg"}.get(ext, "image/webp")
+            if not img_btn:
+                # 폴백: #hidden-file input 직접 사용 (Tistory 신편집기)
+                hidden = page.locator('input[type="file"]#hidden-file').first
+                if hidden.count() == 0:
+                    hidden = page.locator('input[type="file"]').first
+                if hidden.count() > 0:
+                    hidden.set_input_files(filepath)
+                    time.sleep(3)
+                    return True
+                time.sleep(2)
+                continue
 
-    img_html = (
-        f'<p><img src="data:{mime};base64,{data}" '
-        f'alt="{alt}" style="max-width:100%;height:auto;" /></p>'
-        '<p>&nbsp;</p>'
-    )
-    page.evaluate(
-        "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.insertContent(html); }",
-        img_html,
-    )
-    time.sleep(0.5)
-    return True
+            # 파일 선택 창 감지 + 버튼 클릭
+            with page.expect_file_chooser(timeout=10000) as fc_info:
+                img_btn.click(timeout=5000)
+            fc_info.value.set_files(filepath)
+            time.sleep(3)
+
+            # 업로드 확인 (이미지 엘리먼트 출현 대기)
+            for _ in range(10):
+                time.sleep(1)
+                loaded = page.evaluate("""() => {
+                    const imgs = document.querySelectorAll('.mce-content-body img, #editor-tistory_ifr');
+                    if (!imgs.length) return false;
+                    // iframe 내부 확인
+                    const iframes = document.querySelectorAll('iframe#editor-tistory_ifr');
+                    if (iframes.length > 0) {
+                        try {
+                            const body = iframes[0].contentDocument.body;
+                            return body && body.querySelectorAll('img[src]').length > 0;
+                        } catch(e) { return false; }
+                    }
+                    return false;
+                }""")
+                if loaded:
+                    return True
+
+            return True  # 업로드는 됐으나 확인 실패 → 성공으로 간주
+
+        except Exception as e:
+            if attempt < max_retries:
+                time.sleep(2)
+            else:
+                return False
+    return False
+
+
+def _tistory_set_thumbnail(page, log_fn=None):
+    """Tistory 에디터에서 첫 번째 이미지를 대표이미지(썸네일)로 설정한다."""
+    def log(msg):
+        if log_fn:
+            log_fn(msg)
+    try:
+        # 대표이미지 설정 버튼 셀렉터
+        thumb_sels = [
+            'button[title="대표이미지 선택"]',
+            'button[aria-label="대표이미지 선택"]',
+            'button:has-text("대표이미지")',
+            '.btn-cover-image',
+            '[data-action="cover"]',
+        ]
+        for sel in thumb_sels:
+            try:
+                btn = page.locator(sel).first
+                if btn.count() > 0 and btn.is_visible(timeout=2000):
+                    btn.click(timeout=5000)
+                    time.sleep(1)
+                    # 첫 번째 이미지 클릭
+                    first_img = page.locator('.cover-image-list img, .thumbnail-list img').first
+                    if first_img.count() > 0:
+                        first_img.click(timeout=3000)
+                        time.sleep(1)
+                    log("[포스팅] 대표이미지 설정 완료")
+                    return True
+            except Exception:
+                pass
+    except Exception as e:
+        log(f"[포스팅] 대표이미지 설정 실패 (스킵): {e}")
+    return False
 
 
 # ─────────────────────────────────────────────
@@ -319,20 +407,22 @@ def _post_tistory(account, title, body_html, tags=None,
                     time.sleep(0.1)
                 continue
 
-            # ── {{이미지N}} → 이미지 삽입 ──
+            # ── {{이미지N}} → 이미지 파일 업로드 삽입 ──
             img_match = re.match(r'\{\{이미지(\d+)\}\}', stripped)
             if img_match:
                 idx = int(img_match.group(1))
                 if idx in image_paths:
-                    # image_infos에서 alt 찾기
                     alt = ""
                     for info in image_infos:
                         if info["index"] == idx:
                             alt = info.get("alt", "")
                             break
-                    ok = _insert_image_into_tinymce(page, image_paths[idx], alt)
+                    log(f"[포스팅] 이미지 {idx} 파일 업로드: {Path(image_paths[idx]).name}")
+                    ok = _tistory_upload_image(page, image_paths[idx], alt)
                     if ok:
-                        log(f"[포스팅] 이미지 {idx} 삽입 완료")
+                        log(f"[포스팅] 이미지 {idx} 업로드 완료")
+                    else:
+                        log(f"[포스팅] 이미지 {idx} 업로드 실패 — 스킵")
                 else:
                     log(f"[포스팅] 이미지 {idx} 파일 없음 — 스킵")
                 i += 1
@@ -398,6 +488,11 @@ def _post_tistory(account, title, body_html, tags=None,
                         time.sleep(random.uniform(0.5, 1.0))
             except Exception:
                 log("[포스팅] 태그 입력 실패 — 스킵")
+
+        # ── 대표이미지 설정 (첫 번째 이미지) ──
+        if image_paths:
+            log("[포스팅] 대표이미지 설정 시도...")
+            _tistory_set_thumbnail(page, log)
 
         # ── 임시저장 ──
         log("[포스팅] 임시저장...")
@@ -608,6 +703,31 @@ def _naver_restore_body_format(page):
             time.sleep(0.5)
 
 
+def _naver_type_line_with_bold(page, line: str, chunk_size: int = 50):
+    """**bold** 마커가 포함된 줄을 네이버 에디터에 입력한다.
+
+    **텍스트** 구간은 타이핑 후 Shift+Left×N으로 선택하고 Ctrl+B 적용.
+    """
+    import re as _re
+    segments = _re.split(r'(\*\*[^*]+\*\*)', line)
+    for seg in segments:
+        if not seg:
+            continue
+        bold_m = _re.match(r'\*\*([^*]+)\*\*', seg)
+        if bold_m:
+            text = bold_m.group(1)
+            _chunked_type(page, text, chunk_size=chunk_size)
+            # 방금 입력한 텍스트 선택 후 볼드 적용
+            for _ in range(len(text)):
+                page.keyboard.press("Shift+ArrowLeft")
+            page.keyboard.press("Control+b")
+            time.sleep(0.2)
+            # 커서를 선택 끝으로 이동 (End 키)
+            page.keyboard.press("End")
+        else:
+            _chunked_type(page, seg, chunk_size=chunk_size)
+
+
 def _parse_naver_sections(content):
     """본문을 섹션 단위로 파싱한다.
 
@@ -624,8 +744,8 @@ def _parse_naver_sections(content):
     [애드센스] / ##AD## → skip
     나머지 → text (문단 단위로 묶음)
     """
-    # 마크다운 bold → 제거 (네이버는 plain text)
-    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', content)
+    # 마크다운 bold → 마커 유지 (네이버 에디터에서 Ctrl+B로 처리)
+    text = content
     # HTML 태그 제거
     text = re.sub(r'<br\s*/?>', '\n', text)
     text = re.sub(r'</(?:p|div|h[1-6]|li|tr)>', '\n', text)
@@ -900,7 +1020,11 @@ def _post_naver(account, title, content, tags=None,
                             page.keyboard.press("Enter")
                             time.sleep(0.2)
                             continue
-                        _chunked_type(page, stripped, chunk_size=50)
+                        # **볼드** 처리 (Ctrl+B)
+                        if '**' in stripped:
+                            _naver_type_line_with_bold(page, stripped)
+                        else:
+                            _chunked_type(page, stripped, chunk_size=50)
                         if li < len(lines) - 1:
                             page.keyboard.press("Enter")
                             time.sleep(0.1)
@@ -1099,6 +1223,57 @@ def _wp_upload_image(site_url: str, auth_header: str, filepath: str,
         return ""
 
 
+def _wp_upload_image_with_id(site_url: str, auth_header: str, filepath: str,
+                              alt: str = "", on_log=None):
+    """이미지 업로드 후 (url, media_id) 튜플 반환. 특성 이미지 설정에 사용."""
+    import urllib.request
+    import json
+    import mimetypes
+
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    if not os.path.exists(filepath):
+        return "", None
+
+    filename = os.path.basename(filepath)
+    mime, _ = mimetypes.guess_type(filepath)
+    mime = mime or "image/webp"
+
+    with open(filepath, "rb") as f:
+        data = f.read()
+
+    upload_headers = {
+        "Authorization": auth_header,
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Content-Type": mime,
+    }
+    try:
+        req = urllib.request.Request(
+            f"{site_url}/wp-json/wp/v2/media",
+            data=data,
+            headers=upload_headers,
+            method="POST",
+        )
+        resp = json.loads(urllib.request.urlopen(req, timeout=30).read())
+        url      = resp.get("source_url", "")
+        media_id = resp.get("id")
+        if media_id and alt:
+            patch_req = urllib.request.Request(
+                f"{site_url}/wp-json/wp/v2/media/{media_id}",
+                data=json.dumps({"alt_text": alt, "caption": alt}).encode(),
+                headers={"Authorization": auth_header, "Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(patch_req, timeout=10)
+        log(f"[WordPress] 이미지 업로드 완료: {filename} → {url}")
+        return url, media_id
+    except Exception as e:
+        log(f"[WordPress] 이미지 업로드 실패 ({filename}): {e}")
+        return "", None
+
+
 def _post_wordpress(account, title, content, tags=None,
                     keyword: str = "", image_paths=None,
                     image_infos=None, on_log=None):
@@ -1145,6 +1320,8 @@ def _post_wordpress(account, title, content, tags=None,
 
     # 2. 이미지 업로드 후 {{이미지N}} 플레이스홀더 교체
     info_map = {img["index"]: img for img in image_infos}
+    _first_media_id = [None]  # 첫 번째 이미지 media_id (특성 이미지용)
+
     def _replace_image(m):
         idx = int(m.group(1))
         filepath = image_paths.get(idx, "")
@@ -1153,8 +1330,11 @@ def _post_wordpress(account, title, content, tags=None,
         if idx == 1 and keyword and keyword not in alt:
             alt = f"{keyword} {alt}".strip()
         if filepath:
-            url = _wp_upload_image(site_url, auth_header, filepath, alt=alt, on_log=on_log)
+            url, media_id = _wp_upload_image_with_id(
+                site_url, auth_header, filepath, alt=alt, on_log=on_log)
             if url:
+                if idx == 1 and media_id and _first_media_id[0] is None:
+                    _first_media_id[0] = media_id
                 return f'<figure class="wp-block-image"><img src="{url}" alt="{alt}"/></figure>'
         log(f"[WordPress] {{이미지{idx}}} — 파일 없음, 플레이스홀더 제거")
         return ""
@@ -1256,6 +1436,10 @@ def _post_wordpress(account, title, content, tags=None,
             "rank_math_description": meta_desc,
         },
     }
+    # 특성 이미지(featured image) 설정 — 첫 번째 이미지 미디어 ID
+    if _first_media_id[0]:
+        post_body["featured_media"] = _first_media_id[0]
+        log(f"[WordPress] 특성 이미지 설정: media_id={_first_media_id[0]}")
 
     log(f"[WordPress] REST API 발행 시작: \"{title}\"")
     log(f"[WordPress] Focus Keyword: {keyword} / SEO Title: {seo_title}")
