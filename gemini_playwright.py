@@ -154,24 +154,54 @@ def _wait_for_response(page, log):
 
 
 def _extract_response(page, log):
-    """DOM에서 마지막 응답 텍스트 추출."""
+    """DOM에서 마지막 응답 텍스트 추출. HTML→마크다운 변환으로 볼드/헤딩 보존."""
     page.wait_for_timeout(2000)
     response_text = ""
+
+    # HTML 노드를 순회해 마크다운으로 변환 (볼드/**볼드**, 헤딩 ## 보존)
+    _JS_TO_MD = """(sel) => {
+        function toMd(el) {
+            let r = '';
+            for (const n of el.childNodes) {
+                if (n.nodeType === 3) {
+                    r += n.textContent;
+                } else if (n.nodeType === 1) {
+                    const t = n.tagName.toLowerCase();
+                    if (t === 'strong' || t === 'b') r += '**' + toMd(n) + '**';
+                    else if (t === 'em' || t === 'i') r += '*' + toMd(n) + '*';
+                    else if (t === 'h2') r += '\\n## ' + toMd(n) + '\\n';
+                    else if (t === 'h3') r += '\\n### ' + toMd(n) + '\\n';
+                    else if (t === 'h1') r += '\\n# ' + toMd(n) + '\\n';
+                    else if (t === 'p') r += toMd(n) + '\\n\\n';
+                    else if (t === 'br') r += '\\n';
+                    else if (t === 'li') r += '- ' + toMd(n) + '\\n';
+                    else if (t === 'ul' || t === 'ol') r += '\\n' + toMd(n);
+                    else if (t === 'code') r += '`' + n.textContent + '`';
+                    else if (t === 'pre') r += '\\n```\\n' + n.textContent + '\\n```\\n';
+                    else r += toMd(n);
+                }
+            }
+            return r;
+        }
+        const els = document.querySelectorAll(sel);
+        if (!els.length) return '';
+        const md = toMd(els[els.length - 1]);
+        return (md && md.trim().length > 50) ? md : '';
+    }"""
 
     for sel in RESPONSE_SEL_LIST:
         if response_text.strip():
             break
         try:
-            els = page.locator(sel).all()
-            if els:
-                candidate = els[-1].inner_text()
-                if len(candidate.strip()) > 50:
-                    response_text = candidate
-                    if sel != RESPONSE_SEL_LIST[0]:
-                        log(f"[Gemini] 응답 셀렉터 폴백: {sel}")
+            candidate = page.evaluate(_JS_TO_MD, sel)
+            if candidate and len(candidate.strip()) > 50:
+                response_text = candidate
+                if sel != RESPONSE_SEL_LIST[0]:
+                    log(f"[Gemini] 응답 셀렉터 폴백: {sel}")
         except Exception:
             pass
 
+    # 최후 수단: innerText (볼드 손실)
     if not response_text.strip():
         try:
             response_text = page.evaluate("""() => {
@@ -210,13 +240,31 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         if on_log:
             on_log(msg)
 
-    # 볼드 처리 공통 규칙
+    # 볼드 처리 + 제목 형식 + 이미지 공통 규칙
     _BOLD_RULE = (
         "\n\n[볼드 처리 규칙]\n"
         "중요한 내용은 반드시 **볼드** 처리해줘.\n"
         "볼드 처리 대상: 핵심 키워드, 중요 수치/금액, 신청 기간 및 마감일, 자격 조건, 주의사항\n"
         "볼드 남용 금지: 한 문단에 1~2개 이내\n"
-        "제목(H2/H3)은 볼드 처리 불필요"
+        "제목(H2/H3)은 볼드 처리 불필요\n"
+        "\n[제목 규칙]\n"
+        "===제목=== 안의 제목은 반드시 명사형/명사구로 작성해.\n"
+        "문장형 어미(~습니다/~해요/~입니다/~세요/~합니다/~있어요) 절대 금지.\n"
+        "예) X: '갤럭시 S25 배터리 설정 방법을 알아보겠습니다'\n"
+        "예) O: '갤럭시 S25 배터리 설정 방법'\n"
+        "\n[이미지 규칙]\n"
+        "반드시 ===이미지=== 섹션에 이미지 2개를 포함해줘.\n"
+        "형식:\n"
+        "===이미지===\n"
+        "[이미지1]\n"
+        "- Gemini프롬프트: (Gemini 이미지 생성용 영어 또는 한국어 프롬프트)\n"
+        "- 파일명: (영문-소문자-하이픈.webp)\n"
+        "- alt: (키워드 포함 한국어 alt 텍스트)\n"
+        "[이미지2]\n"
+        "- Gemini프롬프트: ...\n"
+        "- 파일명: ...\n"
+        "- alt: ...\n"
+        "===이미지끝==="
     )
 
     # Gem이 설정된 blog_id면 키워드만 전송 (Gem 지침이 자동 적용됨)

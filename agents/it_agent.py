@@ -99,6 +99,15 @@ def _parse_raw(raw, keyword, log):
         raw_title = title_m.group(1).strip().split('\n')[0].strip()
     else:
         raw_title = keyword
+    # 문장형 어미 제거 (명사형으로 변환)
+    raw_title = re.sub(
+        r'\s*(을|를)?\s*(알아보겠습니다|살펴보겠습니다|정리해보겠습니다|알아볼게요|살펴볼게요|정리해볼게요)\.?$',
+        '', raw_title
+    ).strip()
+    raw_title = re.sub(
+        r'\s*(합니다|해요|입니다|에요|습니다|세요|있어요|있습니다|드립니다)\.?$',
+        '', raw_title
+    ).strip()
     title = _truncate_title(raw_title, max_len=40)
 
     # 본문
@@ -106,34 +115,63 @@ def _parse_raw(raw, keyword, log):
 
     # 태그
     if tag_m:
-        tag_line = tag_m.group(1).strip().split('\n')[0].strip()
-        tags = [t.strip() for t in tag_line.split(",") if t.strip()]
+        tag_raw = tag_m.group(1).strip()
+        tags = [t.strip() for line in tag_raw.split('\n') for t in line.split(',') if t.strip()]
     else:
         tags = [keyword]
 
     # 이미지 정보
     images = []
     if img_m:
-        for m in re.finditer(
-            r"\[이미지(\d+)\]\s*\n- Gemini프롬프트:\s*(.+)\n- 파일명:\s*(.+)\n- alt:\s*(.+)",
-            img_m.group(1),
-        ):
-            images.append({
-                "index": int(m.group(1)),
-                "prompt": m.group(2).strip(),
-                "filename": m.group(3).strip(),
-                "alt": m.group(4).strip(),
-            })
+        img_block = img_m.group(1)
+        # [이미지N] 단위로 분할: split 결과 = [앞텍스트, index, 블록, index, 블록, ...]
+        parts = re.split(r'\[이미지(\d+)\]', img_block)
+        it = iter(parts[1:])
+        for idx_str, block in zip(it, it):
+            prompt = re.search(r'Gemini프롬프트\s*[:：]\s*(.+)', block)
+            fname  = re.search(r'파일명\s*[:：]\s*(.+)', block)
+            alt_m2 = re.search(r'\balt\s*[:：]\s*(.+)', block, re.IGNORECASE)
+            if prompt and fname:
+                images.append({
+                    "index": int(idx_str),
+                    "prompt": prompt.group(1).strip(),
+                    "filename": fname.group(1).strip(),
+                    "alt": alt_m2.group(1).strip() if alt_m2 else "",
+                })
 
-    # {{이미지N}} 마커가 본문에 있지만 이미지 정보가 없으면 마커 제거
+    # {{이미지N}} 마커 처리
     if images:
         defined_indices = {img["index"] for img in images}
         def _remove_unmatched_marker(m):
             return "" if int(m.group(1)) not in defined_indices else m.group(0)
         body = re.sub(r'\{\{이미지(\d+)\}\}', _remove_unmatched_marker, body)
     else:
-        # 이미지 섹션 자체가 없으면 모든 마커 제거
+        # 이미지 섹션 없으면 키워드 기반 기본 이미지 2개 자동 생성
         body = re.sub(r'\{\{이미지\d+\}\}\n?', '', body)
+        slug = re.sub(r'[^\w가-힣]', '-', keyword.strip()).strip('-')
+        images = [
+            {
+                "index": 1,
+                "prompt": f"{keyword} 관련 정보 인포그래픽, 깔끔한 아이콘 스타일, 파란색 테마",
+                "filename": f"{slug}-info.webp",
+                "alt": f"{keyword} 정보 이미지",
+            },
+            {
+                "index": 2,
+                "prompt": f"{keyword} 실용적인 팁과 방법 안내, 현대적 일러스트 스타일",
+                "filename": f"{slug}-guide.webp",
+                "alt": f"{keyword} 가이드 이미지",
+            },
+        ]
+        # 본문의 첫 H2 뒤와 두 번째 H2 뒤에 이미지 마커 삽입
+        body_lines = body.split('\n')
+        h2_idx = [i for i, l in enumerate(body_lines) if l.strip().startswith('## ')]
+        for offset, (pos, marker) in enumerate(
+            [(h2_idx[i] + 1, f'{{{{이미지{i+1}}}}}') for i in range(min(2, len(h2_idx)))]
+        ):
+            body_lines.insert(pos + offset, marker)
+        body = '\n'.join(body_lines)
+        log(f"[파싱] 이미지 섹션 없음 → 키워드 기반 이미지 {len(images)}개 자동 생성")
 
     # 본문 글자수 확인
     plain = re.sub(r"##.*|{{.*?}}|\[애드센스\]|\|.*", "", body)

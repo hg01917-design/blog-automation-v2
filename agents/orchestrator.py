@@ -197,22 +197,28 @@ def _generate_agent_template(blog_id: str, module_name: str, category: str):
             body  = body_m.group(1).strip() if body_m else raw
 
             if tag_m:
-                tags = [t.strip() for t in tag_m.group(1).strip().split(",") if t.strip()]
+                tag_raw = tag_m.group(1).strip()
+                tags = [t.strip() for line in tag_raw.split('\n') for t in line.split(',') if t.strip()]
             else:
                 tags = [keyword]
 
             images = []
             if img_m:
-                for m in re.finditer(
-                    r"\\[이미지(\\d+)\\]\\s*\\n- Gemini프롬프트:\\s*(.+)\\n- 파일명:\\s*(.+)\\n- alt:\\s*(.+)",
-                    img_m.group(1),
-                ):
-                    images.append({{
-                        "index": int(m.group(1)),
-                        "prompt": m.group(2).strip(),
-                        "filename": m.group(3).strip(),
-                        "alt": m.group(4).strip(),
-                    }})
+                img_block = img_m.group(1)
+                # [이미지N] 단위로 분할: split 결과 = [앞텍스트, index, 블록, index, 블록, ...]
+                parts = re.split(r'\[이미지(\d+)\]', img_block)
+                it = iter(parts[1:])
+                for idx_str, block in zip(it, it):
+                    prompt = re.search(r'Gemini프롬프트\s*[:：]\s*(.+)', block)
+                    fname  = re.search(r'파일명\s*[:：]\s*(.+)', block)
+                    alt_m2 = re.search(r'\balt\s*[:：]\s*(.+)', block, re.IGNORECASE)
+                    if prompt and fname:
+                        images.append({{
+                            "index": int(idx_str),
+                            "prompt": prompt.group(1).strip(),
+                            "filename": fname.group(1).strip(),
+                            "alt": alt_m2.group(1).strip() if alt_m2 else "",
+                        }})
 
             if images:
                 defined = {{img["index"] for img in images}}

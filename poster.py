@@ -121,16 +121,14 @@ def _html_to_markers(body_html: str) -> str:
 
 
 def _get_adsense_html():
-    """실제 애드센스 HTML 반환"""
+    """실제 애드센스 HTML 반환 (두 줄 사이 불필요한 간격 없이)"""
     pub = _adsense_pub or "ca-pub-XXXXXXXX"
     slot = _adsense_slot or "XXXXXXXX"
+    # script/ins 태그를 한 줄로 붙여서 TinyMCE가 사이에 <p> 삽입하지 않도록 함
     return (
-        '<div class="ad-container" style="margin:1.5em 0;text-align:center;">'
         f'<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={pub}" crossorigin="anonymous"></script>'
-        f'<ins class="adsbygoogle" style="display:inline-block;width:300px;height:250px" '
-        f'data-ad-client="{pub}" data-ad-slot="{slot}"></ins>'
+        f'<ins class="adsbygoogle" style="display:block" data-ad-client="{pub}" data-ad-slot="{slot}" data-ad-format="auto" data-full-width-responsive="true"></ins>'
         '<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>'
-        '</div><p>&nbsp;</p>'
     )
 
 
@@ -138,82 +136,224 @@ def _get_adsense_html():
 # 헬퍼: Tistory 이미지 파일 업로드 (파일 선택 창 방식)
 # ─────────────────────────────────────────────
 def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int = 3) -> bool:
-    """Tistory 에디터 이미지 삽입 버튼 → 파일 업로드 창 → set_input_files.
+    """Tistory 에디터 이미지 업로드.
 
-    진짜 사람처럼 파일 업로드 방식으로 이미지를 삽입한다.
-    업로드 실패 시 최대 max_retries회 재시도.
+    1차: Tistory fetch API 직접 업로드 → TinyMCE insertContent
+    2차: 숨겨진 file input 직접 사용
+    3차: JS DOM 전체 탐색으로 이미지 버튼 찾아 클릭
     """
     if not os.path.exists(filepath):
         return False
 
+    import base64
+    with open(filepath, 'rb') as f:
+        file_data = f.read()
+    b64_data = base64.b64encode(file_data).decode()
+    filename = Path(filepath).name
+    ext = filepath.rsplit('.', 1)[-1].lower()
+    mime_map = {'webp': 'image/webp', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+                'png': 'image/png', 'gif': 'image/gif'}
+    mime = mime_map.get(ext, 'image/jpeg')
+
+    # ── 1차: Tistory 파일 업로드 API (fetch) ──
+    try:
+        img_url = page.evaluate("""
+        async ([b64, name, mime]) => {
+            try {
+                const bin = atob(b64);
+                const bytes = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                const blob = new Blob([bytes], { type: mime });
+                const fd = new FormData();
+                fd.append('file', blob, name);
+                const endpoints = [
+                    '/manage/posts/api/file/upload',
+                    '/manage/api/file/upload',
+                    '/tistory-manage/posts/api/file/upload',
+                ];
+                for (const url of endpoints) {
+                    try {
+                        const r = await fetch(url, {
+                            method: 'POST', body: fd, credentials: 'include'
+                        });
+                        if (r.ok) {
+                            const j = await r.json();
+                            const u = (j && (j.url || j.fileUrl || (j.data && j.data.url))) || null;
+                            if (u) return u;
+                        }
+                    } catch(e) {}
+                }
+                return null;
+            } catch(e) { return null; }
+        }
+        """, [b64_data, filename, mime])
+
+        if img_url:
+            page.evaluate(
+                "([u, a]) => { if(window.tinymce && tinymce.activeEditor) "
+                "tinymce.activeEditor.insertContent('<img src=\"'+u+'\" alt=\"'+a+'\" style=\"max-width:100%;height:auto\" />'); }",
+                [img_url, alt]
+            )
+            time.sleep(1)
+            return True
+    except Exception:
+        pass
+
+    # ── 2차: 숨겨진 file input 직접 트리거 ──
     for attempt in range(1, max_retries + 1):
         try:
-            # TinyMCE 이미지 삽입 버튼 셀렉터 (다양한 버전 대응)
-            img_btn_sels = [
-                'button[aria-label="이미지"]',
-                'div.mce-i-image',
-                'button[title="이미지"]',
-                'i.mce-i-image',
-                '.mce-btn[title*="이미지"]',
-                '.mce-btn[title*="Image"]',
-                'button[title*="Image"]',
-                'div[aria-label*="이미지"]',
-            ]
-            img_btn = None
-            for sel in img_btn_sels:
-                try:
-                    el = page.locator(sel).first
-                    if el.count() > 0 and el.is_visible(timeout=2000):
-                        img_btn = el
-                        break
-                except Exception:
-                    pass
+            triggered = page.evaluate("""() => {
+                // JS로 이미지 관련 버튼/아이콘 전체 탐색
+                const all = [...document.querySelectorAll(
+                    'button, div[role="button"], span[role="button"], a, i, svg'
+                )];
+                const img_btn = all.find(e => {
+                    const t = (e.title || '').toLowerCase();
+                    const l = (e.getAttribute('aria-label') || '').toLowerCase();
+                    const c = (e.className || '').toLowerCase();
+                    const txt = (e.textContent || '').trim().toLowerCase();
+                    return t.includes('이미지') || t.includes('image') ||
+                           l.includes('이미지') || l.includes('image') ||
+                           c.includes('mce-i-image') || c.includes('btn-image') ||
+                           c.includes('icon-image') || txt === '이미지';
+                });
+                if (img_btn && img_btn.offsetParent !== null) {
+                    img_btn.click();
+                    return 'button_clicked';
+                }
+                // 숨겨진 file input 탐색
+                const inputs = [...document.querySelectorAll('input[type="file"]')];
+                const fi = inputs.find(i => {
+                    const a = (i.accept || '').toLowerCase();
+                    return !a || a.includes('image') || a.includes('.jpg') || a.includes('.png');
+                }) || inputs[0];
+                if (fi) { fi.id = fi.id || '__pw_file_input'; return fi.id; }
+                return null;
+            }""")
 
-            if not img_btn:
-                # 폴백: #hidden-file input 직접 사용 (Tistory 신편집기)
-                hidden = page.locator('input[type="file"]#hidden-file').first
-                if hidden.count() == 0:
-                    hidden = page.locator('input[type="file"]').first
-                if hidden.count() > 0:
-                    hidden.set_input_files(filepath)
+            if triggered == 'button_clicked':
+                # 버튼이 이미 클릭됐으므로 file chooser 출현 대기
+                try:
+                    chooser = page.wait_for_event('filechooser', timeout=8000)
+                    chooser.set_files(filepath)
                     time.sleep(3)
                     return True
-                time.sleep(2)
-                continue
-
-            # 파일 선택 창 감지 + 버튼 클릭
-            with page.expect_file_chooser(timeout=10000) as fc_info:
-                img_btn.click(timeout=5000)
-            fc_info.value.set_files(filepath)
-            time.sleep(3)
-
-            # 업로드 확인 (이미지 엘리먼트 출현 대기)
-            for _ in range(10):
-                time.sleep(1)
-                loaded = page.evaluate("""() => {
-                    const imgs = document.querySelectorAll('.mce-content-body img, #editor-tistory_ifr');
-                    if (!imgs.length) return false;
-                    // iframe 내부 확인
-                    const iframes = document.querySelectorAll('iframe#editor-tistory_ifr');
-                    if (iframes.length > 0) {
-                        try {
-                            const body = iframes[0].contentDocument.body;
-                            return body && body.querySelectorAll('img[src]').length > 0;
-                        } catch(e) { return false; }
-                    }
-                    return false;
-                }""")
-                if loaded:
+                except Exception:
+                    pass
+                # file chooser 안 떴으면 file input 직접 시도
+                for fi_sel in ['input[type="file"]#hidden-file',
+                               'input[type="file"][accept*="image"]',
+                               'input[type="file"]']:
+                    try:
+                        fi = page.locator(fi_sel).first
+                        if fi.count() > 0:
+                            fi.set_input_files(filepath)
+                            time.sleep(3)
+                            return True
+                    except Exception:
+                        pass
+            elif triggered:
+                # file input ID로 직접 set_input_files
+                try:
+                    page.locator(f'#{triggered}').set_input_files(filepath)
+                    time.sleep(3)
                     return True
+                except Exception:
+                    # set_input_files로 직접 시도
+                    for fi_sel in ['input[type="file"]#hidden-file',
+                                   'input[type="file"][accept*="image"]',
+                                   'input[type="file"]']:
+                        try:
+                            fi = page.locator(fi_sel).first
+                            if fi.count() > 0:
+                                fi.set_input_files(filepath)
+                                time.sleep(3)
+                                return True
+                        except Exception:
+                            pass
 
-            return True  # 업로드는 됐으나 확인 실패 → 성공으로 간주
-
-        except Exception as e:
             if attempt < max_retries:
                 time.sleep(2)
-            else:
-                return False
+        except Exception:
+            if attempt < max_retries:
+                time.sleep(2)
     return False
+
+
+def _tistory_insert_adsense_format(page, log_fn=None) -> bool:
+    """Tistory 에디터 서식 탭에서 애드센스 서식을 찾아 삽입한다.
+    JS DOM 탐색으로 서식 버튼을 자동 감지 → 애드센스 항목 클릭.
+    실패 시 False 반환 → 호출부에서 HTML 직접 삽입으로 폴백.
+    """
+    def log(msg):
+        if log_fn: log_fn(msg)
+
+    try:
+        # JS로 "서식" 텍스트를 가진 버튼/탭을 DOM 전체에서 찾아 클릭
+        clicked = page.evaluate("""() => {
+            const candidates = [
+                ...document.querySelectorAll('button, a, li, span, div[role="button"], [role="tab"]')
+            ];
+            const el = candidates.find(e => {
+                const txt = (e.textContent || '').trim();
+                const title = (e.title || '').trim();
+                const label = (e.getAttribute('aria-label') || '').trim();
+                return txt === '서식' || title === '서식' || label === '서식';
+            });
+            if (el && el.offsetParent !== null) {
+                el.click();
+                return true;
+            }
+            return false;
+        }""")
+
+        if not clicked:
+            log("[포스팅] 서식 탭 없음 — 폴백 사용")
+            return False
+
+        time.sleep(1)
+        log("[포스팅] 서식 탭 클릭 완료")
+
+        # 저장된 서식 목록에서 "애드센스코드" 항목을 JS로 탐색
+        inserted = page.evaluate("""() => {
+            // "애드센스코드" 우선, 이후 "애드센스", "광고" 순서로 탐색
+            const keywords = ['애드센스코드', '애드센스', 'adsense', 'adsbygoogle', '광고'];
+            // 모든 클릭 가능한 요소 탐색 (서식 패널 항목 포함)
+            const items = [
+                ...document.querySelectorAll(
+                    'li a, li button, li span[role="button"], '
+                    + '.list_format li, .wrap_format li, '
+                    + '[class*="format"] li, [class*="format"] a, [class*="format"] button, '
+                    + '.layer_format li, .pop_format li, .box_format li'
+                )
+            ];
+            for (const kw of keywords) {
+                const el = items.find(e => {
+                    const txt = (e.textContent || '').trim();
+                    return txt === kw || txt.toLowerCase().includes(kw.toLowerCase());
+                });
+                if (el && (el.offsetParent !== null || el.offsetWidth > 0)) {
+                    // 클릭 가능한 자식 요소 우선
+                    const clickable = el.querySelector('a, button') || el;
+                    clickable.click();
+                    return kw;
+                }
+            }
+            return null;
+        }""")
+
+        if inserted:
+            time.sleep(1)
+            log(f"[포스팅] 서식 애드센스 삽입 완료 ('{inserted}')")
+            return True
+
+        page.keyboard.press("Escape")
+        log("[포스팅] 서식 목록에서 애드센스 항목 없음")
+        return False
+
+    except Exception as e:
+        log(f"[포스팅] 서식 삽입 오류: {e}")
+        return False
 
 
 def _tistory_set_thumbnail(page, log_fn=None):
@@ -369,12 +509,27 @@ def _post_tistory(account, title, body_html, tags=None,
                 i += 1
                 continue
 
+            # ── ### H3 소소제목 ──
+            h3_match = re.match(r'^###\s+(.+)$', stripped)
+            if h3_match:
+                heading = h3_match.group(1).strip()
+                heading = re.sub(r'<[^>]+>', '', heading).strip()
+                h3_html = f'<h3>{heading}</h3>'
+                page.evaluate(
+                    "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.execCommand('mceInsertContent', false, html); }",
+                    h3_html,
+                )
+                time.sleep(0.3)
+                log(f"[포스팅] H3: {heading[:20]}...")
+                i += 1
+                continue
+
             # ── ## H2 소제목 ──
             h2_match = re.match(r'^##\s+(.+)$', stripped)
             if h2_match:
                 heading = h2_match.group(1).strip()
                 heading = re.sub(r'<[^>]+>', '', heading).strip()
-                h2_html = f'<h2>{heading}</h2><p>&nbsp;</p>'
+                h2_html = f'<h2>{heading}</h2>'
                 page.evaluate(
                     "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.execCommand('mceInsertContent', false, html); }",
                     h2_html,
@@ -428,16 +583,18 @@ def _post_tistory(account, title, body_html, tags=None,
                 i += 1
                 continue
 
-            # ── [애드센스] → 애드센스 ins 태그 삽입 ──
+            # ── [애드센스] → 서식 탭에서 삽입 (실패 시 HTML 직접 삽입) ──
             if stripped == '[애드센스]' or stripped == '##AD##':
                 try:
-                    ad_html = _get_adsense_html()
-                    page.evaluate(
-                        "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.insertContent(html); }",
-                        ad_html,
-                    )
-                    time.sleep(0.5)
-                    log("[포스팅] 애드센스 삽입")
+                    ok = _tistory_insert_adsense_format(page, log)
+                    if not ok:
+                        ad_html = _get_adsense_html()
+                        page.evaluate(
+                            "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.insertContent(html); }",
+                            ad_html,
+                        )
+                        time.sleep(0.5)
+                        log("[포스팅] 애드센스 HTML 직접 삽입 (폴백)")
                 except Exception:
                     pass
                 i += 1
