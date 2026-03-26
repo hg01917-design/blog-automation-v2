@@ -1070,7 +1070,7 @@ class KeywordEngineDialog(QDialog):
         try:
             from keyword_engine.db_handler import get_keywords_by_category
             for cat in self.CATEGORIES:
-                rows = get_keywords_by_category(cat, n=200)
+                rows = get_keywords_by_category(cat, n=1000)
                 self._cat_keywords[cat] = rows
                 self._update_cat_btn(cat)
             self._render_table(self._selected_category)
@@ -1196,14 +1196,24 @@ class KeywordEngineDialog(QDialog):
         self._collect_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
         self._collecting_label.setText("")
-        # 완료 후 DB에서 재로드 — DB에 데이터 있는 카테고리만 덮어씀
-        # (DB 저장 조건 미달인 경우 in-memory 데이터 유지)
+        # 완료 후 DB 키워드를 in-memory에 병합 (기존 목록 유지 + 업데이트)
         try:
             from keyword_engine.db_handler import get_keywords_by_category
             for cat in self.CATEGORIES:
-                rows = get_keywords_by_category(cat, n=200)
-                if rows:
-                    self._cat_keywords[cat] = rows
+                db_rows = get_keywords_by_category(cat, n=1000)
+                cat_list = self._cat_keywords[cat]
+                kw_index = {k["keyword"]: i for i, k in enumerate(cat_list)}
+                for row in db_rows:
+                    kw = row["keyword"]
+                    if kw in kw_index:
+                        # 점수/검색량 업데이트
+                        cat_list[kw_index[kw]].update(row)
+                    else:
+                        # 새 키워드 추가
+                        cat_list.append(row)
+                        kw_index[kw] = len(cat_list) - 1
+                # 점수 내림차순 정렬
+                self._cat_keywords[cat] = sorted(cat_list, key=lambda x: x.get("score", 0), reverse=True)
                 self._update_cat_btn(cat)
             self._render_table(self._selected_category)
         except Exception as e:

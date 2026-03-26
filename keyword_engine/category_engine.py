@@ -191,21 +191,24 @@ def run_category(
         on_keyword=_emit,
     )
 
-    # ── DB 저장 (점수 기준 필터) ───────────────────────────
-    result = [k for k in scored if k["volume"] >= min_volume and k["score"] >= min_score]
-    _log(f"\n[DB] {len(result)}개 저장 (점수 {min_score:,.0f}+)", on_log)
+    # ── DB 저장: 검색량 있는 것 모두 누적 저장 (점수 기준 필터 없음) ──────
+    # 검색량 > 0 이면 모두 DB에 저장 (사용자가 직접 삭제)
+    to_save = [k for k in scored if k["volume"] > 0]
+    _log(f"\n[DB] {len(to_save)}개 누적 저장", on_log)
 
     gsc_boost = set(gsc_connector.get_rising_keywords())
     if gsc_boost:
-        result = ([k for k in result if k["keyword"] in gsc_boost] +
-                  [k for k in result if k["keyword"] not in gsc_boost])
+        to_save = ([k for k in to_save if k["keyword"] in gsc_boost] +
+                   [k for k in to_save if k["keyword"] not in gsc_boost])
 
-    for item in result:
+    for item in to_save:
         db_handler.upsert_keyword(
             item["keyword"], item["score"], item["volume"], item["pub_count"],
             category=category,
         )
 
+    # 반환은 기존 필터 기준 (Notion 등 외부용)
+    result = [k for k in to_save if k["volume"] >= min_volume and k["score"] >= min_score]
     top = result[:top_n]
 
     _log(f"\n{'═' * 55}", on_log)
