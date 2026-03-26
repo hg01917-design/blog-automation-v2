@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from claude_playwright import generate_text as _raw_generate
+from claude_playwright import generate_text_with_fallback as _raw_generate
 from browser import connect_cdp, get_or_create_page
 
 CLAUDE_URL = "https://claude.ai"

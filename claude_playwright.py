@@ -8,6 +8,14 @@ from notion_prompt import fetch_prompt
 
 CLAUDE_URL = "https://claude.ai"
 
+# blog_id별 Claude Project URL (없으면 일반 /new로 이동)
+BLOG_PROJECT_URLS = {
+    "goodisak":  "https://claude.ai/project/019ca495-0520-7706-8188-bcd875c96b68",
+    "nolja100":  "https://claude.ai/project/019b689e-1dbb-706d-93f3-6174de3a4835",
+    "salim1su":  "https://claude.ai/project/019c8917-8337-74e8-989b-edf14e462901",
+    "baremi542": "https://claude.ai/project/019d2882-7cfb-72e0-a40f-9669bc6408d6",
+}
+
 # 전송 버튼 (한국어/영어 + 다양한 UI 버전 대응)
 SEND_BTN_SEL = ', '.join([
     'button[aria-label="메시지 보내기"]',
@@ -233,19 +241,26 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
     blog_id + keyword가 주어지면 Notion에서 프롬프트를 가져와 사용.
     extra_context가 있으면 프롬프트 맨 앞에 참고 자료로 주입.
     응답 500자 미만이면 최대 2회 재시도.
+    Claude 실패 시 Gemini로 자동 폴백.
     """
 
     def log(msg):
         if on_log:
             on_log(msg)
 
-    # Notion 프롬프트 가져오기
+    # Claude Project가 설정된 blog_id면 키워드만 전송 (프로젝트 지침이 자동 적용됨)
+    # 프로젝트 미설정 blog_id면 기존대로 Notion에서 전체 프롬프트 가져오기
     if blog_id and keyword:
-        try:
-            prompt = fetch_prompt(blog_id, keyword, on_log)
-        except Exception as e:
-            log(f"[Notion] 프롬프트 가져오기 실패: {e}")
-            log("[Notion] 기본 프롬프트로 진행합니다.")
+        if blog_id in BLOG_PROJECT_URLS:
+            # 프로젝트 모드: 키워드 + 팩트 컨텍스트만
+            prompt = f"키워드: {keyword}"
+            log(f"[Playwright] 프로젝트 모드 — 키워드만 전송: '{keyword}'")
+        else:
+            try:
+                prompt = fetch_prompt(blog_id, keyword, on_log)
+            except Exception as e:
+                log(f"[Notion] 프롬프트 가져오기 실패: {e}")
+                log("[Notion] 기본 프롬프트로 진행합니다.")
 
     # 사전 수집된 팩트 정보를 프롬프트 맨 앞에 주입
     if extra_context:
@@ -259,6 +274,13 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
     log("[Playwright] CDP 연결 중...")
     pw, browser = _connect_cdp(on_log)
     page = get_or_create_page(browser, url_contains="claude.ai", navigate_to=CLAUDE_URL)
+
+    # blog_id에 해당하는 프로젝트 URL 결정
+    project_url = BLOG_PROJECT_URLS.get(blog_id) if blog_id else None
+    if project_url:
+        log(f"[Playwright] 프로젝트 모드: {blog_id} → {project_url}")
+    else:
+        log(f"[Playwright] 일반 모드: /new")
 
     try:
         for attempt in range(1, MAX_RETRIES + 2):
@@ -277,13 +299,33 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             # JavaScript 다이얼로그 자동 수락 (페이지 이동 시 confirm/alert 팝업 방지)
             page.on("dialog", lambda d: d.dismiss())
 
-            page.goto(f"{CLAUDE_URL}/new", wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(3000)
-
-            if "/new" not in page.url:
-                log("[Playwright] /new 페이지 로딩 재시도...")
-                page.goto(f"{CLAUDE_URL}/new", wait_until="networkidle", timeout=30000)
+            if project_url:
+                # 프로젝트 내 새 대화 시작
+                page.goto(project_url, wait_until="domcontentloaded", timeout=30000)
                 page.wait_for_timeout(3000)
+                # "새 채팅" 버튼 클릭 (프로젝트 페이지에 있을 경우)
+                new_chat_sel = ', '.join([
+                    'button[aria-label="새 채팅"]',
+                    'button[aria-label="New chat"]',
+                    'a[aria-label="새 채팅"]',
+                    'a[aria-label="New chat"]',
+                ])
+                try:
+                    btn = page.locator(new_chat_sel).first
+                    if btn.count() > 0:
+                        btn.click()
+                        page.wait_for_timeout(2000)
+                        log("[Playwright] 프로젝트 새 채팅 버튼 클릭")
+                except Exception:
+                    pass
+            else:
+                page.goto(f"{CLAUDE_URL}/new", wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(3000)
+
+                if "/new" not in page.url:
+                    log("[Playwright] /new 페이지 로딩 재시도...")
+                    page.goto(f"{CLAUDE_URL}/new", wait_until="networkidle", timeout=30000)
+                    page.wait_for_timeout(3000)
 
             # 입력창
             input_sel = 'div[contenteditable="true"]'
@@ -364,3 +406,28 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
 
     finally:
         pw.stop()
+
+
+def generate_text_with_fallback(prompt: str, blog_id: str = None, keyword: str = None,
+                                 on_log=None, extra_context: str = None):
+    """AI_PROVIDER 환경변수에 따라 Claude 또는 Gemini로 글을 생성한다.
+
+    AI_PROVIDER=claude (기본) → Claude.ai 사용
+    AI_PROVIDER=gemini        → Gemini 사용
+    """
+    import os
+    provider = os.environ.get("AI_PROVIDER", "claude").lower()
+
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    if provider == "gemini":
+        log("[Writer] Gemini.google.com으로 글 생성...")
+        import gemini_playwright as _gemini
+        return _gemini.generate_text(prompt, blog_id=blog_id, keyword=keyword,
+                                     on_log=on_log, extra_context=extra_context)
+    else:
+        log("[Writer] Claude.ai로 글 생성...")
+        return generate_text(prompt, blog_id=blog_id, keyword=keyword,
+                             on_log=on_log, extra_context=extra_context)

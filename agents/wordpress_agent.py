@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from claude_playwright import generate_text
+from claude_playwright import generate_text_with_fallback as generate_text
 from gemini_image import generate_images
 from overnight_run import _truncate_title
 
