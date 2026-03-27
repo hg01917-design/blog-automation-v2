@@ -63,9 +63,10 @@ class SingleRunWorker(QThread):
     blog_signal   = pyqtSignal(str)
     finished      = pyqtSignal(str)
 
-    def __init__(self, blog_id: str):
+    def __init__(self, blog_id: str, keyword: str = None):
         super().__init__()
         self.blog_id = blog_id
+        self.keyword = keyword
 
     def run(self):
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "agents"))
@@ -74,6 +75,7 @@ class SingleRunWorker(QThread):
         try:
             result = orchestrator.run_single(
                 self.blog_id,
+                keyword=self.keyword or None,
                 on_log=self._log,
                 on_status=self._status,
             )
@@ -1343,10 +1345,16 @@ class BlogAutomationApp(QMainWindow):
             self.log_box.append("[실행] 이미 실행 중입니다.")
             return
         blog_id = self._agent_combo.currentText()
-        self.log_box.append(f"[실행] {blog_id} 시작...")
+        # 키워드 큐에서 선택된 항목이 있으면 해당 키워드 사용
+        selected_items = self._kw_list.selectedItems()
+        keyword = selected_items[0].text() if selected_items else None
+        if keyword:
+            self.log_box.append(f"[실행] {blog_id} — 키워드: '{keyword}'")
+        else:
+            self.log_box.append(f"[실행] {blog_id} 시작...")
         self.run_btn.setEnabled(False)
         self.pause_btn.setEnabled(True)
-        self._single_worker = SingleRunWorker(blog_id)
+        self._single_worker = SingleRunWorker(blog_id, keyword=keyword)
         self._single_worker.log_signal.connect(self._append_log)
         self._single_worker.status_signal.connect(self._on_status)
         self._single_worker.finished.connect(self._on_run_done)

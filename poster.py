@@ -135,27 +135,34 @@ def _get_adsense_html():
 # ─────────────────────────────────────────────
 # 헬퍼: Tistory 이미지 파일 업로드 (파일 선택 창 방식)
 # ─────────────────────────────────────────────
-def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int = 3) -> bool:
+def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int = 3,
+                          on_log=None) -> bool:
     """Tistory 에디터 이미지 업로드.
 
-    1차: Tistory fetch API 직접 업로드 → TinyMCE insertContent
-    2차: 숨겨진 file input 직접 사용
-    3차: JS DOM 전체 탐색으로 이미지 버튼 찾아 클릭
+    1차: Tistory fetch API (CSRF + 다양한 field명) → URL → TinyMCE insertContent
+    2차: page.once filechooser + 이미지 버튼 클릭 (광범위 셀렉터)
+    3차: file input 직접 set_input_files
+    최후: data URL로 TinyMCE 직접 삽입
     """
+    def _log(msg):
+        if on_log:
+            on_log(msg)
+
     if not os.path.exists(filepath):
         return False
 
+    # 에디터 안정화 대기
+    time.sleep(1)
+
     import base64
-    with open(filepath, 'rb') as f:
-        file_data = f.read()
+    file_data = open(filepath, 'rb').read()
     b64_data = base64.b64encode(file_data).decode()
     filename = Path(filepath).name
     ext = filepath.rsplit('.', 1)[-1].lower()
-    mime_map = {'webp': 'image/webp', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
-                'png': 'image/png', 'gif': 'image/gif'}
-    mime = mime_map.get(ext, 'image/jpeg')
+    mime = {'webp': 'image/webp', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+            'png': 'image/png', 'gif': 'image/gif'}.get(ext, 'image/jpeg')
 
-    # ── 1차: Tistory 파일 업로드 API (fetch) ──
+    # ── 1차: Tistory fetch API (CSRF 포함, 여러 field명 시도) ──
     try:
         img_url = page.evaluate("""
         async ([b64, name, mime]) => {
@@ -164,24 +171,33 @@ def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int =
                 const bytes = new Uint8Array(bin.length);
                 for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
                 const blob = new Blob([bytes], { type: mime });
-                const fd = new FormData();
-                fd.append('file', blob, name);
-                const endpoints = [
-                    '/manage/posts/api/file/upload',
-                    '/manage/api/file/upload',
-                    '/tistory-manage/posts/api/file/upload',
-                ];
-                for (const url of endpoints) {
-                    try {
-                        const r = await fetch(url, {
-                            method: 'POST', body: fd, credentials: 'include'
-                        });
-                        if (r.ok) {
-                            const j = await r.json();
-                            const u = (j && (j.url || j.fileUrl || (j.data && j.data.url))) || null;
-                            if (u) return u;
-                        }
-                    } catch(e) {}
+
+                const csrfEl = document.querySelector(
+                    '[name="_SECURE_HIDDEN"],[name="csrf"],meta[name="csrf-token"],input[name="authenticity_token"]'
+                );
+                const csrf = csrfEl ? (csrfEl.value || csrfEl.getAttribute('content') || '') : '';
+
+                const endpoints = ['/manage/api/file/upload', '/manage/posts/api/file/upload'];
+                const fields = ['uploadFile', 'file', 'files', 'image', 'attach'];
+
+                for (const ep of endpoints) {
+                    for (const f of fields) {
+                        const fd = new FormData();
+                        fd.append(f, blob, name);
+                        const headers = { 'X-Requested-With': 'XMLHttpRequest' };
+                        if (csrf) headers['X-CSRF-Token'] = csrf;
+                        try {
+                            const r = await fetch(ep, { method: 'POST', body: fd, credentials: 'include', headers });
+                            if (r.ok) {
+                                const j = await r.json();
+                                const u = j.url || j.fileUrl || j.file_url
+                                    || (j.data && (j.data.url || j.data.fileUrl))
+                                    || (Array.isArray(j) && j[0] && j[0].url)
+                                    || (j.files && j.files[0] && j.files[0].url);
+                                if (u) return u;
+                            }
+                        } catch(e) {}
+                    }
                 }
                 return null;
             } catch(e) { return null; }
@@ -190,93 +206,90 @@ def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int =
 
         if img_url:
             page.evaluate(
-                "([u, a]) => { if(window.tinymce && tinymce.activeEditor) "
+                "([u,a]) => { if(window.tinymce&&tinymce.activeEditor) "
                 "tinymce.activeEditor.insertContent('<img src=\"'+u+'\" alt=\"'+a+'\" style=\"max-width:100%;height:auto\" />'); }",
                 [img_url, alt]
             )
             time.sleep(1)
             return True
-    except Exception:
-        pass
+    except Exception as _e1:
+        _log(f"[이미지업로드] 1차(fetch) 예외: {_e1}")
 
-    # ── 2차: 숨겨진 file input 직접 트리거 ──
+    # ── 2차: filechooser 이벤트 리스너 등록 → 이미지 버튼 클릭 ──
     for attempt in range(1, max_retries + 1):
         try:
-            triggered = page.evaluate("""() => {
-                // JS로 이미지 관련 버튼/아이콘 전체 탐색
-                const all = [...document.querySelectorAll(
-                    'button, div[role="button"], span[role="button"], a, i, svg'
-                )];
-                const img_btn = all.find(e => {
-                    const t = (e.title || '').toLowerCase();
-                    const l = (e.getAttribute('aria-label') || '').toLowerCase();
-                    const c = (e.className || '').toLowerCase();
-                    const txt = (e.textContent || '').trim().toLowerCase();
-                    return t.includes('이미지') || t.includes('image') ||
-                           l.includes('이미지') || l.includes('image') ||
-                           c.includes('mce-i-image') || c.includes('btn-image') ||
-                           c.includes('icon-image') || txt === '이미지';
-                });
-                if (img_btn && img_btn.offsetParent !== null) {
-                    img_btn.click();
-                    return 'button_clicked';
+            fc_holder = []
+            page.once('filechooser', lambda fc: fc_holder.append(fc))
+
+            clicked = page.evaluate("""() => {
+                // 광범위 셀렉터 리스트
+                const sels = [
+                    'button[title*="이미지"]','button[aria-label*="이미지"]',
+                    'button[title*="Image"]','button[aria-label*="Image"]',
+                    '[data-command="image"],[data-action="image"]',
+                    'div.mce-i-image','i.mce-i-image',
+                    '.tox-tbtn[aria-label*="이미지"]','.tox-tbtn[aria-label*="Image"]',
+                    'button[title*="사진"]','button[aria-label*="사진"]',
+                    '.btn_img','.btn_image','.ico_img','.icon_image',
+                    '.mce-btn[title*="이미지"]','.mce-btn[title*="Image"]',
+                ];
+                for (const s of sels) {
+                    const el = document.querySelector(s);
+                    if (el && el.offsetParent !== null) { el.click(); return s; }
                 }
-                // 숨겨진 file input 탐색
-                const inputs = [...document.querySelectorAll('input[type="file"]')];
-                const fi = inputs.find(i => {
-                    const a = (i.accept || '').toLowerCase();
-                    return !a || a.includes('image') || a.includes('.jpg') || a.includes('.png');
-                }) || inputs[0];
-                if (fi) { fi.id = fi.id || '__pw_file_input'; return fi.id; }
+                // 텍스트 기반 탐색
+                const btns = [...document.querySelectorAll(
+                    'button,a[role="button"],div[role="button"],span[role="button"]'
+                )];
+                const m = btns.find(b => {
+                    const t = (b.textContent || '').trim();
+                    return (t === '이미지' || t === '사진' || t === '그림') && b.offsetParent !== null;
+                });
+                if (m) { m.click(); return 'text:' + m.textContent.trim(); }
                 return null;
             }""")
 
-            if triggered == 'button_clicked':
-                # 버튼이 이미 클릭됐으므로 file chooser 출현 대기
-                try:
-                    chooser = page.wait_for_event('filechooser', timeout=8000)
-                    chooser.set_files(filepath)
+            # 3초 안에 filechooser 뜨면 처리
+            for _ in range(30):
+                time.sleep(0.1)
+                if fc_holder:
+                    fc_holder[0].set_files(filepath)
                     time.sleep(3)
                     return True
-                except Exception:
-                    pass
-                # file chooser 안 떴으면 file input 직접 시도
-                for fi_sel in ['input[type="file"]#hidden-file',
-                               'input[type="file"][accept*="image"]',
-                               'input[type="file"]']:
-                    try:
-                        fi = page.locator(fi_sel).first
-                        if fi.count() > 0:
-                            fi.set_input_files(filepath)
-                            time.sleep(3)
-                            return True
-                    except Exception:
-                        pass
-            elif triggered:
-                # file input ID로 직접 set_input_files
-                try:
-                    page.locator(f'#{triggered}').set_input_files(filepath)
-                    time.sleep(3)
-                    return True
-                except Exception:
-                    # set_input_files로 직접 시도
-                    for fi_sel in ['input[type="file"]#hidden-file',
-                                   'input[type="file"][accept*="image"]',
-                                   'input[type="file"]']:
-                        try:
-                            fi = page.locator(fi_sel).first
-                            if fi.count() > 0:
-                                fi.set_input_files(filepath)
-                                time.sleep(3)
-                                return True
-                        except Exception:
-                            pass
 
             if attempt < max_retries:
-                time.sleep(2)
-        except Exception:
+                time.sleep(1)
+        except Exception as _e2:
+            _log(f"[이미지업로드] 2차(filechooser) 시도{attempt} 예외: {_e2}")
             if attempt < max_retries:
-                time.sleep(2)
+                time.sleep(1)
+
+    # ── 3차: file input 직접 set_input_files ──
+    for fi_sel in ['input#hidden-file',
+                   'input[type="file"][accept*="image"]',
+                   'input[type="file"]']:
+        try:
+            fi = page.locator(fi_sel).first
+            if fi.count() > 0:
+                fi.set_input_files(filepath)
+                time.sleep(3)
+                return True
+        except Exception as _e3:
+            _log(f"[이미지업로드] 3차(file input) 예외: {_e3}")
+
+    # ── 최후: data URL로 TinyMCE 직접 삽입 ──
+    try:
+        data_url = f"data:{mime};base64,{b64_data}"
+        page.evaluate(
+            "([u,a]) => { try { if(window.tinymce&&tinymce.activeEditor) "
+            "tinymce.activeEditor.insertContent('<img src=\"'+u+'\" alt=\"'+a+'\" style=\"max-width:100%;height:auto\" />'); } catch(e) {} }",
+            [data_url, alt]
+        )
+        time.sleep(1)
+        return True
+    except Exception as _e4:
+        _log(f"[이미지업로드] 최후(dataURL) 예외: {_e4}")
+
     return False
 
 
@@ -289,16 +302,22 @@ def _tistory_insert_adsense_format(page, log_fn=None) -> bool:
         if log_fn: log_fn(msg)
 
     try:
-        # JS로 "서식" 텍스트를 가진 버튼/탭을 DOM 전체에서 찾아 클릭
+        # JS로 "서식" 버튼/탭 DOM 전체 탐색 후 클릭
         clicked = page.evaluate("""() => {
             const candidates = [
-                ...document.querySelectorAll('button, a, li, span, div[role="button"], [role="tab"]')
+                ...document.querySelectorAll(
+                    'button, a, li, span, div[role="button"], [role="tab"], '
+                    + '.btn_servicetool, .btn_format, [class*="format_btn"], [class*="btn_fmt"]'
+                )
             ];
             const el = candidates.find(e => {
                 const txt = (e.textContent || '').trim();
                 const title = (e.title || '').trim();
                 const label = (e.getAttribute('aria-label') || '').trim();
-                return txt === '서식' || title === '서식' || label === '서식';
+                // 정확 일치 또는 포함 모두 허용
+                return txt === '서식' || txt.includes('서식') ||
+                       title === '서식' || title.includes('서식') ||
+                       label === '서식' || label.includes('서식');
             });
             if (el && el.offsetParent !== null) {
                 el.click();
@@ -475,6 +494,25 @@ def _post_tistory(account, title, body_html, tags=None,
         page.wait_for_selector("#post-title-inp, .tit_post input", timeout=15000)
         log("[포스팅] 에디터 로드 완료")
 
+        # ── [진단] 툴바 버튼 목록 덤프 ──
+        try:
+            toolbar_info = page.evaluate("""() => {
+                const btns = [...document.querySelectorAll(
+                    'button[aria-label], button[title], [role="button"][aria-label], [role="button"][title]'
+                )];
+                return btns.slice(0, 40).map(b => ({
+                    tag: b.tagName,
+                    label: b.getAttribute('aria-label') || '',
+                    title: b.title || '',
+                    cls: b.className.slice(0, 60),
+                    txt: (b.textContent || '').trim().slice(0, 20),
+                }));
+            }""")
+            for b in (toolbar_info or []):
+                log(f"[툴바] {b['tag']} label={b['label']!r} title={b['title']!r} cls={b['cls']!r} txt={b['txt']!r}")
+        except Exception:
+            pass
+
         # ── 제목 입력 (keyboard.type) ──
         log(f"[포스팅] 제목 입력: {title[:30]}...")
         title_el = page.query_selector("#post-title-inp") or page.query_selector(".tit_post input")
@@ -573,7 +611,7 @@ def _post_tistory(account, title, body_html, tags=None,
                             alt = info.get("alt", "")
                             break
                     log(f"[포스팅] 이미지 {idx} 파일 업로드: {Path(image_paths[idx]).name}")
-                    ok = _tistory_upload_image(page, image_paths[idx], alt)
+                    ok = _tistory_upload_image(page, image_paths[idx], alt, on_log=log)
                     if ok:
                         log(f"[포스팅] 이미지 {idx} 업로드 완료")
                     else:
@@ -633,18 +671,31 @@ def _post_tistory(account, title, body_html, tags=None,
         # ── 태그 입력 ──
         if tags:
             log(f"[포스팅] 태그 입력: {tags}")
-            try:
-                tag_input = page.query_selector("#tagText") or page.query_selector(".tag_post input")
-                if tag_input:
+            _TAG_SELS = ['#tagText', '.tag_post input', 'input[placeholder*="태그"]', 'input[name="tag"]']
+            tag_ok = 0
+            for tag in tags:
+                try:
+                    tag_input = None
+                    for sel in _TAG_SELS:
+                        el = page.query_selector(sel)
+                        if el:
+                            tag_input = el
+                            break
+                    if not tag_input:
+                        break
                     tag_input.click()
-                    time.sleep(0.3)
-                    for tag in tags:
-                        tag_input.fill("")
-                        tag_input.type(tag.strip(), delay=random.randint(40, 100))
-                        page.keyboard.press("Enter")
-                        time.sleep(random.uniform(0.5, 1.0))
-            except Exception:
+                    time.sleep(0.2)
+                    tag_input.triple_click()
+                    tag_input.type(tag.strip(), delay=random.randint(40, 100))
+                    page.keyboard.press("Enter")
+                    time.sleep(random.uniform(0.5, 1.0))
+                    tag_ok += 1
+                except Exception:
+                    pass
+            if tag_ok == 0:
                 log("[포스팅] 태그 입력 실패 — 스킵")
+            else:
+                log(f"[포스팅] 태그 {tag_ok}개 입력 완료")
 
         # ── 대표이미지 설정 (첫 번째 이미지) ──
         if image_paths:
