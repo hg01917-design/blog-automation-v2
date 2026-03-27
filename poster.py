@@ -796,14 +796,12 @@ def _naver_type_line_with_bold(page, line: str, chunk_size: int = 50):
         bold_m = _re.match(r'\*\*([^*]+)\*\*', seg)
         if bold_m:
             text = bold_m.group(1)
-            _chunked_type(page, text, chunk_size=chunk_size)
-            # 방금 입력한 텍스트 선택 후 볼드 적용
-            for _ in range(len(text)):
-                page.keyboard.press("Shift+ArrowLeft")
+            # Ctrl+B 켜기 → 타이핑 → Ctrl+B 끄기 (선택 방식보다 안정적)
             page.keyboard.press("Control+b")
-            time.sleep(0.2)
-            # 커서를 선택 끝으로 이동 (End 키)
-            page.keyboard.press("End")
+            time.sleep(0.1)
+            _chunked_type(page, text, chunk_size=chunk_size)
+            page.keyboard.press("Control+b")
+            time.sleep(0.1)
         else:
             _chunked_type(page, seg, chunk_size=chunk_size)
 
@@ -1094,6 +1092,11 @@ def _post_naver(account, title, content, tags=None,
                     lines = [l for l in para.split('\n') if l.strip()]
                     for li, line in enumerate(lines):
                         stripped = line.strip()
+                        # 리스트 마커(- ) 제거: 네이버 에디터 자동 리스트 변환 방지
+                        if stripped.startswith('- '):
+                            stripped = stripped[2:]
+                        if not stripped:
+                            continue
                         # | 마크다운 표 → 텍스트로 입력
                         if stripped.startswith("|") and "|" in stripped[1:]:
                             _chunked_type(page, stripped, chunk_size=50)

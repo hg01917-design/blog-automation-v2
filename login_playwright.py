@@ -147,8 +147,11 @@ def login_tistory(blog_id: str, on_log=None):
         pw.stop()
 
 
-def login_naver(on_log=None):
-    """네이버 로그인 — Chrome 저장된 계정 자동완성 활용"""
+def login_naver(naver_id=None, on_log=None):
+    """네이버 로그인 — Chrome 저장된 계정 자동완성 활용
+
+    naver_id: 로그인할 네이버 ID. 자동완성 계정과 다를 경우 교체.
+    """
     def log(msg):
         if on_log:
             on_log(msg)
@@ -178,11 +181,17 @@ def login_naver(on_log=None):
         else:
             log("[2/4] 자동완성 계정 없음")
 
+        # 기대 계정과 다를 경우 — Chrome에 저장된 daonna525 세션 필요
+        if naver_id and current_id != naver_id:
+            log(f"[2/4] ⚠ 계정 불일치: Chrome 자동완성={current_id}, 필요={naver_id}")
+            log(f"[2/4] Chrome에서 {naver_id} 계정으로 네이버 로그인 후 재시도하세요")
+            return False
+
         log("[3/5] 비밀번호 자동완성 트리거...")
         pw_input = page.locator('#pw')
         if pw_input.is_visible(timeout=3000):
             pw_input.click()
-            _rand_delay(page, 500, 1000)
+            _rand_delay(page, 800, 1200)
 
         log("[3/5] 로그인 버튼 클릭...")
         login_btn = page.locator('#log\\.login, button.btn_login, button[type="submit"]').first
@@ -270,7 +279,7 @@ def login_blog(blog_id: str, on_log=None):
     if config["platform"] == "tistory":
         return login_tistory(blog_id, on_log)
     elif config["platform"] == "naver":
-        return login_naver(on_log)
+        return login_naver(naver_id=config.get("naver_id"), on_log=on_log)
     else:
         raise ValueError(f"지원하지 않는 플랫폼: {config['platform']}")
 
