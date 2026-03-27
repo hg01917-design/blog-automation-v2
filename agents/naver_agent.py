@@ -105,16 +105,34 @@ def _parse_raw(raw, keyword, log):
     images = []
     if img_m:
         img_block = img_m.group(1)
-        # [이미지N] 단위로 분할: split 결과 = [앞텍스트, index, 블록, index, 블록, ...]
-        parts = re.split(r'\[이미지(\d+)\]', img_block)
-        it = iter(parts[1:])
-        for idx_str, block in zip(it, it):
-            prompt = re.search(r'Gemini\s*프롬프트\s*[:：]\s*(.+)', block)
+        # [이미지N] 또는 [썸네일] 단위로 분할
+        # [썸네일]은 index=0으로, [이미지N]은 N으로 처리
+        parts = re.split(r'\[(이미지(\d+)|썸네일)\]', img_block)
+        # split 결과: [앞텍스트, full_match, digit_or_None, 블록, ...]
+        auto_idx = 1
+        i = 1
+        while i < len(parts) - 2:
+            full_match = parts[i]      # "이미지1" 또는 "썸네일"
+            digit_part = parts[i + 1]  # "1" 또는 None
+            block      = parts[i + 2]
+            i += 3
+
+            if digit_part:
+                idx = int(digit_part)
+            else:
+                idx = auto_idx  # 썸네일 → 다음 번호 자동 부여
+            auto_idx = max(auto_idx, idx) + 1
+
+            # Gemini / Ideogram / 기타 프롬프트 형식 모두 허용
+            prompt = re.search(
+                r'(?:Gemini|Ideogram|이미지|image)\s*프롬프트\s*[:：]\s*(.+)',
+                block, re.IGNORECASE
+            )
             fname  = re.search(r'파일명\s*[:：]\s*(.+)', block)
             alt_m2 = re.search(r'\balt\s*[:：]\s*(.+)', block, re.IGNORECASE)
             if prompt and fname:
                 images.append({
-                    "index": int(idx_str),
+                    "index": idx,
                     "prompt": prompt.group(1).strip(),
                     "filename": fname.group(1).strip(),
                     "alt": alt_m2.group(1).strip() if alt_m2 else "",

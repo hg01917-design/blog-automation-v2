@@ -306,9 +306,9 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
     # 프로젝트 미설정 blog_id면 기존대로 Notion에서 전체 프롬프트 가져오기
     if blog_id and keyword:
         if blog_id in BLOG_PROJECT_URLS:
-            # 프로젝트 모드: 키워드만 전송 (프로젝트 지침이 모든 규칙 처리)
-            prompt = keyword
-            log(f"[Playwright] 프로젝트 모드 — 키워드만 전송: '{keyword}'")
+            # 프로젝트 모드: 키워드 + 최소 글자수 힌트만 (프로젝트 지침 우선)
+            prompt = f"{keyword}\n(본문 3000자 이상)"
+            log(f"[Playwright] 프로젝트 모드 — 키워드 전송: '{keyword}'")
         else:
             try:
                 prompt = fetch_prompt(blog_id, keyword, on_log)

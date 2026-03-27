@@ -194,6 +194,16 @@ def run(keyword: str = None, on_log=None, on_status=None, _page_id=None):
             on_status("writer", "failed")
         return None
 
+    # 디버그: raw 전체 저장 (이미지 파싱 확인용)
+    try:
+        import tempfile, os
+        dbg_path = os.path.join(tempfile.gettempdir(), "salim_raw_debug.txt")
+        with open(dbg_path, "w", encoding="utf-8") as f:
+            f.write(raw)
+        log(f"[디버그] raw 저장됨: {dbg_path}")
+    except Exception:
+        pass
+
     # 파싱
     result = _parse_raw(raw, actual_keyword, log)
     if not result:
