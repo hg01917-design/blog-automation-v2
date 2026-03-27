@@ -543,8 +543,7 @@ def _post_tistory(account, title, body_html, tags=None,
                         break
                     tag_loc.click()
                     time.sleep(0.2)
-                    tag_loc.triple_click()
-                    tag_loc.type(tag.strip(), delay=random.randint(40, 100))
+                    tag_loc.fill(tag.strip())
                     page.keyboard.press("Enter")
                     time.sleep(random.uniform(0.5, 1.0))
                     tag_ok += 1
