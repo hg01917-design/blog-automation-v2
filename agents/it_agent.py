@@ -128,7 +128,7 @@ def _parse_raw(raw, keyword, log):
         parts = re.split(r'\[이미지(\d+)\]', img_block)
         it = iter(parts[1:])
         for idx_str, block in zip(it, it):
-            prompt = re.search(r'Gemini프롬프트\s*[:：]\s*(.+)', block)
+            prompt = re.search(r'Gemini\s*프롬프트\s*[:：]\s*(.+)', block)
             fname  = re.search(r'파일명\s*[:：]\s*(.+)', block)
             alt_m2 = re.search(r'\balt\s*[:：]\s*(.+)', block, re.IGNORECASE)
             if prompt and fname:

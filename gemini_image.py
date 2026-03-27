@@ -148,6 +148,9 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
             try:
                 expanded_img = page.locator(sel).last
                 if expanded_img.count() > 0 and expanded_img.is_visible(timeout=1000):
+                    # 마우스를 이미지 밖으로 이동 (수정 툴바 숨김)
+                    page.mouse.move(0, 0)
+                    page.wait_for_timeout(500)
                     expanded_img.screenshot(path=str(png_path))
                     log(f"[이미지] 확대창 캡처 완료 ({sel})")
                     captured = True
@@ -167,6 +170,8 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
 
     if not captured:
         log("[이미지] 원본 스크린샷 폴백...")
+        page.mouse.move(0, 0)
+        page.wait_for_timeout(500)
         img_el.screenshot(path=str(png_path))
 
     # 하단 10% 워터마크 잘라내기

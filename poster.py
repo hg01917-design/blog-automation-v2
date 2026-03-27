@@ -482,13 +482,28 @@ def _post_tistory(account, title, body_html, tags=None,
 
             # ── [애드센스] → 서식 탭에서 삽입 (실패 시 스킵) ──
             if stripped == '[애드센스]' or stripped == '##AD##':
+                # 새 단락에서 삽입 (이전 텍스트와 분리)
+                frame.page.keyboard.press("Enter")
+                time.sleep(0.1)
                 ok = _tistory_insert_adsense_format(page, log)
                 if ok:
-                    # 커서를 코드블록 밖으로 이동 (코드 사이에 글 삽입 방지)
-                    time.sleep(0.3)
-                    page.keyboard.press("ArrowDown")
-                    time.sleep(0.1)
-                    page.keyboard.press("ArrowDown")
+                    time.sleep(0.5)
+                    # TinyMCE 포커스 복구 + adsense 이후 새 빈 단락으로 커서 이동
+                    page.evaluate("""() => {
+                        const ed = tinymce && tinymce.activeEditor;
+                        if (!ed) return;
+                        const body = ed.getBody();
+                        const doc = ed.getDoc();
+                        const p = doc.createElement('p');
+                        p.setAttribute('data-ke-size', 'size16');
+                        p.innerHTML = '<br data-mce-bogus="1">';
+                        body.appendChild(p);
+                        const range = doc.createRange();
+                        range.setStart(p, 0);
+                        range.collapse(true);
+                        ed.selection.setRng(range);
+                        ed.focus();
+                    }""")
                     time.sleep(0.1)
                 else:
                     log("[포스팅] 애드센스 서식 삽입 실패 — 스킵 (HTML 직접 삽입 시 코드 깨짐)")

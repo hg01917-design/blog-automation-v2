@@ -376,7 +376,7 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     if img_m:
         img_text = img_m.group(1)
         for m in re.finditer(
-            r"\[이미지(\d+)\]\s*\n- Gemini프롬프트:\s*(.+)\n- 파일명:\s*(.+)\n- alt:\s*(.+)",
+            r"\[이미지(\d+)\]\s*\n- Gemini\s*프롬프트:\s*(.+)\n- 파일명:\s*(.+)\n- alt:\s*(.+)",
             img_text,
         ):
             images.append({
