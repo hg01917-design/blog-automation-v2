@@ -483,7 +483,14 @@ def _post_tistory(account, title, body_html, tags=None,
             # ── [애드센스] → 서식 탭에서 삽입 (실패 시 스킵) ──
             if stripped == '[애드센스]' or stripped == '##AD##':
                 ok = _tistory_insert_adsense_format(page, log)
-                if not ok:
+                if ok:
+                    # 커서를 코드블록 밖으로 이동 (코드 사이에 글 삽입 방지)
+                    time.sleep(0.3)
+                    page.keyboard.press("ArrowDown")
+                    time.sleep(0.1)
+                    page.keyboard.press("ArrowDown")
+                    time.sleep(0.1)
+                else:
                     log("[포스팅] 애드센스 서식 삽입 실패 — 스킵 (HTML 직접 삽입 시 코드 깨짐)")
                 i += 1
                 continue
