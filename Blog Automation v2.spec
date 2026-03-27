@@ -1,11 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_all
 
+pyqt5_datas, pyqt5_binaries, pyqt5_hiddenimports = collect_all('PyQt5')
 
 a = Analysis(
     ['app.py'],
     pathex=[],
-    binaries=[],
-    datas=[
+    binaries=pyqt5_binaries,
+    datas=pyqt5_datas + [
         ('assets', 'assets'),
         ('agents', 'agents'),
         ('keyword_engine', 'keyword_engine'),
@@ -23,7 +25,7 @@ a = Analysis(
         ('image_parser.py', '.'),
         ('gemini_image.py', '.'),
     ],
-    hiddenimports=['PyQt5', 'PyQt5.QtWidgets', 'PyQt5.QtCore', 'PyQt5.QtGui', 'playwright', 'requests', 'anthropic'],
+    hiddenimports=pyqt5_hiddenimports + ['playwright', 'requests', 'anthropic'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
