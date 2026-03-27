@@ -1167,16 +1167,19 @@ def _post_naver(account, title, content, tags=None,
             except Exception:
                 log("[포스팅] 태그 입력 실패 — 스킵")
 
-        log("[포스팅] 발행 확인 버튼 클릭...")
-        # 팝업 안의 발행 확인 버튼 (confirm_btn) — toolbar의 save_btn과 다름
-        confirm_btn = page.query_selector('button[class*="confirm_btn"]')
-        if not confirm_btn:
-            log("[포스팅] 발행 확인 버튼을 찾을 수 없음")
-            return False
-        confirm_btn.click()
-        _rand_delay(page, 3000, 5000)
+        # 발행 팝업 닫기 (Escape) → 임시저장
+        log("[포스팅] 발행 팝업 닫기 (Escape) → 임시저장...")
+        page.keyboard.press("Escape")
+        _rand_delay(page, 1000, 1500)
 
-        log(f"[포스팅] 네이버 포스팅 완료: {title[:30]}...")
+        save_btn = page.query_selector('button[class*="save_btn"]')
+        if not save_btn:
+            log("[포스팅] 임시저장 버튼을 찾을 수 없음")
+            return False
+        save_btn.click()
+        _rand_delay(page, 2000, 3000)
+
+        log(f"[포스팅] 네이버 임시저장 완료: {title[:30]}...")
         return True
 
     finally:

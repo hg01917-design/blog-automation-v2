@@ -64,6 +64,47 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False) -> dict:
     return results
 
 
+def _drag_toolbar_away(page):
+    """Gemini 확대창 편집 툴바를 이미지 밖으로 드래그해서 숨긴다.
+
+    툴바를 찾아 페이지 좌상단(이미지 밖)으로 드래그.
+    못 찾으면 JS로 숨기거나 마우스를 이동시킨다.
+    """
+    # JS로 툴바 위치 탐색 (색상 버튼 또는 draggable 편집 요소)
+    toolbar_box = page.evaluate("""() => {
+        const candidates = [
+            ...document.querySelectorAll('color-palette, tool-bar, [class*="toolbar"], [class*="edit-bar"], [class*="action-bar"], [class*="color-picker"]'),
+        ];
+        // dialog 안에 있는 것만
+        const dialog = document.querySelector('dialog, [role="dialog"]');
+        for (const el of candidates) {
+            if (!el.offsetParent && el.style.display === 'none') continue;
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) {
+                return {x: r.x + r.width/2, y: r.y + r.height/2};
+            }
+        }
+        return null;
+    }""")
+
+    if toolbar_box:
+        cx, cy = toolbar_box['x'], toolbar_box['y']
+        page.mouse.move(cx, cy)
+        page.mouse.down()
+        page.mouse.move(10, 10, steps=15)
+        page.mouse.up()
+        page.wait_for_timeout(300)
+    else:
+        # 못 찾으면 JS로 편집 관련 요소 숨기기 시도
+        page.evaluate("""() => {
+            const sels = ['color-palette', 'tool-bar', '[class*="toolbar"]', '[class*="edit-bar"]'];
+            for (const s of sels) {
+                document.querySelectorAll(s).forEach(el => { el.style.visibility = 'hidden'; });
+            }
+        }""")
+        page.mouse.move(0, 0)
+
+
 def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp=False):
     """단일 이미지 생성 → 스크린샷 캡처 → webp 변환 (skip_webp=True면 PNG 그대로)"""
     def log(msg):
@@ -148,8 +189,8 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
             try:
                 expanded_img = page.locator(sel).last
                 if expanded_img.count() > 0 and expanded_img.is_visible(timeout=1000):
-                    # 마우스를 이미지 밖으로 이동 (수정 툴바 숨김)
-                    page.mouse.move(0, 0)
+                    # 편집 툴바 드래그로 이미지 밖으로 이동
+                    _drag_toolbar_away(page)
                     page.wait_for_timeout(500)
                     expanded_img.screenshot(path=str(png_path))
                     log(f"[이미지] 확대창 캡처 완료 ({sel})")
