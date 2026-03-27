@@ -209,17 +209,23 @@ def run(keyword: str = None, on_log=None, on_status=None, _page_id=None):
     required_count = h2_count + 1  # H2 개수 + 썸네일 1개
     log(f"[작성] H2 소제목 {h2_count}개 감지 → 이미지 {required_count}개 필요")
 
-    # 파싱된 이미지 목록이 부족하면 기본 항목 추가
+    # 파싱된 이미지 목록이 부족하면 H2 소제목 기반 프롬프트로 채우기
     if len(result["images"]) < required_count:
         shortage = required_count - len(result["images"])
-        log(f"[작성] 이미지 프롬프트 부족 ({len(result['images'])}개) → {shortage}개 기본 항목 추가")
+        h2_lines = [l.lstrip('#').strip() for l in result["body"].splitlines() if l.startswith("## ")]
+        log(f"[작성] 이미지 프롬프트 부족 ({len(result['images'])}개) → {shortage}개 H2 기반 프롬프트 생성")
         for i in range(shortage):
             idx = len(result["images"]) + 1
+            h2_text = h2_lines[i] if i < len(h2_lines) else actual_keyword
             result["images"].append({
                 "index": idx,
-                "prompt": f"{actual_keyword} 관련 생활 절약 정보 이미지 {idx}",
+                "prompt": (
+                    f"Korean home living scene: {h2_text}. "
+                    "Bright natural light, clean tidy Korean apartment interior, "
+                    "realistic style, no text, no watermark, no people. 16:9 ratio."
+                ),
                 "filename": f"img_{idx:02d}.jpg",
-                "alt": f"{actual_keyword} 이미지 {idx}",
+                "alt": f"{h2_text} 관련 이미지",
             })
 
     # 본문에 {{이미지N}} 마커가 없으면 H2 소제목 뒤에 주입
