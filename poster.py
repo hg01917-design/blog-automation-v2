@@ -525,23 +525,24 @@ def _post_tistory(account, title, body_html, tags=None,
             tag_ok = 0
             for tag in tags:
                 try:
-                    tag_input = None
+                    # Locator 사용 (triple_click 지원)
+                    tag_loc = None
                     for sel in _TAG_SELS:
-                        el = page.query_selector(sel)
-                        if el:
-                            tag_input = el
+                        loc = page.locator(sel).first
+                        if loc.count() > 0 and loc.is_visible(timeout=1000):
+                            tag_loc = loc
                             break
-                    if not tag_input:
+                    if not tag_loc:
                         break
-                    tag_input.click()
+                    tag_loc.click()
                     time.sleep(0.2)
-                    tag_input.triple_click()
-                    tag_input.type(tag.strip(), delay=random.randint(40, 100))
+                    tag_loc.triple_click()
+                    tag_loc.type(tag.strip(), delay=random.randint(40, 100))
                     page.keyboard.press("Enter")
                     time.sleep(random.uniform(0.5, 1.0))
                     tag_ok += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    log(f"[포스팅] 태그 '{tag}' 입력 오류: {e}")
             if tag_ok == 0:
                 log("[포스팅] 태그 입력 실패 — 스킵")
             else:
