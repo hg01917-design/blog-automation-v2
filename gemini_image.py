@@ -125,65 +125,49 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
 
     page.wait_for_timeout(1000)
 
-    # 이미지 클릭 → 전체화면 확대 뷰 열기
-    log("[이미지] 이미지 클릭 → 확대 뷰 시도...")
     img_el = page.locator('img.image.loaded').last
-    try:
-        img_el.click()
-        page.wait_for_timeout(1500)
-    except Exception:
-        pass
-
-    # 확대 뷰에서 큰 이미지 src 가져오기
     png_path = IMAGES_DIR / f"temp_{filename}.png"
     final_path = IMAGES_DIR / filename
 
-    img_src = None
-    # 확대 뷰에서 가장 큰 이미지 찾기
+    # 이미지 클릭 → 확대창 열기 → 확대된 이미지 스크린샷
+    log("[이미지] 이미지 클릭 → 확대창 캡처...")
+    captured = False
     try:
-        expanded_src = page.evaluate("""() => {
-            // 확대 오버레이의 이미지 (보통 dialog/overlay 내부)
-            const overlayImgs = document.querySelectorAll('dialog img, [role="dialog"] img, .overlay img, img[src*="lh3.google"], img[src*="blob:"]');
-            if (overlayImgs.length > 0) {
-                return overlayImgs[overlayImgs.length - 1].src;
-            }
-            return null;
-        }""")
-        if expanded_src and (expanded_src.startswith('http') or expanded_src.startswith('blob')):
-            img_src = expanded_src
-            log(f"[이미지] 확대 뷰 src 획득: {str(img_src)[:60]}...")
-    except Exception:
-        pass
+        img_el.click()
+        page.wait_for_timeout(2000)
 
-    if img_src and img_src.startswith('http'):
-        # URL로부터 직접 다운로드
-        try:
-            import urllib.request
-            urllib.request.urlretrieve(img_src, str(png_path))
-            log("[이미지] URL 다운로드 완료")
-        except Exception as e:
-            log(f"[이미지] URL 다운로드 실패: {e} — 스크린샷 폴백")
-            img_src = None
+        # 확대창 내 큰 이미지 셀렉터 (Gemini 확대 오버레이)
+        expanded_selectors = [
+            'dialog img',
+            '[role="dialog"] img',
+            '.lightbox img',
+            'mat-dialog-container img',
+            'img-comparison-slider img',
+        ]
+        for sel in expanded_selectors:
+            try:
+                expanded_img = page.locator(sel).last
+                if expanded_img.count() > 0 and expanded_img.is_visible(timeout=1000):
+                    expanded_img.screenshot(path=str(png_path))
+                    log(f"[이미지] 확대창 캡처 완료 ({sel})")
+                    captured = True
+                    break
+            except Exception:
+                continue
 
-    if not img_src or not png_path.exists():
-        # 폴백: 확대 뷰 스크린샷 or 원본 스크린샷
-        log("[이미지] 스크린샷 캡처 중...")
+        # 확대창 닫기
         try:
-            # 확대 뷰 이미지 시도
-            overlay_img = page.locator('dialog img, [role="dialog"] img').last
-            if overlay_img.count() > 0:
-                overlay_img.screenshot(path=str(png_path))
-            else:
-                img_el.screenshot(path=str(png_path))
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(500)
         except Exception:
-            img_el.screenshot(path=str(png_path))
+            pass
 
-    # 확대 뷰 닫기
-    try:
-        page.keyboard.press("Escape")
-        page.wait_for_timeout(500)
-    except Exception:
-        pass
+    except Exception as e:
+        log(f"[이미지] 확대창 클릭 실패: {e}")
+
+    if not captured:
+        log("[이미지] 원본 스크린샷 폴백...")
+        img_el.screenshot(path=str(png_path))
 
     # 하단 10% 워터마크 잘라내기
     try:

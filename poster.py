@@ -1640,11 +1640,12 @@ def post_single(blog_id: str, title: str, content: str,
 
     _pause(2, 4)
 
-    # 3. 로그아웃
-    log(f"[순환] {blog_id} 로그아웃...")
-    logout_blog(blog_id, on_log)
+    # 3. 로그아웃 (임시 비활성화 — 발행 결과 확인용)
+    # log(f"[순환] {blog_id} 로그아웃...")
+    # logout_blog(blog_id, on_log)
+    log(f"[순환] {blog_id} 로그아웃 스킵 (결과 확인 후 수동 로그아웃)")
 
-    _pause(3, 6)
+    _pause(1, 2)
 
     status = "성공" if ok else "실패"
     log(f"[순환] {blog_id} 완료 ({status})")
