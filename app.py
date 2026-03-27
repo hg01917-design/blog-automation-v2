@@ -1102,6 +1102,7 @@ class BlogAutomationApp(QMainWindow):
         self.setMinimumHeight(400)
         self.sched_worker  = None
         self._single_worker = None
+        self._selected_keyword = None   # 키워드 큐에서 선택된 키워드 저장
         self._build_ui()
         self._refresh_stats()
 
@@ -1209,6 +1210,8 @@ class BlogAutomationApp(QMainWindow):
         self._kw_list = QListWidget()
         self._kw_list.setStyleSheet(
             "background:#0d0f18;color:#c9d1d9;border:none;font-size:11px;")
+        self._kw_list.itemClicked.connect(
+            lambda item: setattr(self, '_selected_keyword', item.text()))
         kw_l.addWidget(self._kw_list)
         add_kw_btn = QPushButton("+ 키워드 추가")
         add_kw_btn.setStyleSheet(
@@ -1217,7 +1220,8 @@ class BlogAutomationApp(QMainWindow):
         add_kw_btn.clicked.connect(self._add_keyword)
         kw_l.addWidget(add_kw_btn)
         self._tabs.addTab(kw_w, "키워드 큐")
-        self._agent_combo.currentTextChanged.connect(lambda _: self._load_kw_queue())
+        self._agent_combo.currentTextChanged.connect(
+            lambda _: (self._load_kw_queue(), setattr(self, '_selected_keyword', None)))
 
         ml.addWidget(self._tabs, 1)
 
@@ -1345,9 +1349,8 @@ class BlogAutomationApp(QMainWindow):
             self.log_box.append("[실행] 이미 실행 중입니다.")
             return
         blog_id = self._agent_combo.currentText()
-        # 키워드 큐에서 선택된 항목이 있으면 해당 키워드 사용
-        selected_items = self._kw_list.selectedItems()
-        keyword = selected_items[0].text() if selected_items else None
+        # 키워드 큐에서 클릭 저장된 키워드 사용 (selectedItems는 포커스 이동 시 초기화됨)
+        keyword = self._selected_keyword or None
         if keyword:
             self.log_box.append(f"[실행] {blog_id} — 키워드: '{keyword}'")
         else:
