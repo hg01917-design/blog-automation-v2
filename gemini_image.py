@@ -169,11 +169,30 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     img_el = page.locator('img.image.loaded').last
     final_path = IMAGES_DIR / filename
 
-    # src URL 직접 fetch → 툴바 오버레이 없는 원본 이미지 저장
-    log("[이미지] 이미지 src 직접 다운로드...")
+    log("[이미지] canvas 방식으로 이미지 추출 (툴바 없음)...")
     saved = False
 
-    # 1차: 확대창 열어서 고해상도 src 획득
+    # canvas toDataURL: img 엘리먼트를 canvas에 그려 base64 추출 — 툴바 오버레이 없음
+    _canvas_js = """(selector) => {
+        const imgs = document.querySelectorAll(selector);
+        const el = imgs[imgs.length - 1];
+        if (!el) return null;
+        const w = el.naturalWidth || el.width;
+        const h = el.naturalHeight || el.height;
+        if (!w || !h) return null;
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(el, 0, 0, w, h);
+        try {
+            return canvas.toDataURL('image/png').split(',')[1];
+        } catch(e) {
+            return null;
+        }
+    }"""
+
+    # 1차: 확대창 열어서 고해상도 이미지 추출
     try:
         img_el.click()
         page.wait_for_timeout(2000)
@@ -185,14 +204,15 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
             'mat-dialog-container img',
             'img-comparison-slider img',
         ]
-        img_src = None
+        b64 = None
         for sel in expanded_selectors:
             try:
-                src = page.eval_on_selector(sel, "el => el.src")
-                if src and src.startswith("http"):
-                    img_src = src
-                    log(f"[이미지] 확대창 src 획득 ({sel})")
-                    break
+                cnt = page.locator(sel).count()
+                if cnt > 0 and page.locator(sel).last.is_visible(timeout=1000):
+                    b64 = page.evaluate(_canvas_js, sel)
+                    if b64:
+                        log(f"[이미지] 확대창 canvas 추출 성공 ({sel})")
+                        break
             except Exception:
                 continue
 
@@ -203,41 +223,32 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
         except Exception:
             pass
 
-        if not img_src:
-            # 확대창 src 실패 → 썸네일 src 사용
-            img_src = page.eval_on_selector('img.image.loaded', "el => el.src")
-            log("[이미지] 썸네일 src 사용")
-
-        if img_src and img_src.startswith("http"):
-            # page context에서 fetch → base64
-            b64 = page.evaluate("""async (url) => {
-                const resp = await fetch(url);
-                const buf = await resp.arrayBuffer();
-                const bytes = new Uint8Array(buf);
-                let bin = '';
-                for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-                return btoa(bin);
-            }""", img_src)
+        if not b64:
+            # 폴백: 썸네일에서 canvas 추출
+            b64 = page.evaluate(_canvas_js, 'img.image.loaded')
             if b64:
-                import base64 as _b64
-                import io
-                raw_bytes = _b64.b64decode(b64)
-                img = Image.open(io.BytesIO(raw_bytes))
-                w, h = img.size
-                log(f"[이미지] 다운로드 성공: {w}x{h}")
-                cropped = img.crop((0, 0, w, int(h * 0.9)))
-                if skip_webp:
-                    cropped.save(str(final_path), "JPEG", quality=90)
-                    log(f"[이미지] JPG 저장 완료: {final_path.name} ({w}x{int(h*0.9)})")
-                else:
-                    cropped.save(str(final_path), "WEBP", quality=85)
-                    log(f"[이미지] webp 저장 완료: {final_path.name} ({w}x{int(h*0.9)})")
-                saved = True
+                log("[이미지] 썸네일 canvas 추출 성공")
+
+        if b64:
+            import base64 as _b64
+            import io
+            raw_bytes = _b64.b64decode(b64)
+            img = Image.open(io.BytesIO(raw_bytes))
+            w, h = img.size
+            log(f"[이미지] canvas 추출 크기: {w}x{h}")
+            cropped = img.crop((0, 0, w, int(h * 0.9)))
+            if skip_webp:
+                cropped.convert("RGB").save(str(final_path), "JPEG", quality=90)
+                log(f"[이미지] JPG 저장 완료: {final_path.name} ({w}x{int(h*0.9)})")
+            else:
+                cropped.convert("RGB").save(str(final_path), "WEBP", quality=85)
+                log(f"[이미지] webp 저장 완료: {final_path.name} ({w}x{int(h*0.9)})")
+            saved = True
 
     except Exception as e:
-        log(f"[이미지] src 다운로드 실패: {e}")
+        log(f"[이미지] canvas 추출 실패: {e}")
 
-    # 폴백: 스크린샷
+    # 최종 폴백: 스크린샷 (툴바 포함될 수 있음)
     if not saved:
         log("[이미지] 스크린샷 폴백...")
         png_path = IMAGES_DIR / f"temp_{filename}.png"
