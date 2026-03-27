@@ -222,6 +222,25 @@ def run(keyword: str = None, on_log=None, on_status=None, _page_id=None):
                 "alt": f"{actual_keyword} 이미지 {idx}",
             })
 
+    # 본문에 {{이미지N}} 마커가 없으면 H2 소제목 뒤에 주입
+    if result["images"] and not re.search(r'\{\{이미지\d+\}\}', result["body"]):
+        log("[작성] 본문에 이미지 마커 없음 → H2 소제목 뒤에 주입")
+        body_lines = result["body"].split('\n')
+        new_lines = []
+        img_idx = 1
+        total_imgs = len(result["images"])
+        for line in body_lines:
+            new_lines.append(line)
+            if line.startswith('## ') and img_idx <= total_imgs:
+                new_lines.append(f'{{{{이미지{img_idx}}}}}')
+                img_idx += 1
+        # 남은 이미지 마커는 본문 맨 앞에 추가
+        while img_idx <= total_imgs:
+            new_lines.insert(0, f'{{{{이미지{img_idx}}}}}')
+            img_idx += 1
+        result["body"] = '\n'.join(new_lines)
+        log(f"[작성] 이미지 마커 {total_imgs}개 주입 완료")
+
     if result["images"]:
         log(f"[작성] Gemini 이미지 {len(result['images'])}개 생성 시작 (네이버 JPG 모드)")
         image_paths = generate_images(result["images"], on_log=log, skip_webp=True)
