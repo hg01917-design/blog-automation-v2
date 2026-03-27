@@ -187,14 +187,23 @@ def _tistory_insert_adsense_format(page, log_fn=None) -> bool:
         if log_fn: log_fn(msg)
 
     try:
-        # 1. 점세개 버튼 클릭
-        page.evaluate("""() => {
-            const btn = document.querySelector('#more-plugin-btn-open');
-            if (btn) btn.click();
-        }""")
-        time.sleep(0.8)
+        # 1. 점세개 버튼 존재 확인 후 클릭
+        btn_exists = page.evaluate("() => !!document.querySelector('#more-plugin-btn-open')")
+        if not btn_exists:
+            log("[포스팅] #more-plugin-btn-open 없음")
+            return False
 
-        # 2. "서식" 메뉴 클릭
+        page.click('#more-plugin-btn-open')
+        time.sleep(1.0)
+
+        # 2. "서식" 메뉴 항목 대기 후 클릭
+        try:
+            page.wait_for_selector('.mce-tistory-plugin-item', timeout=3000)
+        except Exception:
+            log("[포스팅] .mce-tistory-plugin-item 로드 실패")
+            page.keyboard.press("Escape")
+            return False
+
         clicked = page.evaluate("""() => {
             const items = [...document.querySelectorAll('.mce-tistory-plugin-item')];
             const el = items.find(e => e.textContent.trim() === '서식');
@@ -203,13 +212,21 @@ def _tistory_insert_adsense_format(page, log_fn=None) -> bool:
         }""")
 
         if not clicked:
-            log("[포스팅] 서식 메뉴 없음 — 폴백 사용")
+            log("[포스팅] 서식 메뉴 항목 없음")
+            page.keyboard.press("Escape")
             return False
 
-        time.sleep(1.2)
+        time.sleep(1.5)
         log("[포스팅] 서식 메뉴 열림")
 
-        # 3. 애드센스 항목 클릭
+        # 3. 애드센스 항목 대기 후 클릭
+        try:
+            page.wait_for_selector('.list_editor a.link_info', timeout=3000)
+        except Exception:
+            log("[포스팅] .list_editor 로드 실패")
+            page.keyboard.press("Escape")
+            return False
+
         inserted = page.evaluate("""() => {
             const links = [...document.querySelectorAll('.list_editor a.link_info')];
             const el = links.find(e => e.textContent.includes('애드센스'));
@@ -218,7 +235,7 @@ def _tistory_insert_adsense_format(page, log_fn=None) -> bool:
         }""")
 
         if inserted:
-            time.sleep(1)
+            time.sleep(1.0)
             log(f"[포스팅] 서식 애드센스 삽입 완료 ('{inserted}')")
             return True
 
@@ -228,6 +245,10 @@ def _tistory_insert_adsense_format(page, log_fn=None) -> bool:
 
     except Exception as e:
         log(f"[포스팅] 서식 삽입 오류: {e}")
+        try:
+            page.keyboard.press("Escape")
+        except Exception:
+            pass
         return False
 
 
@@ -458,20 +479,11 @@ def _post_tistory(account, title, body_html, tags=None,
                 i += 1
                 continue
 
-            # ── [애드센스] → 서식 탭에서 삽입 (실패 시 HTML 직접 삽입) ──
+            # ── [애드센스] → 서식 탭에서 삽입 (실패 시 스킵) ──
             if stripped == '[애드센스]' or stripped == '##AD##':
-                try:
-                    ok = _tistory_insert_adsense_format(page, log)
-                    if not ok:
-                        ad_html = _get_adsense_html()
-                        page.evaluate(
-                            "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.insertContent(html); }",
-                            ad_html,
-                        )
-                        time.sleep(0.5)
-                        log("[포스팅] 애드센스 HTML 직접 삽입 (폴백)")
-                except Exception:
-                    pass
+                ok = _tistory_insert_adsense_format(page, log)
+                if not ok:
+                    log("[포스팅] 애드센스 서식 삽입 실패 — 스킵 (HTML 직접 삽입 시 코드 깨짐)")
                 i += 1
                 continue
 

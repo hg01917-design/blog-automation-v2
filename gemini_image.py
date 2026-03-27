@@ -125,28 +125,80 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
 
     page.wait_for_timeout(1000)
 
-    # 이미지 엘리먼트 스크린샷 캡처
-    log("[이미지] 스크린샷 캡처 중...")
+    # 이미지 클릭 → 전체화면 확대 뷰 열기
+    log("[이미지] 이미지 클릭 → 확대 뷰 시도...")
     img_el = page.locator('img.image.loaded').last
+    try:
+        img_el.click()
+        page.wait_for_timeout(1500)
+    except Exception:
+        pass
 
+    # 확대 뷰에서 큰 이미지 src 가져오기
     png_path = IMAGES_DIR / f"temp_{filename}.png"
-    img_el.screenshot(path=str(png_path))
+    final_path = IMAGES_DIR / filename
+
+    img_src = None
+    # 확대 뷰에서 가장 큰 이미지 찾기
+    try:
+        expanded_src = page.evaluate("""() => {
+            // 확대 오버레이의 이미지 (보통 dialog/overlay 내부)
+            const overlayImgs = document.querySelectorAll('dialog img, [role="dialog"] img, .overlay img, img[src*="lh3.google"], img[src*="blob:"]');
+            if (overlayImgs.length > 0) {
+                return overlayImgs[overlayImgs.length - 1].src;
+            }
+            return null;
+        }""")
+        if expanded_src and (expanded_src.startswith('http') or expanded_src.startswith('blob')):
+            img_src = expanded_src
+            log(f"[이미지] 확대 뷰 src 획득: {str(img_src)[:60]}...")
+    except Exception:
+        pass
+
+    if img_src and img_src.startswith('http'):
+        # URL로부터 직접 다운로드
+        try:
+            import urllib.request
+            urllib.request.urlretrieve(img_src, str(png_path))
+            log("[이미지] URL 다운로드 완료")
+        except Exception as e:
+            log(f"[이미지] URL 다운로드 실패: {e} — 스크린샷 폴백")
+            img_src = None
+
+    if not img_src or not png_path.exists():
+        # 폴백: 확대 뷰 스크린샷 or 원본 스크린샷
+        log("[이미지] 스크린샷 캡처 중...")
+        try:
+            # 확대 뷰 이미지 시도
+            overlay_img = page.locator('dialog img, [role="dialog"] img').last
+            if overlay_img.count() > 0:
+                overlay_img.screenshot(path=str(png_path))
+            else:
+                img_el.screenshot(path=str(png_path))
+        except Exception:
+            img_el.screenshot(path=str(png_path))
+
+    # 확대 뷰 닫기
+    try:
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(500)
+    except Exception:
+        pass
 
     # 하단 10% 워터마크 잘라내기
-    final_path = IMAGES_DIR / filename
     try:
         img = Image.open(png_path)
         w, h = img.size
+        log(f"[이미지] 원본 크기: {w}x{h}")
         cropped = img.crop((0, 0, w, int(h * 0.9)))
         if skip_webp:
-            # 네이버: 변환 없이 JPG로 저장
             cropped.save(str(final_path), "JPEG", quality=90)
-            png_path.unlink()
-            log(f"[이미지] JPG 저장 완료: {final_path.name}")
+            png_path.unlink(missing_ok=True)
+            log(f"[이미지] JPG 저장 완료: {final_path.name} ({w}x{int(h*0.9)})")
         else:
             cropped.save(str(final_path), "WEBP", quality=85)
-            png_path.unlink()
-            log(f"[이미지] webp 변환 완료: {final_path.name}")
+            png_path.unlink(missing_ok=True)
+            log(f"[이미지] webp 저장 완료: {final_path.name} ({w}x{int(h*0.9)})")
     except Exception as e:
         log(f"[이미지] 저장 실패: {e}, png 유지")
         final_path = png_path
