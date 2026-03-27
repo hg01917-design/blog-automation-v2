@@ -150,10 +150,11 @@ def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int =
 
     for attempt in range(1, max_retries + 1):
         try:
-            # 1. 이미지 버튼 클릭 (mce-i-image 아이콘)
+            # 1. 이미지 버튼 클릭 — 보이는 버튼만 클릭 (숨겨진 attach-layer-btn 제외)
             page.evaluate("""() => {
-                const ico = document.querySelector('i.mce-i-image');
-                if (ico) ico.closest('button').click();
+                const icons = [...document.querySelectorAll('i.mce-ico.mce-i-image')];
+                const visible = icons.find(ico => ico.getBoundingClientRect().width > 0);
+                if (visible) visible.closest('button').click();
             }""")
             time.sleep(0.8)
 
