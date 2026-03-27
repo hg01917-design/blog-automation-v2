@@ -167,17 +167,17 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     page.wait_for_timeout(1000)
 
     img_el = page.locator('img.image.loaded').last
-    png_path = IMAGES_DIR / f"temp_{filename}.png"
     final_path = IMAGES_DIR / filename
 
-    # 이미지 클릭 → 확대창 열기 → 확대된 이미지 스크린샷
-    log("[이미지] 이미지 클릭 → 확대창 캡처...")
-    captured = False
+    # src URL 직접 fetch → 툴바 오버레이 없는 원본 이미지 저장
+    log("[이미지] 이미지 src 직접 다운로드...")
+    saved = False
+
+    # 1차: 확대창 열어서 고해상도 src 획득
     try:
         img_el.click()
         page.wait_for_timeout(2000)
 
-        # 확대창 내 큰 이미지 셀렉터 (Gemini 확대 오버레이)
         expanded_selectors = [
             'dialog img',
             '[role="dialog"] img',
@@ -185,16 +185,13 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
             'mat-dialog-container img',
             'img-comparison-slider img',
         ]
+        img_src = None
         for sel in expanded_selectors:
             try:
-                expanded_img = page.locator(sel).last
-                if expanded_img.count() > 0 and expanded_img.is_visible(timeout=1000):
-                    # 편집 툴바 드래그로 이미지 밖으로 이동
-                    _drag_toolbar_away(page)
-                    page.wait_for_timeout(500)
-                    expanded_img.screenshot(path=str(png_path))
-                    log(f"[이미지] 확대창 캡처 완료 ({sel})")
-                    captured = True
+                src = page.eval_on_selector(sel, "el => el.src")
+                if src and src.startswith("http"):
+                    img_src = src
+                    log(f"[이미지] 확대창 src 획득 ({sel})")
                     break
             except Exception:
                 continue
@@ -206,31 +203,60 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
         except Exception:
             pass
 
+        if not img_src:
+            # 확대창 src 실패 → 썸네일 src 사용
+            img_src = page.eval_on_selector('img.image.loaded', "el => el.src")
+            log("[이미지] 썸네일 src 사용")
+
+        if img_src and img_src.startswith("http"):
+            # page context에서 fetch → base64
+            b64 = page.evaluate("""async (url) => {
+                const resp = await fetch(url);
+                const buf = await resp.arrayBuffer();
+                const bytes = new Uint8Array(buf);
+                let bin = '';
+                for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+                return btoa(bin);
+            }""", img_src)
+            if b64:
+                import base64 as _b64
+                import io
+                raw_bytes = _b64.b64decode(b64)
+                img = Image.open(io.BytesIO(raw_bytes))
+                w, h = img.size
+                log(f"[이미지] 다운로드 성공: {w}x{h}")
+                cropped = img.crop((0, 0, w, int(h * 0.9)))
+                if skip_webp:
+                    cropped.save(str(final_path), "JPEG", quality=90)
+                    log(f"[이미지] JPG 저장 완료: {final_path.name} ({w}x{int(h*0.9)})")
+                else:
+                    cropped.save(str(final_path), "WEBP", quality=85)
+                    log(f"[이미지] webp 저장 완료: {final_path.name} ({w}x{int(h*0.9)})")
+                saved = True
+
     except Exception as e:
-        log(f"[이미지] 확대창 클릭 실패: {e}")
+        log(f"[이미지] src 다운로드 실패: {e}")
 
-    if not captured:
-        log("[이미지] 원본 스크린샷 폴백...")
-        page.mouse.move(0, 0)
-        page.wait_for_timeout(500)
-        img_el.screenshot(path=str(png_path))
-
-    # 하단 10% 워터마크 잘라내기
-    try:
-        img = Image.open(png_path)
-        w, h = img.size
-        log(f"[이미지] 원본 크기: {w}x{h}")
-        cropped = img.crop((0, 0, w, int(h * 0.9)))
-        if skip_webp:
-            cropped.save(str(final_path), "JPEG", quality=90)
+    # 폴백: 스크린샷
+    if not saved:
+        log("[이미지] 스크린샷 폴백...")
+        png_path = IMAGES_DIR / f"temp_{filename}.png"
+        try:
+            page.mouse.move(0, 0)
+            page.wait_for_timeout(500)
+            img_el.screenshot(path=str(png_path))
+            img = Image.open(png_path)
+            w, h = img.size
+            cropped = img.crop((0, 0, w, int(h * 0.9)))
+            if skip_webp:
+                cropped.save(str(final_path), "JPEG", quality=90)
+            else:
+                cropped.save(str(final_path), "WEBP", quality=85)
             png_path.unlink(missing_ok=True)
-            log(f"[이미지] JPG 저장 완료: {final_path.name} ({w}x{int(h*0.9)})")
-        else:
-            cropped.save(str(final_path), "WEBP", quality=85)
-            png_path.unlink(missing_ok=True)
-            log(f"[이미지] webp 저장 완료: {final_path.name} ({w}x{int(h*0.9)})")
-    except Exception as e:
-        log(f"[이미지] 저장 실패: {e}, png 유지")
-        final_path = png_path
+            log(f"[이미지] 스크린샷 폴백 저장: {final_path.name}")
+            saved = True
+        except Exception as e2:
+            log(f"[이미지] 스크린샷 폴백도 실패: {e2}")
+            final_path = png_path
 
-    return str(final_path)
+    return str(final_path) if saved else None
