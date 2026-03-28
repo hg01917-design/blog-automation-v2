@@ -1189,6 +1189,18 @@ def _post_naver(account, title, content, tags=None,
 # ─────────────────────────────────────────────
 # WordPress REST API 포스팅 (baremi542)
 # ─────────────────────────────────────────────
+import ssl as _ssl
+_WP_SSL_CTX = _ssl.create_default_context()
+_WP_SSL_CTX.check_hostname = False
+_WP_SSL_CTX.verify_mode = _ssl.CERT_NONE
+
+
+def _wp_urlopen(req, timeout=15):
+    """SSL 인증서 검증 우회 urlopen (macOS Python 호환)"""
+    import urllib.request
+    return urllib.request.urlopen(req, timeout=timeout, context=_WP_SSL_CTX)
+
+
 def _md_to_wp_html(content: str) -> str:
     """마크다운 본문을 WordPress HTML로 변환.
 
@@ -1291,7 +1303,7 @@ def _wp_upload_image(site_url: str, auth_header: str, filepath: str,
             headers=upload_headers,
             method="POST",
         )
-        resp = json.loads(urllib.request.urlopen(req, timeout=30).read())
+        resp = json.loads(_wp_urlopen(req, timeout=30).read())
         url = resp.get("source_url", "")
         media_id = resp.get("id", "")
         # alt 텍스트 업데이트
@@ -1302,7 +1314,7 @@ def _wp_upload_image(site_url: str, auth_header: str, filepath: str,
                 headers={"Authorization": auth_header, "Content-Type": "application/json"},
                 method="POST",
             )
-            urllib.request.urlopen(patch_req, timeout=10)
+            _wp_urlopen(patch_req, timeout=10)
         log(f"[WordPress] 이미지 업로드 완료: {filename} → {url}")
         return url
     except Exception as e:
@@ -1343,7 +1355,7 @@ def _wp_upload_image_with_id(site_url: str, auth_header: str, filepath: str,
             headers=upload_headers,
             method="POST",
         )
-        resp = json.loads(urllib.request.urlopen(req, timeout=30).read())
+        resp = json.loads(_wp_urlopen(req, timeout=30).read())
         url      = resp.get("source_url", "")
         media_id = resp.get("id")
         if media_id and alt:
@@ -1353,7 +1365,7 @@ def _wp_upload_image_with_id(site_url: str, auth_header: str, filepath: str,
                 headers={"Authorization": auth_header, "Content-Type": "application/json"},
                 method="POST",
             )
-            urllib.request.urlopen(patch_req, timeout=10)
+            _wp_urlopen(patch_req, timeout=10)
         log(f"[WordPress] 이미지 업로드 완료: {filename} → {url}")
         return url, media_id
     except Exception as e:
@@ -1373,12 +1385,21 @@ def _post_wordpress(account, title, content, tags=None,
     import json
     import base64
     import re
+    import ssl
     import urllib.request
     import urllib.parse
     import os
 
     image_paths = image_paths or {}
     image_infos = image_infos or []
+
+    # macOS Python SSL 인증서 문제 우회
+    _ssl_ctx = ssl.create_default_context()
+    _ssl_ctx.check_hostname = False
+    _ssl_ctx.verify_mode = ssl.CERT_NONE
+
+    def _urlopen(req, timeout=15):
+        return urllib.request.urlopen(req, timeout=timeout, context=_ssl_ctx)
 
     def log(msg):
         if on_log:
@@ -1495,7 +1516,7 @@ def _post_wordpress(account, title, content, tags=None,
             try:
                 search_url = f"{site_url}/wp-json/wp/v2/tags?search={urllib.parse.quote(tag_name)}"
                 req = urllib.request.Request(search_url, headers=headers)
-                res = json.loads(urllib.request.urlopen(req, timeout=8).read())
+                res = json.loads(_urlopen(req, timeout=8).read())
                 if res:
                     tag_ids.append(res[0]["id"])
                 else:
@@ -1505,7 +1526,7 @@ def _post_wordpress(account, title, content, tags=None,
                         headers=headers,
                         method="POST",
                     )
-                    new_tag = json.loads(urllib.request.urlopen(create_req, timeout=8).read())
+                    new_tag = json.loads(_urlopen(create_req, timeout=8).read())
                     tag_ids.append(new_tag["id"])
             except Exception:
                 pass
@@ -1538,7 +1559,7 @@ def _post_wordpress(account, title, content, tags=None,
             headers=headers,
             method="POST",
         )
-        resp = json.loads(urllib.request.urlopen(req, timeout=30).read())
+        resp = json.loads(_urlopen(req, timeout=30).read())
         post_id = resp.get("id")
         post_url = resp.get("link", "")
         log(f"[WordPress] ✓ 발행 완료: {post_url}")
@@ -1563,7 +1584,7 @@ def _post_wordpress(account, title, content, tags=None,
                     headers=headers,
                     method="POST",
                 )
-                urllib.request.urlopen(rm_req, timeout=15)
+                _urlopen(rm_req, timeout=15)
                 log(f"[WordPress] ✓ Rank Math 메타 설정 완료")
             except Exception as e:
                 log(f"[WordPress] ⚠ Rank Math 메타 설정 실패 (스킵): {e}")
@@ -1605,7 +1626,7 @@ def _post_wordpress(account, title, content, tags=None,
                     headers=headers,
                     method="POST",
                 )
-                urllib.request.urlopen(upd_req, timeout=30)
+                _urlopen(upd_req, timeout=30)
                 log(f"[WordPress] ✓ JSON-LD Article 스키마 삽입 완료")
             except Exception as e:
                 log(f"[WordPress] ⚠ JSON-LD 스키마 삽입 실패 (스킵): {e}")
