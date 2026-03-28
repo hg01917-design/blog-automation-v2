@@ -242,26 +242,11 @@ def _extract_response(page, prev_response_count, log):
         except Exception as e:
             log(f"[Playwright] 최후 폴백 실패: {e}")
 
-    # 최후 수단3: main/article 영역 innerText
-    if not response_text.strip() or "추출 실패" in response_text:
-        try:
-            all_inner = page.evaluate("""() => {
-                const candidates = [
-                    document.querySelector('main'),
-                    document.querySelector('article'),
-                    document.querySelector('[role="main"]'),
-                    document.body,
-                ];
-                for (const el of candidates) {
-                    if (el && el.innerText && el.innerText.length > 200) return el.innerText;
-                }
-                return '';
-            }""")
-            if all_inner and len(all_inner) > 200:
-                response_text = all_inner
-                log(f"[Playwright] 최후 폴백3: main/article 텍스트 ({len(response_text)}자)")
-        except Exception as e:
-            log(f"[Playwright] 최후 폴백3 실패: {e}")
+    # 최종 검증: ===제목=== 없으면 UI 텍스트나 garbage를 잘못 추출한 것
+    if response_text.strip() and "===제목===" not in response_text:
+        log(f"[Playwright] ⚠ 추출된 텍스트에 ===제목=== 없음 — 잘못된 추출로 판단, 무효화")
+        log(f"[Playwright] 추출 텍스트 앞 100자: {response_text[:100]}")
+        response_text = ""
 
     if not response_text.strip():
         response_text = "[추출 실패] DOM에서 응답을 찾지 못했습니다."
