@@ -2,10 +2,19 @@
 import json
 import os
 import re
+import ssl
 import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+
+def _ssl_ctx():
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return None
 
 # .env 로드
 _env = Path(os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(Path(__file__).parent.parent))) / ".env"
@@ -72,7 +81,7 @@ def _search(endpoint: str, query: str, display: int = 10) -> dict:
             "X-Naver-Client-Secret": CLIENT_SECRET,
         },
     )
-    resp = urllib.request.urlopen(req, timeout=10)
+    resp = urllib.request.urlopen(req, timeout=10, context=_ssl_ctx())
     return json.loads(resp.read())
 
 

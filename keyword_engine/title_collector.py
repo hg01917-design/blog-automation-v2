@@ -188,22 +188,32 @@ def collect_titles_playwright(blog_url: str, on_log=None) -> list:
     return titles[:100]
 
 
-def collect_from_all(blog_urls: set, use_playwright: bool = False, on_log=None) -> list:
-    """여러 블로그 RSS(+Playwright)를 순회하며 전체 제목 수집"""
+def collect_from_all(blog_urls: set, use_playwright: bool = False,
+                     on_log=None, workers: int = 10) -> list:
+    """여러 블로그 RSS(+Playwright)를 병렬로 수집 (ThreadPoolExecutor)"""
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+
     all_titles = []
-    success = 0
-    for url in blog_urls:
-        titles = collect_titles_from_rss(url, on_log)
-        # RSS에서 적게 수집됐으면 Playwright로 보완
+    success_count = [0]
+    lock = threading.Lock()
+
+    def _fetch(url):
+        titles = collect_titles_from_rss(url, None)
         if use_playwright and len(titles) < 10:
-            pw_titles = collect_titles_playwright(url, on_log)
+            pw_titles = collect_titles_playwright(url, None)
             if pw_titles:
                 titles = list(set(titles + pw_titles))
         if titles:
-            all_titles.extend(titles)
-            success += 1
+            with lock:
+                all_titles.extend(titles)
+                success_count[0] += 1
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        list(pool.map(_fetch, list(blog_urls)))
+
     if on_log:
-        on_log(f"[수집] 총 {success}/{len(blog_urls)}개 블로그, {len(all_titles)}개 제목")
+        on_log(f"[수집] 총 {success_count[0]}/{len(blog_urls)}개 블로그, {len(all_titles)}개 제목")
     return all_titles
 
 

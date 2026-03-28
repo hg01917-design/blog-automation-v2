@@ -4,10 +4,21 @@ import hashlib
 import hmac
 import json
 import os
+import ssl
 import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+
+def _ssl_ctx():
+    """certifi 인증서를 사용하는 SSL 컨텍스트 반환 (없으면 기본값)"""
+    try:
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+        return ctx
+    except Exception:
+        return None
 
 # .env 로드
 _env = Path(os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(Path(__file__).parent.parent))) / ".env"
@@ -62,7 +73,7 @@ def get_search_volume(keyword: str) -> int:
         },
     )
     try:
-        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        data = json.loads(urllib.request.urlopen(req, timeout=10, context=_ssl_ctx()).read())
         for item in data.get("keywordList", []):
             if item.get("relKeyword", "").replace(" ", "") == hint:
                 pc = int(item.get("monthlyPcQcCnt", 0) or 0)
