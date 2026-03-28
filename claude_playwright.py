@@ -220,6 +220,49 @@ def _extract_response(page, prev_response_count, log):
         except Exception:
             pass
 
+    # 최후 수단2: 페이지 전체 텍스트에서 ===제목=== 패턴 직접 탐색
+    if not response_text.strip() or "추출 실패" in response_text:
+        try:
+            all_text = page.evaluate("""() => {
+                // 모든 텍스트 노드에서 ===제목=== 패턴 검색
+                const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                let full = '';
+                let n;
+                while ((n = walker.nextNode())) full += n.textContent;
+                return full;
+            }""")
+            if all_text and "===제목===" in all_text:
+                # ===제목=== ~ ===이미지끝=== 구간 추출
+                m = re.search(r"===제목===(.*?)(?:===이미지끝===|$)", all_text, re.DOTALL)
+                if m:
+                    response_text = "===제목===" + m.group(1)
+                    if "===이미지끝===" in all_text:
+                        response_text += "===이미지끝==="
+                    log(f"[Playwright] 최후 폴백: 페이지 텍스트에서 섹션 추출 ({len(response_text)}자)")
+        except Exception as e:
+            log(f"[Playwright] 최후 폴백 실패: {e}")
+
+    # 최후 수단3: main/article 영역 innerText
+    if not response_text.strip() or "추출 실패" in response_text:
+        try:
+            all_inner = page.evaluate("""() => {
+                const candidates = [
+                    document.querySelector('main'),
+                    document.querySelector('article'),
+                    document.querySelector('[role="main"]'),
+                    document.body,
+                ];
+                for (const el of candidates) {
+                    if (el && el.innerText && el.innerText.length > 200) return el.innerText;
+                }
+                return '';
+            }""")
+            if all_inner and len(all_inner) > 200:
+                response_text = all_inner
+                log(f"[Playwright] 최후 폴백3: main/article 텍스트 ({len(response_text)}자)")
+        except Exception as e:
+            log(f"[Playwright] 최후 폴백3 실패: {e}")
+
     if not response_text.strip():
         response_text = "[추출 실패] DOM에서 응답을 찾지 못했습니다."
 
@@ -424,6 +467,14 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
 
             # 응답 추출
             log("[Playwright] 응답 추출 중...")
+            # 현재 페이지에 있는 응답 블록 수 확인 (디버그용)
+            try:
+                cur_sel_counts = {}
+                for _sel in RESPONSE_SEL_FALLBACKS[:3]:
+                    cur_sel_counts[_sel] = page.locator(_sel).count()
+                log(f"[Playwright] 셀렉터별 응답 블록 수: {cur_sel_counts}")
+            except Exception:
+                pass
             response_text = _extract_response(page, prev_response_count, log)
 
             # 글자수 확인
