@@ -33,7 +33,7 @@ def run(
     blog_id: str = None,
     min_score: float = DEFAULT_MIN_SCORE,
     min_volume: int = DEFAULT_MIN_VOLUME,
-    push_to_notion: bool = True,
+    push_to_notion: bool = False,
     use_playwright: bool = True,
     on_log=None,
 ) -> list:

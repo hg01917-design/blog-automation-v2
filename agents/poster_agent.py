@@ -6,7 +6,7 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from poster import post_single
-from overnight_run import update_keyword_status
+from keyword_engine import db_handler
 
 
 def run(result: dict, blog_id: str, keyword: str, page_id: str,
@@ -48,12 +48,10 @@ def run(result: dict, blog_id: str, keyword: str, page_id: str,
 
     if ok:
         log(f"[포스팅] ✓ 발행 성공: \"{title}\" ({blog_id})")
-        # Notion 상태 + 발행일 업데이트
-        update_keyword_status(page_id, "완료")
-        _update_publish_date(page_id)
+        db_handler.set_keyword_status(keyword, "published")
     else:
         log(f"[포스팅] ⚠ 발행 실패: \"{title}\" ({blog_id})")
-        update_keyword_status(page_id, "실패", memo="포스팅 실패")
+        db_handler.set_keyword_status(keyword, "failed")
 
     if on_status:
         on_status("poster", "done" if ok else "failed")

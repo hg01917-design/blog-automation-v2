@@ -206,4 +206,22 @@ def keyword_exists(keyword: str) -> bool:
         )
 
 
+def fetch_next_pending(blog_id: str = None) -> str | None:
+    """상태가 pending인 키워드 중 점수 높은 것 1개 반환. 없으면 None."""
+    with _conn() as db:
+        row = db.execute(
+            "SELECT keyword FROM keywords WHERE status = 'pending' ORDER BY score DESC LIMIT 1"
+        ).fetchone()
+    return row["keyword"] if row else None
+
+
+def get_published_keywords() -> list:
+    """상태가 published인 키워드 목록 반환 (중복 체크용)"""
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT keyword FROM keywords WHERE status = 'published'"
+        ).fetchall()
+    return [r["keyword"] for r in rows]
+
+
 init_db()

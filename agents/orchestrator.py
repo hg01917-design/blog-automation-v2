@@ -360,9 +360,9 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
             result = None
 
         if not result:
-            if page_id:
-                from overnight_run import update_keyword_status
-                update_keyword_status(page_id, "실패", memo="검수 불합격")
+            if keyword:
+                from keyword_engine import db_handler as _db
+                _db.set_keyword_status(keyword, "failed")
             return _fail(blog_id, keyword, f"검수 불합격 ({MAX_WRITER_RETRIES}회)", logs)
 
         # ── 4. 포스팅 ──
@@ -397,9 +397,9 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
         log(f"[오케스트레이터] 치명적 오류: {e}")
         log(traceback.format_exc())
         try:
-            if page_id:
-                from overnight_run import update_keyword_status
-                update_keyword_status(page_id, "실패", memo=f"오류: {str(e)[:50]}")
+            if keyword:
+                from keyword_engine import db_handler as _db
+                _db.set_keyword_status(keyword, "failed")
         except Exception:
             pass
         return _fail(blog_id, keyword or "알수없음", f"오류: {e}", logs)
