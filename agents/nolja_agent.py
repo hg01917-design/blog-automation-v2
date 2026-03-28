@@ -99,7 +99,7 @@ def _parse_raw(raw, keyword, log):
         raw_title = title_m.group(1).strip().split('\n')[0].strip()
     else:
         raw_title = keyword
-    title = _truncate_title(raw_title, max_len=40)
+    title = _truncate_title(raw_title, max_len=30)
 
     # 본문
     body = body_m.group(1).strip() if body_m else raw
@@ -111,20 +111,29 @@ def _parse_raw(raw, keyword, log):
     else:
         tags = [keyword]
 
-    # 이미지 정보
+    # 이미지 정보 — [썸네일] + [이미지N] 형식 모두 지원
     images = []
     if img_m:
         img_block = img_m.group(1)
-        # [이미지N] 단위로 분할: split 결과 = [앞텍스트, index, 블록, index, 블록, ...]
-        parts = re.split(r'\[이미지(\d+)\]', img_block)
-        it = iter(parts[1:])
-        for idx_str, block in zip(it, it):
-            prompt = re.search(r'Gemini\s*프롬프트\s*[:：]\s*(.+)', block)
+        parts = re.split(r'\[(이미지(\d+)|썸네일)\]', img_block)
+        auto_idx = 1
+        i = 1
+        while i < len(parts) - 2:
+            full_match = parts[i]
+            digit_part = parts[i + 1]
+            block      = parts[i + 2]
+            i += 3
+            idx = int(digit_part) if digit_part else auto_idx
+            auto_idx = max(auto_idx, idx) + 1
+            prompt = re.search(
+                r'(?:Gemini|Ideogram|이미지|image)\s*프롬프트\s*[:：]\s*(.+)',
+                block, re.IGNORECASE
+            )
             fname  = re.search(r'파일명\s*[:：]\s*(.+)', block)
             alt_m2 = re.search(r'\balt\s*[:：]\s*(.+)', block, re.IGNORECASE)
             if prompt and fname:
                 images.append({
-                    "index": int(idx_str),
+                    "index": idx,
                     "prompt": prompt.group(1).strip(),
                     "filename": fname.group(1).strip(),
                     "alt": alt_m2.group(1).strip() if alt_m2 else "",
