@@ -101,6 +101,16 @@ def _parse_raw(raw, keyword, log):
     else:
         tags = [keyword]
 
+    # 태그 10개 자동 보충
+    if len(tags) < 10:
+        pool = [p.strip() for p in re.split(r'[\s,]+', keyword) if p.strip() and len(p.strip()) > 1]
+        pool += [p.strip() for p in re.split(r'[\s,]+', raw_title) if p.strip() and len(p.strip()) > 1]
+        for t in pool:
+            if t not in tags:
+                tags.append(t)
+            if len(tags) >= 10:
+                break
+
     # 이미지 정보
     images = []
     if img_m:
