@@ -86,10 +86,8 @@ def run(result: dict, keyword: str, blog_id: str,
     elif body_chars < 1500:
         log(f"[검수] ⚠ 글자수 경고: {body_chars}자 (권장 1500자 이상)")
 
-    # 2. 태그 수 체크
-    if len(tags) < 3:
-        issues.append(f"태그 부족: {len(tags)}개 < 3개")
-    elif len(tags) < 10:
+    # 2. 태그 수 체크 — 경고만 (재생성 트리거 안 함)
+    if len(tags) < 10:
         log(f"[검수] ⚠ 태그 경고: {len(tags)}개 (권장 10개 이상)")
 
     # 3. 제목에 메인키워드가 앞에 위치
