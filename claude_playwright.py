@@ -302,43 +302,14 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         "===이미지끝==="
     )
 
-    # 블로그별 AI 금지 표현 + 핵심 작성 리마인더
-    _ANTI_AI_COMMON = (
-        "\n\n[이번 글 필수 적용 — 아래 항목 어기면 발행 불가]\n"
-        "❌ 금지 표현: 살펴보겠습니다 / 알아보겠습니다 / 정리해드릴게요 / 정리하면\n"
-        "❌ 금지 표현: 완전히 / 유일하게 / 당연히 / 물론입니다 / 마치며 / 마지막으로\n"
-        "❌ 금지 표현: 첫째, / 둘째, / 셋째, / AI / ChatGPT\n"
-        "❌ 금지 도입부: '안녕하세요' / '오늘은 ~에 대해 알아보겠습니다'\n"
-    )
-    _ANTI_AI_SALIM = _ANTI_AI_COMMON + (
-        "✅ 도입부: '고지서 받고 깜짝 놀랐어요' 같이 감정+현황으로 바로 시작\n"
-        "✅ 수치: 범위값 금지. 반드시 전후 비교 ('43만원 → 29만원', '371kWh → 185kWh')\n"
-        "✅ 문체: ~더라구요 / ~거든요 / ~이네요 적극 사용\n"
-        "✅ 시행착오 1개 이상: '처음엔 반신반의했는데', '오히려 더 나온 적 있어요'\n"
-        "✅ 모르는 건 솔직히: '~라고 하네요' / '저도 처음엔 몰랐거든요ㅠ'\n"
-        "✅ 팩트 참고 자료의 수치만 사용. 불확실하면 '확인 필요' 표기\n"
-    )
-    _ANTI_AI_BAREMI = _ANTI_AI_COMMON + (
-        "✅ 도입부: 고용센터/주민센터 다녀온 경험으로 시작\n"
-        "✅ 담당자 발언 직접 인용: '담당자분이 ~라고 하더라고요'\n"
-        "✅ 실제 금액 명시: '예상 114만원인데 57만원만 입금' 같은 구체적 수치\n"
-        "✅ 처리 시점 구체적으로: '8월 신청, 11월 22일 입금'\n"
-        "✅ 팩트 참고 자료의 수치만 사용. 불확실하면 '확인 필요' 표기\n"
-    )
-
-    _BLOG_REMINDERS = {
-        "salim1su":  _ANTI_AI_SALIM,
-        "baremi542": _ANTI_AI_BAREMI,
-    }
-
-    # Claude Project가 설정된 blog_id면 키워드 + 팩트 + 금지표현 전송
+    # Claude Project가 설정된 blog_id면 키워드만 전송 — 프로젝트 지침이 모든 규칙 담당
+    # 팩트(공식사이트 수치)는 동적 데이터라 프로젝트에 넣을 수 없으므로 별도 주입
     # 프로젝트 미설정 blog_id면 기존대로 Notion에서 전체 프롬프트 가져오기
     if blog_id and keyword:
         if blog_id in BLOG_PROJECT_URLS:
-            # 프로젝트 모드: 키워드 + 블로그별 리마인더 (팩트는 아래에서 주입)
-            _reminder = _BLOG_REMINDERS.get(blog_id, _ANTI_AI_COMMON)
-            prompt = f"{keyword}\n(본문 3000자 이상){_reminder}"
-            log(f"[Playwright] 프로젝트 모드 — 키워드 전송: '{keyword}'")
+            # 프로젝트 모드: 키워드만 (규칙/금지어/문체는 프로젝트 지침에서 처리)
+            prompt = keyword
+            log(f"[Playwright] 프로젝트 모드 — 키워드만 전송: '{keyword}'")
         else:
             try:
                 prompt = fetch_prompt(blog_id, keyword, on_log)
@@ -348,8 +319,9 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
                 log("[Notion] 기본 프롬프트로 진행합니다.")
 
     # 팩트 컨텍스트 주입 — 프로젝트 모드 포함 항상 주입 (할루시네이션 방지 핵심)
+    # 키워드 뒤에 붙여서 프로젝트 지침이 앞에 오도록 구조 유지
     if extra_context:
-        prompt = f"{extra_context}\n\n---\n\n{prompt}"
+        prompt = f"{prompt}\n\n[참고 자료 — 아래 수치/날짜만 사용, 임의 수치 금지]\n{extra_context}"
         log(f"[Playwright] 팩트 컨텍스트 주입: {len(extra_context)}자")
 
     # 프롬프트 내용 확인 로그
