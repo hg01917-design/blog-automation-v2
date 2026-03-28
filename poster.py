@@ -369,7 +369,7 @@ def _post_tistory(account, title, body_html, tags=None,
             pass
 
         # ── 에디터 로드 대기 ──
-        page.wait_for_selector("#post-title-inp, .tit_post input", timeout=15000)
+        page.wait_for_selector("#post-title-inp, .tit_post input", timeout=30000)
         log("[포스팅] 에디터 로드 완료")
 
         # ── 제목 입력 (keyboard.type) ──

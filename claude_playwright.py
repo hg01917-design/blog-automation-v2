@@ -119,8 +119,9 @@ def _wait_for_response(page, prev_response_count, log):
         if i > 0 and i % 10 == 0:
             log(f"[Playwright] {i}초 경과... ({cur_len}자 생성됨, 안정 {stable_count}초)")
 
-        # 텍스트 변화 감지
-        if cur_len > 0 and cur_len == prev_len:
+        # 텍스트 변화 감지 — 10자 이하는 노이즈(사용자 메시지/thinking 표시)로 간주, 안정 카운트 안 함
+        effective_len = cur_len if cur_len > 10 else 0
+        if effective_len > 0 and effective_len == prev_len:
             stable_count += 1
         else:
             stable_count = 0
@@ -141,7 +142,28 @@ def _wait_for_response(page, prev_response_count, log):
             else:
                 # 글자수 부족하지만 스트리밍은 끝남
                 log(f"[Playwright] ⚠ 스트리밍 종료됐지만 글자수 부족 ({cur_len}자 < {MIN_CHARS_FOR_DONE}자)")
-                # 10초 더 대기 후 변화 없으면 포기
+                # 글자수가 매우 짧으면(≤50) Claude가 확인 메시지만 보낸 것일 수 있음
+                # 처음 한 번만 어떤 요소에서 왔는지 로그 출력
+                if cur_len <= 50 and stable_count == 5:
+                    try:
+                        src = page.evaluate("""(prevCount) => {
+                            const sels = ['div.standard-markdown','[data-testid="assistant-message-content"]',
+                                '[class*="assistant-message"] [class*="prose"]','[class*="message-content"]','[class*="response"] p'];
+                            for (const sel of sels) {
+                                const els = document.querySelectorAll(sel);
+                                if (els.length > 0) {
+                                    const t = els[els.length-1].innerText||'';
+                                    if (t.length > 0) return sel + ' → ' + t.substring(0,30);
+                                }
+                            }
+                            return 'not found';
+                        }""", prev_response_count)
+                        log(f"[Playwright] 6자 출처: {src}")
+                    except Exception:
+                        pass
+                # 추가 30초 대기 후 변화 없을 때만 포기
+                if cur_len <= 50 and stable_count < STABLE_SECS_REQUIRED + 30:
+                    continue
                 if stable_count >= STABLE_SECS_REQUIRED:
                     log(f"[Playwright] 응답 정지 확정 ({cur_len}자)")
                     return cur_len
@@ -219,6 +241,45 @@ def _extract_response(page, prev_response_count, log):
             }""")
         except Exception:
             pass
+
+    # 최후 수단1.5: 가장 긴 텍스트 블록 자동 탐색 (셀렉터 변경 대응)
+    if not response_text.strip():
+        try:
+            dom_info = page.evaluate("""() => {
+                // 텍스트 100자 이상인 요소 중 가장 긴 것 3개 찾기
+                const all = Array.from(document.querySelectorAll('div,article,section,p'));
+                const candidates = all
+                    .filter(el => {
+                        const t = el.innerText || '';
+                        return t.length > 100 && t.includes('===');
+                    })
+                    .sort((a, b) => (b.innerText||'').length - (a.innerText||'').length)
+                    .slice(0, 3);
+                return candidates.map(el => ({
+                    tag: el.tagName,
+                    cls: el.className.substring(0, 80),
+                    id: el.id,
+                    len: (el.innerText||'').length,
+                    text: (el.innerText||'').substring(0, 200),
+                }));
+            }""")
+            if dom_info:
+                log(f"[Playwright] DOM 후보 요소 {len(dom_info)}개 발견:")
+                for d in dom_info:
+                    log(f"  <{d['tag']} class='{d['cls']}' id='{d['id']}'> {d['len']}자")
+                # 가장 긴 후보에서 텍스트 추출
+                best = page.evaluate("""() => {
+                    const all = Array.from(document.querySelectorAll('div,article,section'));
+                    const cands = all
+                        .filter(el => (el.innerText||'').includes('===제목==='))
+                        .sort((a, b) => (b.innerText||'').length - (a.innerText||'').length);
+                    return cands.length ? cands[0].innerText : '';
+                }""")
+                if best and "===제목===" in best:
+                    response_text = best
+                    log(f"[Playwright] DOM 자동 탐색 성공: {len(best)}자")
+        except Exception as e:
+            log(f"[Playwright] DOM 자동 탐색 실패: {e}")
 
     # 최후 수단2: 페이지 전체 텍스트에서 ===제목=== 패턴 직접 탐색
     if not response_text.strip() or "추출 실패" in response_text:
@@ -371,6 +432,7 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         for attempt in range(1, MAX_RETRIES + 2):
             if attempt > 1:
                 log(f"[Playwright] === 재시도 {attempt - 1}/{MAX_RETRIES} ===")
+                page.wait_for_timeout(5000)
 
             log(f"[Playwright] claude.ai 페이지 준비 ({page.url})")
 
@@ -385,9 +447,14 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             page.on("dialog", lambda d: d.dismiss())
 
             if project_url:
-                # 프로젝트 페이지로 이동 (입력창이 바로 표시됨)
-                page.goto(project_url, wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(3000)
+                # 재시도 시 또는 현재 URL이 특정 채팅이면 프로젝트 루트로 새 채팅 시작
+                if attempt > 1 or "/chat/" in page.url:
+                    log(f"[Playwright] 프로젝트 루트로 새 채팅 시작")
+                    page.goto(project_url, wait_until="domcontentloaded", timeout=30000)
+                    page.wait_for_timeout(4000)
+                else:
+                    page.goto(project_url, wait_until="domcontentloaded", timeout=30000)
+                    page.wait_for_timeout(3000)
             else:
                 page.goto(f"{CLAUDE_URL}/new", wait_until="domcontentloaded", timeout=30000)
                 page.wait_for_timeout(3000)
