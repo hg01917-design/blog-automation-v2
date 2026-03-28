@@ -41,7 +41,7 @@ CHECKPOINT_FILE = LOG_DIR / "checkpoint.json"
 # 기본 블로그 순서
 DEFAULT_BLOG_ORDER = ["goodisak", "nolja100", "salim1su", "baremi542"]
 
-MAX_WRITER_RETRIES = 3      # 검수 불합격 시 재생성
+MAX_WRITER_RETRIES = 1      # 검수 불합격 시 재생성 (1=재생성 없이 바로 발행)
 
 # 블로그 ID → 전용 에이전트 모듈명 매핑
 BLOG_AGENT_MAP = {

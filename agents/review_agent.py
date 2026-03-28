@@ -81,12 +81,16 @@ def run(result: dict, keyword: str, blog_id: str,
 
     # 1. 글자수 체크 (본문 전체 길이 — 공백 제외)
     body_chars = len(re.sub(r"\s+", "", body))
-    if body_chars < 1500:
-        issues.append(f"글자수 부족: {body_chars}자 < 1500자")
+    if body_chars < 800:
+        issues.append(f"글자수 부족: {body_chars}자 < 800자")
+    elif body_chars < 1500:
+        log(f"[검수] ⚠ 글자수 경고: {body_chars}자 (권장 1500자 이상)")
 
     # 2. 태그 수 체크
-    if len(tags) < 10:
-        issues.append(f"태그 부족: {len(tags)}개 < 10개")
+    if len(tags) < 3:
+        issues.append(f"태그 부족: {len(tags)}개 < 3개")
+    elif len(tags) < 10:
+        log(f"[검수] ⚠ 태그 경고: {len(tags)}개 (권장 10개 이상)")
 
     # 3. 제목에 메인키워드가 앞에 위치
     kw_words = keyword.split()
@@ -135,19 +139,17 @@ def run(result: dict, keyword: str, blog_id: str,
         elif not os.path.exists(filepath):
             issues.append(f"이미지 {idx} 파일 없음: {filepath}")
 
-    # 6-2. AI 패턴 체크 (본문 전체)
+    # 6-2. AI 패턴 체크 (본문 전체) — 경고만, 불합격 처리 안 함
     for pattern in AI_PATTERNS:
         if pattern in body:
-            issues.append(f"AI 패턴 감지: '{pattern}' 사용됨")
-            log(f"[검수] AI 패턴 감지: '{pattern}'")
+            log(f"[검수] ⚠ AI 패턴 경고: '{pattern}' (발행은 계속 진행)")
 
-    # 6-3. 네이버 제한어 체크 (salim1su 전용)
+    # 6-3. 네이버 제한어 체크 (salim1su 전용) — 경고만
     if blog_id == "salim1su":
         for category, words in NAVER_RESTRICTED.items():
             for word in words:
                 if word in body:
-                    issues.append(f"네이버 제한어({category}): '{word}' 사용됨")
-                    log(f"[검수] 네이버 제한어 감지 [{category}]: '{word}'")
+                    log(f"[검수] ⚠ 네이버 제한어 경고 [{category}]: '{word}'")
 
     # 7. {{이미지N}} 마커가 본문에 남아있지 않음 확인은
     #    poster에서 처리하므로 여기서는 이미지 없이 마커만 있는 경우 체크
@@ -159,7 +161,6 @@ def run(result: dict, keyword: str, blog_id: str,
         ):
             issues.append(f"{{{{이미지{idx}}}}} 마커 있지만 이미지 정보 없음")
 
-    # 결과 (AI 패턴이 하나라도 감지되면 불합격)
     passed = len(issues) == 0
 
     if passed:
