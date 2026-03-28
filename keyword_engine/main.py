@@ -16,7 +16,7 @@ from keyword_engine import (
 )
 from keyword_engine import keyword_scorer
 
-DEFAULT_MIN_SCORE = 100_000
+DEFAULT_MIN_SCORE = 1_000
 DEFAULT_MIN_VOLUME = 500
 DEFAULT_TOP_N = 50
 
