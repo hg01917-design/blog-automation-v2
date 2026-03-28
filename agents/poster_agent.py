@@ -48,10 +48,10 @@ def run(result: dict, blog_id: str, keyword: str, page_id: str,
 
     if ok:
         log(f"[포스팅] ✓ 발행 성공: \"{title}\" ({blog_id})")
-        db_handler.set_keyword_status(keyword, "published")
+        db_handler.set_keyword_status(keyword, "published", blog_id)
     else:
         log(f"[포스팅] ⚠ 발행 실패: \"{title}\" ({blog_id})")
-        db_handler.set_keyword_status(keyword, "failed")
+        db_handler.set_keyword_status(keyword, "failed", blog_id)
 
     if on_status:
         on_status("poster", "done" if ok else "failed")

@@ -26,6 +26,13 @@ def init_db():
                 category  TEXT    DEFAULT '',
                 created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS keyword_blog_status (
+                keyword    TEXT,
+                blog_id    TEXT,
+                status     TEXT DEFAULT 'pending',
+                updated_at TEXT,
+                PRIMARY KEY (keyword, blog_id)
+            );
             CREATE TABLE IF NOT EXISTS sites (
                 url          TEXT PRIMARY KEY,
                 pub_code     TEXT,
@@ -133,13 +140,34 @@ def delete_keyword(keyword: str):
         db.execute("DELETE FROM keywords WHERE keyword = ?", (keyword,))
 
 
-def set_keyword_status(keyword: str, status: str):
-    """키워드 상태 변경 (pending / published)"""
+def set_keyword_status(keyword: str, status: str, blog_id: str = None):
+    """키워드 상태 변경.
+    blog_id 있으면 keyword_blog_status에 per-blog 기록 (글로벌 상태 유지).
+    blog_id 없으면 keywords 테이블의 글로벌 status 변경 (하위 호환).
+    """
     with _conn() as db:
-        db.execute(
-            "UPDATE keywords SET status = ? WHERE keyword = ?",
-            (status, keyword),
-        )
+        if blog_id:
+            db.execute(
+                """
+                INSERT INTO keyword_blog_status (keyword, blog_id, status, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(keyword, blog_id) DO UPDATE SET
+                    status = excluded.status,
+                    updated_at = excluded.updated_at
+                """,
+                (keyword, blog_id, status, datetime.now().isoformat()),
+            )
+            # in_progress는 글로벌에도 반영
+            if status == "in_progress":
+                db.execute(
+                    "UPDATE keywords SET status = 'in_progress' WHERE keyword = ?",
+                    (keyword,),
+                )
+        else:
+            db.execute(
+                "UPDATE keywords SET status = ? WHERE keyword = ?",
+                (status, keyword),
+            )
 
 
 def get_sites_by_category(category: str) -> list:
@@ -207,20 +235,48 @@ def keyword_exists(keyword: str) -> bool:
 
 
 def fetch_next_pending(blog_id: str = None) -> str | None:
-    """상태가 pending인 키워드 중 점수 높은 것 1개 반환. 없으면 None."""
+    """상태가 pending인 키워드 중 점수 높은 것 1개 반환. 없으면 None.
+
+    blog_id 지정 시: 해당 블로그에서 아직 사용하지 않은(published/failed/in_progress 아닌) 키워드 반환.
+    """
     with _conn() as db:
-        row = db.execute(
-            "SELECT keyword FROM keywords WHERE status = 'pending' ORDER BY score DESC LIMIT 1"
-        ).fetchone()
+        if blog_id:
+            row = db.execute(
+                """
+                SELECT k.keyword FROM keywords k
+                WHERE k.status NOT IN ('published')
+                  AND NOT EXISTS (
+                    SELECT 1 FROM keyword_blog_status kbs
+                    WHERE kbs.keyword = k.keyword
+                      AND kbs.blog_id = ?
+                      AND kbs.status IN ('published', 'failed', 'in_progress')
+                  )
+                ORDER BY k.score DESC LIMIT 1
+                """,
+                (blog_id,),
+            ).fetchone()
+        else:
+            row = db.execute(
+                "SELECT keyword FROM keywords WHERE status = 'pending' ORDER BY score DESC LIMIT 1"
+            ).fetchone()
     return row["keyword"] if row else None
 
 
-def get_published_keywords() -> list:
-    """상태가 published인 키워드 목록 반환 (중복 체크용)"""
+def get_published_keywords(blog_id: str = None) -> list:
+    """상태가 published인 키워드 목록 반환 (중복 체크용).
+
+    blog_id 지정 시: 해당 블로그에서 발행된 키워드만 반환.
+    """
     with _conn() as db:
-        rows = db.execute(
-            "SELECT keyword FROM keywords WHERE status = 'published'"
-        ).fetchall()
+        if blog_id:
+            rows = db.execute(
+                "SELECT keyword FROM keyword_blog_status WHERE blog_id = ? AND status = 'published'",
+                (blog_id,),
+            ).fetchall()
+        else:
+            rows = db.execute(
+                "SELECT keyword FROM keywords WHERE status = 'published'"
+            ).fetchall()
     return [r["keyword"] for r in rows]
 
 

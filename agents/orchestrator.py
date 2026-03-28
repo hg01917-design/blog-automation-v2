@@ -362,7 +362,7 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
         if not result:
             if keyword:
                 from keyword_engine import db_handler as _db
-                _db.set_keyword_status(keyword, "failed")
+                _db.set_keyword_status(keyword, "failed", blog_id)
             return _fail(blog_id, keyword, f"검수 불합격 ({MAX_WRITER_RETRIES}회)", logs)
 
         # ── 4. 포스팅 ──
@@ -399,7 +399,7 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
         try:
             if keyword:
                 from keyword_engine import db_handler as _db
-                _db.set_keyword_status(keyword, "failed")
+                _db.set_keyword_status(keyword, "failed", blog_id)
         except Exception:
             pass
         return _fail(blog_id, keyword or "알수없음", f"오류: {e}", logs)

@@ -24,7 +24,7 @@ def run(blog_id: str, on_log=None, on_status=None):
 
     log(f"[키워드] {blog_id} 대기 키워드 탐색 중...")
 
-    published = set(db_handler.get_published_keywords())
+    published = set(db_handler.get_published_keywords(blog_id))
 
     # 최대 10개 키워드를 시도 (필터에 걸릴 수 있으므로)
     for attempt in range(10):
@@ -42,24 +42,24 @@ def run(blog_id: str, on_log=None, on_status=None):
         matched = _find_similar(kw, published)
         if matched:
             log(f"[키워드] ⚠ 이미 발행된 유사 키워드: '{matched}' — '{kw}' 건너뜀")
-            db_handler.set_keyword_status(kw, "failed")
+            db_handler.set_keyword_status(kw, "failed", blog_id)
             continue
 
         # 금지 카테고리 필터
         if _is_banned(kw, blog_id):
             log(f"[키워드] ⚠ 금지 카테고리: '{kw}' → 건너뜀")
-            db_handler.set_keyword_status(kw, "failed")
+            db_handler.set_keyword_status(kw, "failed", blog_id)
             continue
 
         # 유사문서 체크 (블로그 실제 검색)
         is_dup, dup_matched = check_duplicate_post(blog_id, kw, on_log=log)
         if is_dup:
             log(f"[키워드] ⚠ 유사문서 발견: '{kw}' → 건너뜀")
-            db_handler.set_keyword_status(kw, "failed")
+            db_handler.set_keyword_status(kw, "failed", blog_id)
             continue
 
         # 통과 — 진행중으로 표시
-        db_handler.set_keyword_status(kw, "in_progress")
+        db_handler.set_keyword_status(kw, "in_progress", blog_id)
         log(f"[키워드] ✓ 키워드 확정: '{kw}'")
         if on_status:
             on_status("keyword", "done")
