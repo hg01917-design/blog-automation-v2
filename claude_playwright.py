@@ -302,12 +302,22 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         "===이미지끝==="
     )
 
-    # Claude Project가 설정된 blog_id면 키워드만 전송 (프로젝트 지침이 자동 적용됨)
+    # 금지 표현 리마인더 (프로젝트 지침 보강용 — 매 요청마다 명시)
+    _ANTI_AI = (
+        "\n\n[필수 금지 표현 — 아래 단어/표현 사용 시 재작성]\n"
+        "살펴보겠습니다 / 알아보겠습니다 / 정리해드릴게요 / 정리하면 / 살펴보세요\n"
+        "완전히 / 유일하게 / 당연히 / 물론입니다 / 주목해야 / 해드리겠습니다\n"
+        "첫째, / 둘째, / 셋째, / 마치며 / 마지막으로\n"
+        "AI / ChatGPT / LLM\n"
+        "→ 대신 경험 서사체로: '~더라고요' / '~했어요' / '담당자분이 ~라고 하더라고요'\n"
+    )
+
+    # Claude Project가 설정된 blog_id면 키워드 + 팩트 + 금지표현 전송
     # 프로젝트 미설정 blog_id면 기존대로 Notion에서 전체 프롬프트 가져오기
     if blog_id and keyword:
         if blog_id in BLOG_PROJECT_URLS:
-            # 프로젝트 모드: 키워드 + 최소 글자수 힌트만 (프로젝트 지침 우선)
-            prompt = f"{keyword}\n(본문 3000자 이상)"
+            # 프로젝트 모드: 키워드 + 금지 표현 리마인더 (팩트는 아래에서 주입)
+            prompt = f"{keyword}\n(본문 3000자 이상){_ANTI_AI}"
             log(f"[Playwright] 프로젝트 모드 — 키워드 전송: '{keyword}'")
         else:
             try:
@@ -317,14 +327,10 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
                 log(f"[Notion] 프롬프트 가져오기 실패: {e}")
                 log("[Notion] 기본 프롬프트로 진행합니다.")
 
-    # 프로젝트 모드에서는 extra_context 스킵 (프로젝트 지침만으로 충분)
-    # 일반 모드에서는 팩트 정보를 프롬프트 앞에 주입
-    is_project_mode = blog_id in BLOG_PROJECT_URLS if blog_id else False
-    if extra_context and not is_project_mode:
+    # 팩트 컨텍스트 주입 — 프로젝트 모드 포함 항상 주입 (할루시네이션 방지 핵심)
+    if extra_context:
         prompt = f"{extra_context}\n\n---\n\n{prompt}"
         log(f"[Playwright] 팩트 컨텍스트 주입: {len(extra_context)}자")
-    elif extra_context and is_project_mode:
-        log(f"[Playwright] 프로젝트 모드 — 팩트 컨텍스트 스킵")
 
     # 프롬프트 내용 확인 로그
     log(f"[Playwright] 프롬프트 길이: {len(prompt)}자")
