@@ -1259,8 +1259,16 @@ def _md_to_wp_html(content: str) -> str:
             html_parts.append(_get_adsense_html())
         elif re.match(r"^\{\{이미지\d+\}\}$", stripped):
             html_parts.append(stripped)  # 이미지 플레이스홀더 유지
+        elif re.match(r"^<(p|div|ul|ol|li|blockquote|pre|figure|img|script|ins|br|hr|table)\b",
+                      stripped, re.IGNORECASE):
+            # 이미 HTML 블록 태그로 시작하는 줄 — 그대로 통과 (이중 래핑 방지)
+            html_parts.append(stripped)
         else:
-            html_parts.append(f"<p>{inline(stripped)}</p>")
+            # 일반 텍스트 — stray HTML 태그 제거 후 <p> 래핑
+            clean = re.sub(r"<br\s*/?>", " ", stripped)
+            clean = re.sub(r"<[^>]+>", "", clean).strip()
+            if clean:
+                html_parts.append(f"<p>{inline(clean)}</p>")
 
     if table_buf:
         html_parts.append(flush_table())
@@ -1423,7 +1431,20 @@ def _post_wordpress(account, title, content, tags=None,
         "Content-Type": "application/json",
     }
 
-    # 1. 마크다운 → HTML 변환
+    # 1. [애드센스] 마커가 없으면 H2 기준 자동 삽입
+    if "[애드센스]" not in content:
+        md_lines = content.split("\n")
+        h2_positions = [i for i, ln in enumerate(md_lines) if re.match(r'^##\s+', ln.strip())]
+        pure_text = re.sub(r"\s+", "", re.sub(r"##.*|{{.*?}}|\|.*", "", content))
+        char_count = len(pure_text)
+        max_ads = 1 if char_count < 3000 else (2 if char_count < 5000 else 3)
+        # 각 H2 바로 앞에 [애드센스] 삽입 (max_ads개까지)
+        for pos in sorted(h2_positions[1:max_ads + 1], reverse=True):
+            md_lines.insert(pos, "[애드센스]")
+        content = "\n".join(md_lines)
+        log(f"[WordPress] [애드센스] {min(max_ads, len(h2_positions[1:]))}개 자동 삽입")
+
+    # 2. 마크다운 → HTML 변환
     html_content = _md_to_wp_html(content)
 
     # 2. 이미지 업로드 후 {{이미지N}} 플레이스홀더 교체
