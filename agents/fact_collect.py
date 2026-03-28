@@ -1,4 +1,4 @@
-"""사전 팩트 수집 — 글 생성 전 공식 사이트에서 최신 정보를 수집해 프롬프트에 주입"""
+"""사전 팩트 수집 — 키워드 → 팩트 쿼리 변환 → 공식 페이지 직접 방문 → 수치/조건 추출"""
 import re
 import sys
 import urllib.parse
@@ -8,223 +8,228 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from browser import connect_cdp
 
-# ── 키워드 → 공식 사이트 라우팅 테이블 ───────────────────────────────────────
-# (트리거 단어 리스트, 검색 URL 템플릿)
-# 트리거가 빈 리스트면 기본값(무조건 매칭)
-# None URL이면 네이버 사용
-_KEYWORD_ROUTES = [
-    # OTT / 스트리밍
-    (["넷플릭스", "Netflix", "netflix"],
-     "https://www.netflix.com/kr/search?q={q}"),
-    (["티빙", "tving", "TVING"],
-     "https://www.tving.com/search?keyword={q}"),
-    (["웨이브", "wavve", "Wavve"],
-     "https://www.wavve.com/search?keyword={q}"),
-    (["쿠팡플레이", "CoupangPlay"],
-     "https://www.coupangplay.com/search?keyword={q}"),
-    (["왓챠", "watcha", "Watcha"],
-     "https://watcha.com/search?query={q}"),
-    (["디즈니플러스", "Disney+", "disney+"],
-     "https://www.disneyplus.com/ko-kr/search?q={q}"),
+# ── 키워드 → 팩트 쿼리 변환 테이블 ────────────────────────────────────────
+# 블로그 키워드(SEO용)와 실제 팩트 조회 쿼리는 다름
+# 예: "다자녀 전기요금 할인 몇 자녀부터" → "한전 다자녀 전기요금 할인 조건 자녀수 금액"
+_FACT_QUERIES = [
+    # 전기요금
+    (["전기요금", "전기세", "전기비", "누진세", "누진요금", "kWh", "kwh"],
+     "한전 주택용 전기요금 누진세 구간 금액 2026 site:kepco.co.kr OR site:한전.com"),
+    (["다자녀 전기", "전기 할인", "전기요금 할인"],
+     "한전 다자녀 전기요금 할인 자녀수 기준 할인금액 신청방법 site:kepco.co.kr"),
+    (["절약", "전기 절약", "전기요금 줄이기"],
+     "한전 가정용 전기요금 절약 방법 누진세 구간 절감 금액"),
 
-    # 전기 (전기요금·전기세·kWh 등 구체적 단어만)
-    (["전기요금", "전기세", "kWh", "kwh", "한전", "전력요금", "누진세", "누진요금"],
-     "https://www.kepco.co.kr/search/index.do?searchWord={q}"),
+    # 가스/난방
+    (["가스요금", "도시가스", "가스비", "난방비"],
+     "도시가스 요금 단가 MJ 2026 가스공사 site:kogas.or.kr"),
 
-    # 가스 (도시가스요금 등)
-    (["가스요금", "도시가스요금", "가스비", "도시가스비"],
-     "https://www.kogas.or.kr/search/search.do?q={q}"),
+    # 통신비
+    (["알뜰폰", "통신비", "요금제"],
+     "알뜰폰 요금제 비교 월정액 데이터 통화 2026 site:mvno.or.kr"),
+
+    # 관리비/수도
+    (["관리비", "관리비 절약"],
+     "아파트 관리비 항목 절약 방법 평균 금액"),
+    (["수도요금", "수도세"],
+     "수도요금 체계 사용량 구간 금액 절약 방법"),
 
     # 건강보험
-    (["건강보험료", "건보료", "보험료 계산", "건강보험 납부"],
-     "https://www.nhis.or.kr/search/search.do?q={q}"),
+    (["건강보험료", "건보료"],
+     "건강보험료 계산 직장 지역 보험료율 2026 site:nhis.or.kr"),
+    (["피부양자", "건강보험 피부양자"],
+     "건강보험 피부양자 등록 조건 소득 재산 기준 2026 site:nhis.or.kr"),
+
+    # 실업급여/고용보험
+    (["실업급여", "구직급여"],
+     "실업급여 수급액 계산 지급기간 상한액 하한액 2026 site:ei.go.kr"),
+    (["실업인정", "실업급여 신청"],
+     "실업급여 실업인정 신청 방법 고용24 온라인 절차 site:ei.go.kr"),
+
+    # 육아/출산
+    (["육아휴직", "육아휴직 급여"],
+     "육아휴직 급여 지원금액 신청방법 상한액 2026 site:ei.go.kr"),
+    (["출산", "출산급여", "출산휴가"],
+     "출산휴가 급여 지원금액 신청방법 2026 site:ei.go.kr"),
+    (["자녀장려금"],
+     "자녀장려금 지원금액 신청자격 소득기준 2026 site:nts.go.kr"),
+
+    # 연말정산
+    (["연말정산", "세액공제", "월세공제"],
+     "연말정산 세액공제 항목 한도 금액 2026 site:nts.go.kr"),
+
+    # 소상공인/자영업
+    (["소상공인", "소상공인 지원"],
+     "소상공인 지원금 신청자격 지원금액 2026 site:semas.or.kr OR site:mss.go.kr"),
+
+    # 기초생활/복지
+    (["기초생활", "기초수급"],
+     "기초생활수급자 선정기준 급여 지원금액 2026 site:mohw.go.kr OR site:bokjiro.go.kr"),
+    (["차상위", "차상위계층"],
+     "차상위계층 선정기준 혜택 지원내용 2026 site:bokjiro.go.kr"),
+    (["지원금", "복지급여", "보조금"],
+     "정부지원금 복지급여 신청자격 금액 2026 site:bokjiro.go.kr"),
 
     # 국민연금
-    (["국민연금", "노령연금", "연금 수령"],
-     "https://www.nps.or.kr/jsppage/search/total_search.jsp?q={q}"),
+    (["국민연금", "노령연금"],
+     "국민연금 수령액 계산 납부액 2026 site:nps.or.kr"),
 
-    # 복지·지원금
-    (["지원금", "보조금", "복지급여", "기초생활", "차상위", "실업급여", "고용보험"],
-     "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?searchWord={q}"),
+    # 장기수선충당금
+    (["장기수선충당금", "이사비용"],
+     "장기수선충당금 반환 조건 신청방법 이사"),
 
-    # IT 제품 — 제조사 공식
-    (["갤럭시", "삼성 갤럭시", "Galaxy"],
-     "https://www.samsung.com/kr/search/?searchvalue={q}"),
-    (["아이폰", "맥북", "아이패드", "애플워치", "iPhone", "MacBook", "iPad"],
-     "https://www.apple.com/kr/search/{q}?src=serp"),
-    (["그램", "LG 그램", "LG TV", "LG 냉장고", "LG 세탁기"],
-     "https://www.lg.com/kr/search/?query={q}"),
+    # IT 제품 스펙/가격
+    (["갤럭시", "삼성"],
+     "삼성 갤럭시 공식 스펙 가격 site:samsung.com/kr"),
+    (["아이폰", "맥북", "아이패드"],
+     "애플 공식 스펙 가격 site:apple.com/kr"),
+    (["LG", "그램"],
+     "LG 공식 스펙 가격 site:lg.com/kr"),
 
-    # 가격비교 (다나와)
-    (["최저가", "가격비교", "다나와"],
-     "https://search.danawa.com/dsearch.php?query={q}"),
-
-    # 여행 — 국립공원
-    (["국립공원", "설악산", "지리산", "한라산", "북한산", "소백산", "내장산",
-      "가야산", "치악산", "주왕산", "덕유산", "오대산"],
-     "https://www.knps.or.kr/portal/search/search.do?searchWord={q}"),
-
-    # 여행 — 제주
-    (["제주도", "제주 여행", "제주 관광"],
-     "https://www.jejutour.go.kr/contents/search.do?keyword={q}"),
-
-    # 여행 — 일반 관광
-    (["입장료", "관람료", "운영시간", "개장시간"],
-     "https://korean.visitkorea.or.kr/search/search_list.do?keyword={q}"),
+    # 여행 입장료/운영시간
+    (["입장료", "관람료", "운영시간", "개장"],
+     "관광지 입장료 운영시간 주차 공식 안내"),
+    (["국립공원"],
+     "국립공원 탐방 정보 탐방로 주차 site:knps.or.kr"),
 ]
 
-# 네이버 사용 시 블로그별 보조 쿼리
-_SEARCH_SUFFIX = {
-    "salim1su":  " 절약 방법",
-    "goodisak":  " 스펙 가격",
-    "nolja100":  " 여행정보 운영시간",
-    "baremi542": " 신청방법 조건",
-}
-
-# 네이버 결과에서 우선 방문할 공식 도메인 (블로그별)
-_PRIORITY_DOMAINS = {
-    "salim1su":  ["kepco.co.kr", "kogas.or.kr", "nhis.or.kr", "nps.or.kr", "gov.kr"],
-    "goodisak":  ["samsung.com", "lg.com", "apple.com", "danawa.com"],
-    "nolja100":  ["visitkorea.or.kr", "knps.or.kr", "tour.go.kr", "jejutour.go.kr"],
-    "baremi542": ["bokjiro.go.kr", "ei.go.kr", "nps.or.kr", "mohw.go.kr"],
-}
-
-_NAVER_SNIPPET_SEL = [
-    "[class*='api_txt_lines']",
-    "[class*='dsc_txt']",
-    "[class*='total_dsc']",
-    "[class*='news_dsc']",
-    "[class*='slog_dsc']",
-    "[class*='txt_inline']",
-    ".total_wrap .api_txt_lines",
-    ".total_wrap .dsc_txt",
-    ".sh_blog_passage",
-    ".total_area .dsc_txt_lines",
-    ".news_dsc",
-    "._slog_dsc",
+# 공식 도메인 (검색 결과에서 우선 방문)
+_OFFICIAL_DOMAINS = [
+    "kepco.co.kr", "kogas.or.kr", "nhis.or.kr", "nps.or.kr",
+    "ei.go.kr", "nts.go.kr", "bokjiro.go.kr", "mohw.go.kr",
+    "mss.go.kr", "semas.or.kr", "samsung.com", "apple.com/kr",
+    "lg.com/kr", "knps.or.kr", "jejutour.go.kr", "visitkorea.or.kr",
+    "moel.go.kr", "work.go.kr", "gov.kr", "go.kr",
 ]
 
 
-def _clean(text):
+def _derive_fact_query(keyword: str, blog_id: str) -> str:
+    """키워드에서 팩트 수집에 최적화된 검색 쿼리 도출."""
+    for triggers, query in _FACT_QUERIES:
+        if any(t in keyword for t in triggers):
+            return query
+    # 매칭 없으면 키워드 + 블로그별 보조어
+    suffix = {
+        "salim1su":  " 금액 조건 방법 공식",
+        "baremi542": " 지원금액 신청자격 조건 공식",
+        "goodisak":  " 스펙 가격 공식",
+        "nolja100":  " 입장료 운영시간 주차 공식",
+    }.get(blog_id, " 공식 정보")
+    return keyword + suffix
+
+
+def _clean(text: str) -> str:
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
 
-def _resolve_url(keyword):
-    """키워드를 보고 공식 검색 URL 결정. 매칭 없으면 None(→ 네이버)."""
-    q = urllib.parse.quote(keyword)
-    for triggers, url_tpl in _KEYWORD_ROUTES:
-        if triggers and any(t in keyword for t in triggers):
-            if url_tpl:
-                return url_tpl.format(q=q)
-            return None
-    return None
+def _has_useful_data(text: str) -> bool:
+    """숫자/금액/날짜/조건이 실제로 포함된 유용한 팩트인지 판단."""
+    # 숫자 포함 여부 (금액, 조건 수치 등)
+    has_numbers = bool(re.search(r'\d+', text))
+    # 최소 100자 이상
+    has_length = len(text) > 100
+    return has_numbers and has_length
 
 
-def _fetch_url_direct(page, url, on_log=None):
-    """완성된 URL에 직접 접근해서 본문 텍스트 추출."""
+def _extract_page_facts(page, url: str, on_log=None) -> str:
+    """주어진 URL 페이지에서 수치/조건 중심 내용 추출."""
     def log(msg):
         if on_log:
             on_log(msg)
-    try:
-        page.goto(url, wait_until="domcontentloaded", timeout=20000)
-        page.wait_for_timeout(3000)
-    except Exception as e:
-        log(f"[팩트수집] 직접 접근 실패: {e}")
-        return ""
-
-    for sel in ["main", "article", "#content", ".content", ".result", "body"]:
-        try:
-            el = page.locator(sel).first
-            if el.count() > 0:
-                text = _clean(el.inner_text(timeout=3000))
-                if len(text) > 200:
-                    log(f"[팩트수집] {len(text)}자 수집")
-                    return text[:3000]
-        except Exception:
-            continue
-    return ""
-
-
-def _search_naver(page, keyword, blog_id, on_log=None):
-    """네이버 통합검색 스니펫 수집 + 우선 도메인 직접 방문."""
-    def log(msg):
-        if on_log:
-            on_log(msg)
-
-    suffix = _SEARCH_SUFFIX.get(blog_id, "")
-    query = urllib.parse.quote(keyword + suffix)
-    url = f"https://search.naver.com/search.naver?query={query}"
 
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=20000)
         page.wait_for_timeout(2000)
     except Exception as e:
-        log(f"[팩트수집] 네이버 검색 실패: {e}")
+        log(f"[팩트수집] 페이지 접속 실패: {e}")
         return ""
 
-    snippets = []
-    for sel in _NAVER_SNIPPET_SEL:
-        try:
-            els = page.locator(sel)
-            for i in range(min(els.count(), 5)):
-                txt = _clean(els.nth(i).inner_text(timeout=2000))
-                if txt and len(txt) > 30:
-                    snippets.append(txt)
-        except Exception:
-            continue
+    # 표(table) 우선 추출 — 요금표/지원 금액표 등
+    tables = ""
+    try:
+        tables = page.evaluate("""() => {
+            const tbs = document.querySelectorAll('table');
+            return Array.from(tbs).slice(0, 3).map(t => t.innerText.trim()).join('\\n\\n');
+        }""")
+    except Exception:
+        pass
 
-    if not snippets:
+    # 본문 텍스트 추출 (main/article/content 우선)
+    body_text = ""
+    for sel in ["main", "article", "#content", ".content", "#articleBody",
+                ".article", ".view_content", ".cont_view", "body"]:
         try:
-            raw = page.evaluate("""() => {
-                const blocks = document.querySelectorAll(
-                    '[id*="sp_"] p, [class*="dsc"] p, [class*="desc"] p, ' +
-                    '[class*="summary"], [class*="snippet"], [class*="txt"] p, ' +
-                    '.news_area p, .blog_area p, .kin_area p'
-                );
-                return Array.from(blocks)
-                    .map(el => el.innerText.trim())
-                    .filter(t => t.length > 30)
-                    .slice(0, 10)
-                    .join('\\n\\n');
-            }""")
-            if raw and len(raw) > 50:
-                snippets.append(raw)
-                log(f"[팩트수집] JS 폴백 {len(raw)}자 수집")
-        except Exception:
-            pass
-
-    # 우선 도메인 발견 시 직접 방문
-    for domain in _PRIORITY_DOMAINS.get(blog_id, []):
-        try:
-            link_el = page.locator(f'a[href*="{domain}"]').first
-            if link_el.count() > 0:
-                target_url = link_el.get_attribute("href")
-                if target_url:
-                    log(f"[팩트수집] 공식 페이지: {target_url[:80]}")
-                    page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
-                    page.wait_for_timeout(2000)
-                    for sel in ["main", "article", "#content", "body"]:
-                        try:
-                            el = page.locator(sel).first
-                            if el.count() > 0:
-                                text = _clean(el.inner_text(timeout=3000))
-                                if len(text) > 200:
-                                    snippets.append(f"[공식 출처]\n{text[:2000]}")
-                                    log(f"[팩트수집] 공식 페이지 {len(text)}자 수집")
-                                    break
-                        except Exception:
-                            continue
+            el = page.locator(sel).first
+            if el.count() > 0:
+                text = _clean(el.inner_text(timeout=3000))
+                if len(text) > 200:
+                    body_text = text[:3000]
                     break
         except Exception:
             continue
 
-    return "\n\n".join(snippets)
+    # 표 + 본문 조합 (표 우선)
+    result = ""
+    if tables and len(tables.strip()) > 50:
+        result += f"[표/요금표]\n{tables[:1500]}\n\n"
+    if body_text:
+        result += f"[본문]\n{body_text[:1500]}"
+
+    return result.strip()
 
 
-def collect(keyword, blog_id, on_log=None):
-    """글 생성 전 키워드 관련 최신 정보를 수집한다.
+def _search_and_get_official_url(page, query: str, blog_id: str, on_log=None) -> str:
+    """네이버 검색 → 공식 도메인 결과 URL 반환."""
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    encoded = urllib.parse.quote(query)
+    search_url = f"https://search.naver.com/search.naver?query={encoded}"
+
+    try:
+        page.goto(search_url, wait_until="domcontentloaded", timeout=20000)
+        page.wait_for_timeout(2000)
+    except Exception as e:
+        log(f"[팩트수집] 네이버 검색 실패: {e}")
+        return ""
+
+    # 검색 결과에서 공식 도메인 링크 우선 추출
+    for domain in _OFFICIAL_DOMAINS:
+        try:
+            link = page.locator(f'a[href*="{domain}"]').first
+            if link.count() > 0:
+                href = link.get_attribute("href")
+                if href and href.startswith("http"):
+                    log(f"[팩트수집] 공식 도메인 발견: {domain} → {href[:80]}")
+                    return href
+        except Exception:
+            continue
+
+    # 공식 도메인 없으면 첫 번째 검색 결과 링크
+    try:
+        first_link = page.locator('.total_wrap a.link_tit, .lst_total a').first
+        if first_link.count() > 0:
+            href = first_link.get_attribute("href")
+            if href and href.startswith("http"):
+                log(f"[팩트수집] 첫 번째 결과 사용: {href[:80]}")
+                return href
+    except Exception:
+        pass
+
+    return ""
+
+
+def collect(keyword: str, blog_id: str, on_log=None) -> dict:
+    """글 생성 전 키워드 관련 팩트를 공식 페이지에서 수집.
+
+    흐름:
+      1. 키워드 → 팩트 조회에 최적화된 검색 쿼리 변환
+      2. 네이버 검색 → 공식 도메인(.go.kr/.or.kr 등) URL 추출
+      3. 해당 페이지로 직접 이동 → 표/수치/조건 추출
+      4. 유효한 수치 데이터가 있을 때만 Claude에 전달
 
     Returns:
         {"context": str, "success": bool}
@@ -233,7 +238,9 @@ def collect(keyword, blog_id, on_log=None):
         if on_log:
             on_log(msg)
 
-    log(f"[팩트수집] '{keyword}' 사전 정보 수집 시작")
+    fact_query = _derive_fact_query(keyword, blog_id)
+    log(f"[팩트수집] 키워드: '{keyword}'")
+    log(f"[팩트수집] 팩트 쿼리: '{fact_query}'")
 
     try:
         pw, browser = connect_cdp(on_log)
@@ -245,39 +252,41 @@ def collect(keyword, blog_id, on_log=None):
         context = browser.contexts[0] if browser.contexts else browser.new_context()
         page = context.new_page()
         try:
-            direct_url = _resolve_url(keyword)
-            if direct_url:
-                log(f"[팩트수집] 공식 사이트 라우팅: {direct_url[:70]}")
-                raw_text = _fetch_url_direct(page, direct_url, on_log)
-                if not raw_text or len(raw_text) < 200:
-                    log("[팩트수집] 공식 사이트 결과 부족 — 네이버 폴백")
-                    raw_text = _search_naver(page, keyword, blog_id, on_log)
-            else:
-                raw_text = _search_naver(page, keyword, blog_id, on_log)
+            # 1. 검색 → 공식 페이지 URL 획득
+            official_url = _search_and_get_official_url(page, fact_query, blog_id, on_log)
+
+            if not official_url:
+                log("[팩트수집] 공식 페이지 URL 없음 — 건너뜀")
+                return {"context": "", "success": False}
+
+            # 2. 공식 페이지 직접 방문 → 내용 추출
+            log(f"[팩트수집] 공식 페이지 방문: {official_url[:80]}")
+            facts = _extract_page_facts(page, official_url, on_log)
+
         finally:
             try:
                 page.close()
             except Exception:
                 pass
     except Exception as e:
-        log(f"[팩트수집] 수집 오류: {e}")
-        raw_text = ""
+        log(f"[팩트수집] 오류: {e}")
+        facts = ""
     finally:
         try:
             pw.stop()
         except Exception:
             pass
 
-    if not raw_text.strip():
-        log("[팩트수집] 수집된 정보 없음 — 건너뜀")
+    if not facts or not _has_useful_data(facts):
+        log("[팩트수집] 유효한 수치 데이터 없음 — 건너뜀")
         return {"context": "", "success": False}
 
     context_text = (
-        f"## 아래는 '{keyword}' 관련 최신 공식 정보입니다. "
-        f"반드시 이 정보를 기반으로 정확한 수치(금액·날짜·조건)를 작성하세요. "
-        f"이 정보와 다른 내용을 쓰지 마세요.\n\n"
-        f"{raw_text[:3000]}"
+        f"## '{keyword}' 관련 공식 출처 데이터\n"
+        f"출처: {official_url[:100]}\n\n"
+        f"아래 수치/조건만 사용하세요. 여기 없는 수치는 '확인 필요'로 표기하세요.\n\n"
+        f"{facts[:3000]}"
     )
 
-    log(f"[팩트수집] ✓ 참고 자료 {len(context_text)}자 수집 완료")
+    log(f"[팩트수집] ✓ 공식 데이터 {len(facts)}자 수집 완료")
     return {"context": context_text, "success": True}
