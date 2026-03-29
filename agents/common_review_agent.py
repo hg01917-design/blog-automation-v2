@@ -8,9 +8,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 try:
     from agents import review_agent as _review
     from agents import final_review_agent as _final
+    from agents import fix_agent as _fix
 except ImportError:
     import review_agent as _review
     import final_review_agent as _final
+    import fix_agent as _fix
 
 # ── 블로그 플랫폼 설정 ─────────────────────────────────────────────────────
 BLOG_POST_CONFIG = {
@@ -53,8 +55,11 @@ def run(result: dict, keyword: str, blog_id: str,
             "result": review["result"],
         }
 
-    # 1단계-b: claude.ai 최종 검토
-    final = _final.run(review["result"], keyword, blog_id,
+    # 1단계-b: 최종 검토 전 AI 패턴 사전 정제
+    cleaned = _fix.pre_clean(review["result"], blog_id, on_log=on_log)
+
+    # 1단계-c: claude.ai 최종 검토
+    final = _final.run(cleaned, keyword, blog_id,
                        on_log=on_log, on_status=on_status)
     return {
         "passed": final["passed"],

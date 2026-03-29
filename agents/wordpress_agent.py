@@ -82,6 +82,19 @@ def run(keyword: str, on_log=None, on_status=None):
         image_paths = generate_images(result["images"], on_log=log)
         log(f"[작성] 이미지 {len(image_paths)}개 생성 완료")
 
+        # 생성 실패한 이미지 제거 + 본문 마커 정리
+        failed = [img for img in result["images"] if img["index"] not in image_paths]
+        if failed:
+            for img in failed:
+                log(f"[작성] ⚠ 이미지 {img['index']} 생성 실패 — 마커 제거")
+            result["images"] = [img for img in result["images"] if img["index"] in image_paths]
+            defined = {img["index"] for img in result["images"]}
+            result["body"] = re.sub(
+                r'\{\{이미지(\d+)\}\}\n?',
+                lambda m: "" if int(m.group(1)) not in defined else m.group(0),
+                result["body"],
+            )
+
     result["image_paths"] = image_paths
     result["raw"] = raw
 

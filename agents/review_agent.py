@@ -113,11 +113,10 @@ def run(result: dict, keyword: str, blog_id: str,
         if pattern in body[:200]:
             issues.append(f"본문 금지패턴: '{pattern}'")
 
-    # 5-1. 제목 대상 직접 노출 체크 (직장인/주부 등 타겟을 제목에 넣으면 CTR 하락)
+    # 5-1. 제목 대상 직접 노출 — 경고만 (불합격 처리 안 함)
     for word in TITLE_TARGET_WORDS:
         if word in title:
-            issues.append(f"제목 대상 노출: '{word}' — 타겟을 제목에 직접 쓰지 말 것")
-            log(f"[검수] 제목 대상 노출: '{word}'")
+            log(f"[검수] ⚠ 제목 대상 노출 경고: '{word}' (발행 계속 진행)")
 
     # N가지/N종류 패턴
     n_pattern = re.search(r'\d+가지|\d+종류', title)

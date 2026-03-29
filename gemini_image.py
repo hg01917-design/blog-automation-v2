@@ -160,13 +160,62 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     send_btn.click(timeout=15000)
     log(f"[이미지] 프롬프트 전송, 생성 대기...")
 
-    # 이미지 생성 완료 대기 (img.image.loaded)
+    # 이미지 생성 완료 대기 — JS 기반 감지 (프로필사진 제외, 최소 크기 100px 이상)
+    detected_sel = None
     for i in range(90):
         page.wait_for_timeout(1000)
-        loaded = page.locator('img.image.loaded').count()
-        if loaded > 0 and i > 5:
-            log(f"[이미지] 생성 완료! ({i}초)")
-            break
+        # JS로 실제 생성 이미지 감지 (user-icon·프로필사진 제외, 100px 이상)
+        try:
+            found = page.evaluate("""() => {
+                const candidates = document.querySelectorAll(
+                    'model-response img, .response-container img, [data-response-id] img, ' +
+                    '.generated-image img, img.image.loaded, ' +
+                    'img[src*="lh3.googleusercontent"]:not([src*="/a/"])'
+                );
+                for (const img of candidates) {
+                    if (img.classList.contains('user-icon')) continue;
+                    if ((img.alt || '').includes('프로필')) continue;
+                    const w = img.naturalWidth || img.width;
+                    const h = img.naturalHeight || img.height;
+                    if (w >= 100 && h >= 100) return true;
+                }
+                return false;
+            }""")
+            if found and i > 3:
+                detected_sel = "model-response img"
+                log(f"[이미지] 생성 완료! ({i}초, JS감지)")
+                break
+        except Exception:
+            pass
+        # 오류 응답 감지 (60초 이상 경과 후 텍스트 응답만 있고 이미지 없는 경우)
+        if i > 60:
+            try:
+                has_generated = page.evaluate("""() => {
+                    const candidates = document.querySelectorAll(
+                        'model-response img, .response-container img, [data-response-id] img'
+                    );
+                    for (const img of candidates) {
+                        if (img.classList.contains('user-icon')) continue;
+                        if ((img.alt || '').includes('프로필')) continue;
+                        const w = img.naturalWidth || img.width;
+                        const h = img.naturalHeight || img.height;
+                        if (w >= 100 && h >= 100) return true;
+                    }
+                    return false;
+                }""")
+                if not has_generated:
+                    err_text = page.evaluate("""() => {
+                        const msgs = document.querySelectorAll('model-response, .response-container');
+                        if (!msgs.length) return '';
+                        const last = msgs[msgs.length - 1];
+                        return (last.innerText || '').trim();
+                    }""")
+                    if err_text and len(err_text) > 20:
+                        log(f"[이미지] 텍스트 응답({len(err_text)}자): {err_text[:80]!r}")
+                        log(f"[이미지] 텍스트 오류 응답 감지 ({i}초) — 조기 종료")
+                        return None
+            except Exception:
+                pass
         if i % 15 == 0 and i > 0:
             log(f"[이미지] {i}초 대기 중...")
     else:
@@ -175,16 +224,29 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
 
     page.wait_for_timeout(1000)
 
-    img_el = page.locator('img.image.loaded').last
+    # 생성된 이미지 엘리먼트 찾기 (프로필사진 제외, 100px 이상)
+    img_el = page.locator(
+        'model-response img:not(.user-icon), .response-container img:not(.user-icon), '
+        '[data-response-id] img:not(.user-icon), img.image.loaded'
+    ).last
     final_path = IMAGES_DIR / filename
 
     log("[이미지] canvas 방식으로 이미지 추출 (툴바 없음)...")
     saved = False
 
-    # canvas toDataURL: img 엘리먼트를 canvas에 그려 base64 추출 — 툴바 오버레이 없음
+    # canvas toDataURL: 생성 이미지(100px 이상)만 추출 — 프로필사진 제외
     _canvas_js = """(selector) => {
-        const imgs = document.querySelectorAll(selector);
-        const el = imgs[imgs.length - 1];
+        const imgs = Array.from(document.querySelectorAll(selector));
+        // 100px 이상인 마지막 이미지 선택 (프로필사진 제외)
+        let el = null;
+        for (let i = imgs.length - 1; i >= 0; i--) {
+            const img = imgs[i];
+            if (img.classList.contains('user-icon')) continue;
+            if ((img.alt || '').includes('프로필')) continue;
+            const w = img.naturalWidth || img.width;
+            const h = img.naturalHeight || img.height;
+            if (w >= 100 && h >= 100) { el = img; break; }
+        }
         if (!el) return null;
         const w = el.naturalWidth || el.width;
         const h = el.naturalHeight || el.height;
@@ -234,7 +296,7 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
 
         if not b64:
             # 폴백: 썸네일에서 canvas 추출
-            b64 = page.evaluate(_canvas_js, 'img.image.loaded')
+            b64 = page.evaluate(_canvas_js, detected_sel)
             if b64:
                 log("[이미지] 썸네일 canvas 추출 성공")
 
