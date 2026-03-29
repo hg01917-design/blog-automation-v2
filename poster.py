@@ -758,12 +758,26 @@ def _naver_apply_subtitle_format(page):
 def _naver_set_font_size(page, size: int = 19):
     """네이버 에디터 글자 크기를 설정한다."""
     try:
-        # 글자 크기 입력 필드 찾기
-        size_input = page.query_selector(
-            'input[data-name="fontSize"], .se-fontSize-input input, '
-            '.se-toolbar-item-fontSize input, input[class*="fontSize"]'
-        )
-        if size_input and size_input.is_visible():
+        # 글자 크기 입력 필드 찾기 (여러 selector 시도)
+        selectors = [
+            'input[data-name="fontSize"]',
+            '.se-fontSize-input input',
+            '.se-toolbar-item-fontSize input',
+            'input[class*="fontSize"]',
+            '.se-toolbar input[type="text"]',
+            'input.se-input-text',
+        ]
+        size_input = None
+        for sel in selectors:
+            el = page.query_selector(sel)
+            if el:
+                try:
+                    if el.is_visible(timeout=500):
+                        size_input = el
+                        break
+                except Exception:
+                    pass
+        if size_input:
             size_input.triple_click()
             time.sleep(0.1)
             size_input.type(str(size), delay=50)
@@ -898,38 +912,8 @@ def _parse_naver_sections(content):
 
 
 def _redistribute_images_if_top(sections):
-    """이미지가 모두 상단에 몰려 있으면 소제목 사이사이로 균등 분산시킨다."""
-    images = [s for s in sections if s["type"] == "image"]
-    if not images:
-        return sections
-
-    # 마지막 이미지 위치가 전체 섹션 30% 이내이면 분산 필요
-    last_img_pos = max(i for i, s in enumerate(sections) if s["type"] == "image")
-    if last_img_pos >= len(sections) * 0.3:
-        return sections  # 이미 충분히 분산됨
-
-    # 이미지 제외한 기본 섹션
-    base = [s for s in sections if s["type"] != "image"]
-    if len(base) < 2:
-        return sections
-
-    n = len(images)
-    total = len(base)
-
-    # 이미지를 base 섹션에 균등 분산 (n+1 등분 지점에 삽입)
-    # 예: base 10개, 이미지 3개 → 위치 2, 5, 7
-    insert_positions = []
-    for j in range(1, n + 1):
-        pos = int(j * total / (n + 1))
-        pos = max(1, min(pos, total - 1))
-        insert_positions.append(pos)
-
-    # 뒤에서 앞으로 삽입 (인덱스 이동 방지)
-    result = list(base)
-    for j in range(n - 1, -1, -1):
-        result.insert(insert_positions[j], images[j])
-
-    return result
+    """Claude 출력 이미지 위치를 그대로 유지한다 (기준 3: 이미지 지시 준수)."""
+    return sections
 
 
 # ─────────────────────────────────────────────
@@ -1252,8 +1236,27 @@ def _post_naver(account, title, content, tags=None,
         page.keyboard.press("Escape")
         _rand_delay(page, 1000, 1500)
 
-        save_btn = page.query_selector('button[class*="save_btn"]')
+        save_btn = None
+        for sel in ['button[class*="save_btn"]', 'button[class*="saveDraft"]',
+                    'button[data-action="save"]', 'button.se-save-draft-button']:
+            save_btn = page.query_selector(sel)
+            if save_btn:
+                break
+        # JavaScript 폴백: 텍스트로 버튼 찾기
         if not save_btn:
+            saved = page.evaluate("""() => {
+                const buttons = document.querySelectorAll('button');
+                for (const btn of buttons) {
+                    if (btn.textContent.includes('임시저장')) {
+                        btn.click(); return true;
+                    }
+                }
+                return false;
+            }""")
+            if saved:
+                _rand_delay(page, 2000, 3000)
+                log(f"[포스팅] 네이버 임시저장 완료: {title[:30]}...")
+                return True
             log("[포스팅] 임시저장 버튼을 찾을 수 없음")
             return False
         save_btn.click()
