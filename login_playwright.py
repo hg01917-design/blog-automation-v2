@@ -45,11 +45,22 @@ def login_tistory(blog_id: str, on_log=None):
 
         # 이미 로그인 상태면 메인으로 리다이렉트됨
         if "auth/login" not in page.url and "accounts.kakao" not in page.url:
-            log(f"[1/5] 이미 로그인 상태 — {blog_id} 블로그로 이동...")
+            log(f"[1/5] 로그인 리다이렉트됨 ({page.url}) — {blog_id} manage 진입 시도...")
             page.goto(blog_url, wait_until="domcontentloaded", timeout=30000)
             _rand_delay(page, 2000, 3000)
-            log(f"[완료] {blog_id} 블로그 진입 완료! ({page.url})")
-            return True
+            # manage 페이지에 도달했는지 확인 (홈으로 리다이렉트 = 다른 계정 로그인 중)
+            if "/manage" in page.url:
+                log(f"[완료] {blog_id} manage 진입 완료! ({page.url})")
+                return True
+            else:
+                log(f"[1/5] manage 접근 불가 ({page.url}) — Tistory 세션 초기화 후 재로그인")
+                # Tistory 세션 강제 클리어 (logout URL 직접 이동)
+                page.goto("https://www.tistory.com/auth/logout", wait_until="domcontentloaded", timeout=15000)
+                _rand_delay(page, 2000, 3000)
+                log(f"[1/5] Tistory 로그아웃 완료 ({page.url})")
+                page.goto(TISTORY_LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
+                _rand_delay(page, 2000, 3000)
+                log(f"[1/5] auth/login 재이동: {page.url}")
 
         log(f"[1/5] 현재 URL: {page.url}")
 
@@ -65,15 +76,41 @@ def login_tistory(blog_id: str, on_log=None):
 
         # 카카오 세션으로 자동 리다이렉트되어 tistory로 돌아왔는지 확인
         if "tistory.com" in page.url and "auth/login" not in page.url and "accounts.kakao" not in page.url:
-            log(f"[완료] 카카오 세션으로 자동 로그인 — {blog_id} 블로그로 이동...")
+            # manage 페이지 접근 가능한지 확인
             page.goto(blog_url, wait_until="domcontentloaded", timeout=30000)
             _rand_delay(page, 2000, 3000)
-            log(f"[완료] {blog_id} 블로그 진입 완료! ({page.url})")
-            return True
+            if "/manage" in page.url:
+                log(f"[완료] 카카오 세션으로 로그인 — {blog_id} manage 진입 완료!")
+                return True
+            else:
+                log(f"[2/5] 자동 로그인 계정이 {blog_id} 관리자 아님 — Kakao 계정 전환 시도")
+                # Tistory 로그아웃 후 재시도
+                page.goto("https://www.tistory.com/auth/logout", wait_until="domcontentloaded", timeout=15000)
+                _rand_delay(page, 2000, 3000)
+                page.goto(TISTORY_LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
+                _rand_delay(page, 2000, 3000)
+                if "auth/login" in page.url:
+                    kakao_btn2 = page.locator('a.btn_login.link_kakao_id, a[class*="kakao"]').first
+                    kakao_btn2.click(timeout=10000)
+                    _rand_delay(page, 3000, 5000)
+                    log(f"[2/5] 재시도 후 카카오 페이지: {page.url}")
 
         # ── 3단계: 카카오 계정 선택 (간편로그인 화면) ──
         kakao_id = config["kakao_id"]
         log(f"[3/5] 카카오 계정 선택 중: {kakao_id}...")
+
+        # "다른 계정으로 로그인" 링크 클릭 (이미 다른 계정으로 자동로그인 방지)
+        try:
+            other_acc = page.locator(
+                'a:has-text("다른 계정으로 로그인"), button:has-text("다른 계정으로 로그인"), '
+                'a:has-text("계정 전환"), a:has-text("Switch account")'
+            ).first
+            if other_acc.is_visible(timeout=3000):
+                log(f"[3/5] 다른 계정으로 로그인 클릭...")
+                other_acc.click()
+                _rand_delay(page, 2000, 3000)
+        except Exception:
+            pass
 
         # a.wrap_profile 안에 이메일/계정명이 포함된 항목 클릭
         account_clicked = False
@@ -140,8 +177,12 @@ def login_tistory(blog_id: str, on_log=None):
         log(f"[5/5] {blog_id} 블로그로 이동 중...")
         page.goto(blog_url, wait_until="domcontentloaded", timeout=30000)
         _rand_delay(page, 2000, 3000)
-        log(f"[완료] {blog_id} 블로그 진입 완료! ({page.url})")
-        return True
+        if "/manage" in page.url:
+            log(f"[완료] {blog_id} 블로그 진입 완료! ({page.url})")
+            return True
+        else:
+            log(f"[실패] {blog_id} manage 진입 실패 — URL: {page.url} (계정 불일치 또는 세션 오류)")
+            return False
 
     finally:
         pw.stop()

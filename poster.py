@@ -369,12 +369,37 @@ def _post_tistory(account, title, body_html, tags=None,
             pass
 
         # ── 에디터 로드 대기 ──
-        page.wait_for_selector("#post-title-inp, .tit_post input", timeout=30000)
-        log("[포스팅] 에디터 로드 완료")
+        _TITLE_SELECTORS = [
+            "#post-title-inp",
+            ".tit_post input",
+            "input[placeholder*='제목']",
+            "input[name='title']",
+            ".editor-title input",
+            "[data-placeholder*='제목']",
+        ]
+        title_el = None
+        for _sel in _TITLE_SELECTORS:
+            try:
+                page.wait_for_selector(_sel, timeout=10000)
+                title_el = page.query_selector(_sel)
+                if title_el:
+                    log(f"[포스팅] 에디터 로드 완료 (셀렉터: {_sel})")
+                    break
+            except Exception:
+                continue
+        if not title_el:
+            # 디버그: 현재 URL과 input 목록 출력
+            log(f"[포스팅] 에디터 로드 실패 — 현재 URL: {page.url}")
+            inputs_info = page.evaluate("""() => {
+                return Array.from(document.querySelectorAll('input')).map(e => ({
+                    id: e.id, name: e.name, placeholder: e.placeholder, type: e.type
+                })).slice(0, 10);
+            }""")
+            log(f"[포스팅] 입력 필드 목록: {inputs_info}")
+            return False
 
         # ── 제목 입력 (keyboard.type) ──
         log(f"[포스팅] 제목 입력: {title[:30]}...")
-        title_el = page.query_selector("#post-title-inp") or page.query_selector(".tit_post input")
         title_el.click()
         _rand_delay(page, 300, 600)
         title_el.type(title, delay=random.randint(40, 120))
