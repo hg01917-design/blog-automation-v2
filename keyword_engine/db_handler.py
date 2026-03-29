@@ -237,24 +237,49 @@ def keyword_exists(keyword: str) -> bool:
 def fetch_next_pending(blog_id: str = None) -> str | None:
     """상태가 pending인 키워드 중 점수 높은 것 1개 반환. 없으면 None.
 
-    blog_id 지정 시: 해당 블로그에서 아직 사용하지 않은(published/failed/in_progress 아닌) 키워드 반환.
+    blog_id 지정 시: 해당 블로그 카테고리에 맞는 키워드만 반환.
     """
     with _conn() as db:
         if blog_id:
-            row = db.execute(
-                """
-                SELECT k.keyword FROM keywords k
-                WHERE k.status NOT IN ('published')
-                  AND NOT EXISTS (
-                    SELECT 1 FROM keyword_blog_status kbs
-                    WHERE kbs.keyword = k.keyword
-                      AND kbs.blog_id = ?
-                      AND kbs.status IN ('published', 'failed', 'in_progress')
-                  )
-                ORDER BY k.score DESC LIMIT 1
-                """,
-                (blog_id,),
-            ).fetchone()
+            # 블로그 카테고리 매핑
+            _BLOG_CATEGORY = {
+                "goodisak": "IT",
+                "nolja100": "여행",
+                "salim1su": "살림",
+                "baremi542": "정부지원금",
+            }
+            category = _BLOG_CATEGORY.get(blog_id)
+            if category:
+                row = db.execute(
+                    """
+                    SELECT k.keyword FROM keywords k
+                    WHERE k.category = ?
+                      AND k.status NOT IN ('published')
+                      AND NOT EXISTS (
+                        SELECT 1 FROM keyword_blog_status kbs
+                        WHERE kbs.keyword = k.keyword
+                          AND kbs.blog_id = ?
+                          AND kbs.status IN ('published', 'failed', 'in_progress')
+                      )
+                    ORDER BY k.score DESC LIMIT 1
+                    """,
+                    (category, blog_id),
+                ).fetchone()
+            else:
+                row = db.execute(
+                    """
+                    SELECT k.keyword FROM keywords k
+                    WHERE k.status NOT IN ('published')
+                      AND NOT EXISTS (
+                        SELECT 1 FROM keyword_blog_status kbs
+                        WHERE kbs.keyword = k.keyword
+                          AND kbs.blog_id = ?
+                          AND kbs.status IN ('published', 'failed', 'in_progress')
+                      )
+                    ORDER BY k.score DESC LIMIT 1
+                    """,
+                    (blog_id,),
+                ).fetchone()
         else:
             row = db.execute(
                 "SELECT keyword FROM keywords WHERE status = 'pending' ORDER BY score DESC LIMIT 1"
