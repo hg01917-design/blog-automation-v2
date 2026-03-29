@@ -1632,13 +1632,38 @@ def _post_wordpress(account, title, content, tags=None,
             except Exception:
                 pass
 
-    # 7. 글 발행
+    # 7. 카테고리 ID 조회 (없으면 생성)
+    category_ids = []
+    cat_name = account.get("category", "")
+    if cat_name:
+        try:
+            cat_url = f"{site_url}/wp-json/wp/v2/categories?search={urllib.parse.quote(cat_name)}"
+            req = urllib.request.Request(cat_url, headers=headers)
+            cat_res = json.loads(_urlopen(req, timeout=8).read())
+            if cat_res:
+                category_ids = [cat_res[0]["id"]]
+                log(f"[WordPress] 카테고리 '{cat_name}' ID: {category_ids[0]}")
+            else:
+                create_req = urllib.request.Request(
+                    f"{site_url}/wp-json/wp/v2/categories",
+                    data=json.dumps({"name": cat_name}).encode(),
+                    headers=headers,
+                    method="POST",
+                )
+                new_cat = json.loads(_urlopen(create_req, timeout=8).read())
+                category_ids = [new_cat["id"]]
+                log(f"[WordPress] 카테고리 '{cat_name}' 신규 생성: ID={category_ids[0]}")
+        except Exception as e:
+            log(f"[WordPress] 카테고리 설정 실패: {e}")
+
+    # 8. 글 발행
     post_body = {
         "title": title,
         "content": html_content,
         "status": "publish",
         "slug": slug,
         "tags": tag_ids,
+        "categories": category_ids,
         "meta": {
             "rank_math_focus_keyword": keyword,
             "rank_math_title": seo_title,
