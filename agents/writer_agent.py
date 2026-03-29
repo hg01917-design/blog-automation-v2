@@ -126,6 +126,15 @@ def _parse_raw(raw, keyword, log):
                     "alt": alt_m2.group(1).strip() if alt_m2 else "",
                 })
 
+    # 큐레이터 메모 블록 제거 (--- \n > 💡 ... \n ---)
+    body = re.sub(
+        r'\n*-{2,}\n+>[ \t]*[💡🔍📌]?[^\n]*큐레이터[^\n]*\n(?:>[^\n]*\n)*\n*-{2,}',
+        '',
+        body,
+    )
+    # blockquote 형태 메모 (---없이 > 💡 큐레이터 로 시작하는 라인)
+    body = re.sub(r'\n?>[ \t]*[💡🔍📌][^\n]*큐레이터[^\n]*(?:\n>[ \t]*[^\n]*)*', '', body)
+
     # {{이미지N}} 마커가 본문에 있지만 이미지 정보가 없으면 마커 제거
     if images:
         defined_indices = {img["index"] for img in images}
