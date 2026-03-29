@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from keyword_engine import db_handler
 from overnight_run import check_duplicate_post
-from keyword_crawler import _is_banned
+from keyword_crawler import _is_banned, _is_allowed
 
 
 def run(blog_id: str, on_log=None, on_status=None):
@@ -45,9 +45,15 @@ def run(blog_id: str, on_log=None, on_status=None):
             db_handler.set_keyword_status(kw, "failed", blog_id)
             continue
 
-        # 금지 카테고리 필터
+        # 카테고리 불일치 필터 (양성: 블로그 주제와 맞는 키워드인지)
+        if not _is_allowed(kw, blog_id):
+            log(f"[키워드] ⚠ 카테고리 불일치: '{kw}' → {blog_id} 건너뜀")
+            db_handler.set_keyword_status(kw, "failed", blog_id)
+            continue
+
+        # 금지 단어 필터 (음성: 명시적으로 금지된 단어 포함 여부)
         if _is_banned(kw, blog_id):
-            log(f"[키워드] ⚠ 금지 카테고리: '{kw}' → 건너뜀")
+            log(f"[키워드] ⚠ 금지 단어 포함: '{kw}' → 건너뜀")
             db_handler.set_keyword_status(kw, "failed", blog_id)
             continue
 
