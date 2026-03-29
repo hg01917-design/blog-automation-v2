@@ -914,10 +914,30 @@ def _redistribute_images_if_top(sections):
 
 
 # ─────────────────────────────────────────────
+# 살림1수 블로그 카테고리 판단
+# ─────────────────────────────────────────────
+_SALIM_FIXED_COST_KEYWORDS = [
+    "전기세", "전기요금", "전기비", "수도요금", "수도세", "수도비",
+    "통신비", "인터넷요금", "인터넷비", "핸드폰요금", "휴대폰요금",
+    "관리비", "도시가스", "가스요금", "가스비", "난방비",
+]
+
+def _get_salim_category(keyword: str) -> str:
+    """키워드 기반 살림1수 블로그 카테고리 반환.
+    고정비 관련 → '고정비줄이기', 나머지 → '살림이야기'
+    """
+    kw_flat = keyword.replace(" ", "")
+    for w in _SALIM_FIXED_COST_KEYWORDS:
+        if w in kw_flat:
+            return "고정비줄이기"
+    return "살림이야기"
+
+
+# ─────────────────────────────────────────────
 # 네이버 글 작성
 # ─────────────────────────────────────────────
 def _post_naver(account, title, content, tags=None,
-                image_paths=None, image_infos=None, on_log=None):
+                image_paths=None, image_infos=None, keyword="", on_log=None):
     """네이버 블로그 에디터에서 글 작성 + 발행
 
     blog-tool/naver_playwright.py 참고:
@@ -1151,6 +1171,44 @@ def _post_naver(account, title, content, tags=None,
         page.wait_for_selector(
             '[class*="layer_popup"][class*="is_show"]', timeout=10000
         )
+
+        # ── 카테고리 선택 (salim1su) ──
+        blog_id_for_cat = account.get("blog", "")
+        if blog_id_for_cat == "salim1su" and keyword:
+            cat_name = _get_salim_category(keyword)
+            log(f"[포스팅] 카테고리 선택: {cat_name}")
+            try:
+                selected = page.evaluate("""(catName) => {
+                    // 카테고리 항목 클릭 (텍스트 일치)
+                    const items = document.querySelectorAll(
+                        '.category_list li, .list_category li, [class*="category"] li, [class*="category"] a, [class*="category"] button'
+                    );
+                    for (const el of items) {
+                        if (el.textContent.trim() === catName) {
+                            el.click();
+                            return true;
+                        }
+                    }
+                    // select 드롭다운 방식
+                    const sel = document.querySelector('select[name*="category"], select[id*="category"]');
+                    if (sel) {
+                        for (const opt of sel.options) {
+                            if (opt.text.trim() === catName) {
+                                sel.value = opt.value;
+                                sel.dispatchEvent(new Event('change', {bubbles: true}));
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                }""", cat_name)
+                if selected:
+                    time.sleep(0.5)
+                    log(f"[포스팅] 카테고리 '{cat_name}' 선택 완료")
+                else:
+                    log(f"[포스팅] 카테고리 '{cat_name}' 항목을 찾지 못함 — 스킵")
+            except Exception as e:
+                log(f"[포스팅] 카테고리 선택 오류: {e}")
 
         if tags:
             log(f"[포스팅] 태그 입력 중: {tags}")
@@ -1705,7 +1763,7 @@ def post_single(blog_id: str, title: str, content: str,
     elif account["platform"] == "naver":
         ok = _post_naver(account, title, content, tags,
                          image_paths=image_paths, image_infos=image_infos,
-                         on_log=on_log)
+                         keyword=keyword, on_log=on_log)
     else:
         log(f"[순환] 지원하지 않는 플랫폼: {account['platform']}")
         ok = False
