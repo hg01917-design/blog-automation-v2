@@ -391,14 +391,22 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         "===이미지끝==="
     )
 
+    # 본문 헤딩/볼드 형식 강제 규칙 (프로젝트 모드 포함 모든 블로그에 적용)
+    _FORMAT_RULE = (
+        "\n\n[본문 형식 규칙 — 필수]\n"
+        "본문 소제목은 반드시 ## (H2) 또는 ### (H3) 마크다운 헤딩 형식으로 작성해.\n"
+        "예) ## 소제목 텍스트\n"
+        "중요 키워드·수치·조건은 **볼드** 처리해. (한 문단 1~2개 이내)\n"
+    )
+
     # Claude Project가 설정된 blog_id면 키워드만 전송 — 프로젝트 지침이 모든 규칙 담당
     # 팩트(공식사이트 수치)는 동적 데이터라 프로젝트에 넣을 수 없으므로 별도 주입
     # 프로젝트 미설정 blog_id면 기존대로 Notion에서 전체 프롬프트 가져오기
     if blog_id and keyword:
         if blog_id in BLOG_PROJECT_URLS:
-            # 프로젝트 모드: 키워드만 (규칙/금지어/문체는 프로젝트 지침에서 처리)
-            prompt = keyword
-            log(f"[Playwright] 프로젝트 모드 — 키워드만 전송: '{keyword}'")
+            # 프로젝트 모드: 키워드 + 형식 규칙 (프로젝트 지침이 내용/문체 담당, 형식은 여기서 강제)
+            prompt = keyword + _FORMAT_RULE
+            log(f"[Playwright] 프로젝트 모드 — 키워드+형식규칙 전송: '{keyword}'")
         else:
             try:
                 prompt = fetch_prompt(blog_id, keyword, on_log)
