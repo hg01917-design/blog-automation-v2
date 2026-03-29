@@ -146,9 +146,18 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     }""", full_prompt)
     page.wait_for_timeout(500)
 
-    # 전송
+    # 전송 — 버튼이 활성화될 때까지 대기 후 클릭
     send_btn = page.locator('button[aria-label="메시지 보내기"], button[aria-label="Send message"]').first
-    send_btn.click()
+    try:
+        page.wait_for_function("""
+            () => {
+                const btn = document.querySelector('button[aria-label="메시지 보내기"], button[aria-label="Send message"]');
+                return btn && !btn.disabled && !btn.getAttribute('disabled');
+            }
+        """, timeout=20000)
+    except Exception:
+        pass
+    send_btn.click(timeout=15000)
     log(f"[이미지] 프롬프트 전송, 생성 대기...")
 
     # 이미지 생성 완료 대기 (img.image.loaded)
