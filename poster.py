@@ -755,8 +755,26 @@ def _naver_apply_subtitle_format(page):
     return False
 
 
+def _naver_set_font_size(page, size: int = 19):
+    """네이버 에디터 글자 크기를 설정한다."""
+    try:
+        # 글자 크기 입력 필드 찾기
+        size_input = page.query_selector(
+            'input[data-name="fontSize"], .se-fontSize-input input, '
+            '.se-toolbar-item-fontSize input, input[class*="fontSize"]'
+        )
+        if size_input and size_input.is_visible():
+            size_input.triple_click()
+            time.sleep(0.1)
+            size_input.type(str(size), delay=50)
+            page.keyboard.press("Enter")
+            time.sleep(0.3)
+    except Exception:
+        pass
+
+
 def _naver_restore_body_format(page):
-    """서식을 본문(일반 텍스트)으로 복원한다."""
+    """서식을 본문(일반 텍스트)으로 복원하고 글자 크기를 19로 설정한다."""
     fmt_btn = page.query_selector('.se-text-format-toolbar-button')
     if not fmt_btn:
         fmt_btn = page.query_selector('button[data-name="text-format"]')
@@ -775,6 +793,7 @@ def _naver_restore_body_format(page):
                 if text_btn and text_btn.is_visible():
                     text_btn.click()
                     time.sleep(0.4)
+                    _naver_set_font_size(page, 19)
                     return
             # 드롭다운 미열림 → Escape 후 재시도
             page.keyboard.press("Escape")
@@ -1043,6 +1062,9 @@ def _post_naver(account, title, content, tags=None,
             if body_p:
                 body_p.click()
             time.sleep(0.5)
+
+        # 본문 글자 크기 19 초기 설정
+        _naver_set_font_size(page, 19)
 
         # ── 섹션별 입력 ──
         for si, section in enumerate(sections):
