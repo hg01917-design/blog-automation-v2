@@ -1184,33 +1184,54 @@ def _post_naver(account, title, content, tags=None,
             cat_name = _get_salim_category(keyword)
             log(f"[포스팅] 카테고리 선택: {cat_name}")
             try:
+                time.sleep(1.0)  # 팝업 완전 로드 대기
                 selected = page.evaluate("""(catName) => {
-                    // 카테고리 항목 클릭 (텍스트 일치)
-                    const items = document.querySelectorAll(
-                        '.category_list li, .list_category li, [class*="category"] li, [class*="category"] a, [class*="category"] button'
+                    // 1. 팝업 내 모든 클릭 가능 요소에서 텍스트 일치
+                    const allEls = document.querySelectorAll(
+                        'li, a, button, label, span, div[role="option"], div[role="listitem"]'
                     );
-                    for (const el of items) {
-                        if (el.textContent.trim() === catName) {
+                    for (const el of allEls) {
+                        const txt = el.textContent.trim();
+                        if (txt === catName) {
                             el.click();
-                            return true;
+                            return 'clicked:' + txt;
                         }
                     }
-                    // select 드롭다운 방식
-                    const sel = document.querySelector('select[name*="category"], select[id*="category"]');
+                    // 2. 포함 매칭 (완전 일치 실패 시)
+                    for (const el of allEls) {
+                        const txt = el.textContent.trim();
+                        if (txt.includes(catName)) {
+                            el.click();
+                            return 'partial:' + txt;
+                        }
+                    }
+                    // 3. select 드롭다운
+                    const sel = document.querySelector('select');
                     if (sel) {
                         for (const opt of sel.options) {
-                            if (opt.text.trim() === catName) {
+                            if (opt.text.trim() === catName || opt.text.includes(catName)) {
                                 sel.value = opt.value;
                                 sel.dispatchEvent(new Event('change', {bubbles: true}));
-                                return true;
+                                return 'select:' + opt.text;
                             }
                         }
                     }
+                    // 디버그: 팝업 내 텍스트 목록 반환
+                    const popup = document.querySelector('[class*="layer_popup"][class*="is_show"], [class*="publish"]');
+                    if (popup) {
+                        const texts = Array.from(popup.querySelectorAll('li, button, a, label'))
+                            .map(e => e.textContent.trim()).filter(t => t).slice(0, 20);
+                        return 'debug:' + texts.join('|');
+                    }
                     return false;
                 }""", cat_name)
-                if selected:
-                    time.sleep(0.5)
-                    log(f"[포스팅] 카테고리 '{cat_name}' 선택 완료")
+                if selected and selected is not False:
+                    if str(selected).startswith('debug:'):
+                        log(f"[포스팅] 카테고리 팝업 요소: {selected[6:]}")
+                        log(f"[포스팅] 카테고리 '{cat_name}' 항목을 찾지 못함 — 스킵")
+                    else:
+                        time.sleep(0.5)
+                        log(f"[포스팅] 카테고리 선택 완료: {selected}")
                 else:
                     log(f"[포스팅] 카테고리 '{cat_name}' 항목을 찾지 못함 — 스킵")
             except Exception as e:
