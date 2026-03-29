@@ -1221,7 +1221,7 @@ class BlogAutomationApp(QMainWindow):
         kw_l.addWidget(add_kw_btn)
         self._tabs.addTab(kw_w, "키워드 큐")
         self._agent_combo.currentTextChanged.connect(
-            lambda _: (self._load_kw_queue(), setattr(self, '_selected_keyword', None)))
+            lambda _: (self._load_kw_queue(), self._refresh_stats(), setattr(self, '_selected_keyword', None)))
 
         ml.addWidget(self._tabs, 1)
 
