@@ -80,8 +80,9 @@ def _find_latest_post_url(blog_id: str) -> str:
         import re
         from browser import connect_cdp
 
-        playwright, browser, context = connect_cdp()
+        pw, browser = connect_cdp()
         try:
+            context = browser.contexts[0] if browser.contexts else browser.new_context()
             page = context.new_page()
             page.goto(home, timeout=30000)
             page.wait_for_load_state("domcontentloaded", timeout=15000)
@@ -122,7 +123,7 @@ def _find_latest_post_url(blog_id: str) -> str:
             except Exception:
                 pass
             try:
-                playwright.stop()
+                pw.stop()
             except Exception:
                 pass
 
