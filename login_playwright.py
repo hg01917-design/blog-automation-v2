@@ -26,6 +26,7 @@ def login_tistory(blog_id: str, on_log=None):
 
     blog_url = f"https://{blog_id}.tistory.com/manage"
     pw, browser = connect_cdp(on_log)
+    page = None
 
     try:
         # 기존 tistory/kakao 탭 정리
@@ -185,6 +186,11 @@ def login_tistory(blog_id: str, on_log=None):
             return False
 
     finally:
+        try:
+            if page:
+                page.close()
+        except Exception:
+            pass
         pw.stop()
 
 
@@ -198,6 +204,7 @@ def login_naver(naver_id=None, on_log=None):
             on_log(msg)
 
     pw, browser = connect_cdp(on_log)
+    page = None
 
     try:
         log("[1/4] 네이버 로그인 페이지 접속 중...")
@@ -251,6 +258,11 @@ def login_naver(naver_id=None, on_log=None):
         return False
 
     finally:
+        try:
+            if page:
+                page.close()
+        except Exception:
+            pass
         pw.stop()
 
 
@@ -301,6 +313,7 @@ def logout_naver(on_log=None):
             on_log(msg)
 
     pw, browser = connect_cdp(on_log)
+    page = None
     try:
         log("[로그아웃] 네이버 로그아웃 시작...")
         page = get_or_create_page(browser, navigate_to="https://nid.naver.com/nidlogin.logout")
@@ -308,6 +321,11 @@ def logout_naver(on_log=None):
         log(f"[로그아웃] 네이버 로그아웃 완료 ({page.url})")
         return True
     finally:
+        try:
+            if page:
+                page.close()
+        except Exception:
+            pass
         pw.stop()
 
 
