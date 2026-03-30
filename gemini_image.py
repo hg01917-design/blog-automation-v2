@@ -1,6 +1,15 @@
-"""Gemini Playwright 이미지 생성 — CDP로 gemini.google.com 제어"""
+"""Gemini Playwright 이미지 생성 — CDP로 gemini.google.com 제어
+Gemini 쿼터 초과 시 loremflickr 스톡 이미지로 자동 폴백.
+쿼터 차단 시간을 파일에 기록하고, 해당 시간 전까지는 Gemini 시도 자체를 건너뜀.
+"""
+import io
+import json
 import os
+import re
 import time
+import urllib.request
+import urllib.parse
+from datetime import datetime, timedelta
 from pathlib import Path
 from PIL import Image
 from browser import connect_cdp as _connect_cdp, get_or_create_page
@@ -8,6 +17,91 @@ from browser import connect_cdp as _connect_cdp, get_or_create_page
 GEMINI_URL = "https://gemini.google.com/app"
 IMAGES_DIR = Path(__file__).parent / "images"
 IMAGES_DIR.mkdir(exist_ok=True)
+_QUOTA_FILE = IMAGES_DIR / ".gemini_quota.json"
+
+
+def _quota_blocked_until() -> datetime | None:
+    """Gemini 쿼터 차단 종료 시각 반환. 차단 중이 아니면 None."""
+    if not _QUOTA_FILE.exists():
+        return None
+    try:
+        data = json.loads(_QUOTA_FILE.read_text())
+        until = datetime.fromisoformat(data["until"])
+        if datetime.now() < until:
+            return until
+        _QUOTA_FILE.unlink(missing_ok=True)  # 만료되면 삭제
+    except Exception:
+        pass
+    return None
+
+
+def _save_quota_block(until: datetime):
+    """쿼터 차단 종료 시각을 파일에 저장."""
+    _QUOTA_FILE.write_text(json.dumps({"until": until.isoformat()}))
+
+
+def _parse_quota_until(err_text: str) -> datetime:
+    """Gemini 오류 메시지에서 차단 해제 시각을 파싱.
+
+    파싱 실패 시 내일 오전 10시를 반환.
+    """
+    now = datetime.now()
+    # "come back at HH:MM" 또는 "try again at HH:MM"
+    m = re.search(r'(?:come back|try again)(?: at)? (\d{1,2}):(\d{2})', err_text, re.IGNORECASE)
+    if m:
+        h, mn = int(m.group(1)), int(m.group(2))
+        candidate = now.replace(hour=h, minute=mn, second=0, microsecond=0)
+        if candidate <= now:
+            candidate += timedelta(days=1)
+        return candidate
+    # "tomorrow" 또는 "내일" → 내일 오전 10시
+    return (now + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
+
+
+def _generate_via_fallback(prompt: str, filename: str, on_log=None, skip_webp=False):
+    """Gemini 쿼터 초과 시 무료 스톡 이미지 폴백 (loremflickr.com).
+
+    프롬프트에서 영문 키워드를 추출해 관련 CC 라이선스 이미지 다운로드.
+    API 키 불필요.
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    import re as _re
+    import ssl as _ssl
+
+    _ctx = _ssl.create_default_context()
+    _ctx.check_hostname = False
+    _ctx.verify_mode = _ssl.CERT_NONE
+
+    # 프롬프트에서 명사 키워드 추출 (영문 단어 2~3개)
+    words = _re.findall(r'[A-Za-z]{4,}', prompt)
+    _STOP = {'with', 'from', 'that', 'this', 'photo', 'image', 'realistic',
+             'style', 'Korean', 'modern', 'clean', 'bright', 'flat', 'close',
+             'showing', 'placed', 'design', 'ratio', 'text', 'watermark'}
+    keywords = [w.lower() for w in words if w not in _STOP][:3]
+    kw_str = ','.join(keywords) if keywords else 'lifestyle'
+
+    try:
+        url = f"https://loremflickr.com/1024/768/{urllib.parse.quote(kw_str)}"
+        log(f"[이미지] loremflickr 폴백: {kw_str}")
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        resp = urllib.request.urlopen(req, timeout=30, context=_ctx)
+        data = resp.read()
+
+        img = Image.open(io.BytesIO(data))
+        w, h = img.size
+        final_path = IMAGES_DIR / filename
+        if skip_webp:
+            img.convert("RGB").save(str(final_path), "JPEG", quality=90)
+        else:
+            img.convert("RGB").save(str(final_path), "WEBP", quality=85)
+        log(f"[이미지] loremflickr 저장 완료: {filename} ({w}x{h})")
+        return str(final_path)
+    except Exception as e:
+        log(f"[이미지] loremflickr 폴백 실패: {e}")
+        return None
 
 
 def generate_images(image_infos: list, on_log=None, skip_webp=False) -> dict:
@@ -27,7 +121,34 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False) -> dict:
         log("[이미지] 생성할 이미지 없음")
         return {}
 
+    # Gemini 쿼터 차단 여부 사전 확인
+    _blocked_until = _quota_blocked_until()
+    if _blocked_until:
+        log(f"[이미지] Gemini 쿼터 차단 중 (해제: {_blocked_until.strftime('%m/%d %H:%M')}) → loremflickr 폴백 모드")
+
     results = {}
+
+    # 쿼터 차단 중이면 Playwright 없이 폴백만 실행
+    if _blocked_until:
+        for info in image_infos:
+            idx = info["index"]
+            prompt = info["prompt"]
+            filename = info["filename"]
+            filename = re.sub(r'[^\w\-.]', '-', filename)
+            filename = re.sub(r'-+', '-', filename).strip('-')
+            if skip_webp:
+                if not filename.endswith(".jpg") and not filename.endswith(".png"):
+                    filename = filename.rsplit(".", 1)[0] + ".jpg"
+            else:
+                if not filename.endswith(".webp"):
+                    filename += ".webp"
+            log(f"[이미지 {idx}] 폴백 모드 생성: {prompt[:50]}...")
+            fp = _generate_via_fallback(prompt, filename, on_log, skip_webp)
+            if fp:
+                results[idx] = fp
+                log(f"[이미지 {idx}] 저장 완료: {fp}")
+        return results
+
     pw, browser = _connect_cdp(on_log)
 
     try:
@@ -36,9 +157,8 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False) -> dict:
             prompt = info["prompt"]
             filename = info["filename"]
             # 파일명 영문+숫자+하이픈만 허용 (한글 제거)
-            import re as _re
-            filename = _re.sub(r'[^\w\-.]', '-', filename)
-            filename = _re.sub(r'-+', '-', filename).strip('-')
+            filename = re.sub(r'[^\w\-.]', '-', filename)
+            filename = re.sub(r'-+', '-', filename).strip('-')
             if skip_webp:
                 if not filename.endswith(".jpg") and not filename.endswith(".png"):
                     filename = filename.rsplit(".", 1)[0] + ".jpg"
@@ -160,6 +280,12 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     send_btn.click(timeout=15000)
     log(f"[이미지] 프롬프트 전송, 생성 대기...")
 
+    _QUOTA_KEYWORDS = [
+        "can't generate more images", "generate more images for you today",
+        "이미지를 더 생성할 수 없", "come back tom",
+        "I can't create more images",
+    ]
+
     # 이미지 생성 완료 대기 — JS 기반 감지 (프로필사진 제외, 최소 크기 100px 이상)
     detected_sel = None
     for i in range(90):
@@ -187,8 +313,8 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
                 break
         except Exception:
             pass
-        # 오류 응답 감지 (60초 이상 경과 후 텍스트 응답만 있고 이미지 없는 경우)
-        if i > 60:
+        # 오류 응답 감지 (10초 이상 경과 후 쿼터 오류 즉시 감지 / 60초 이상이면 일반 오류도 감지)
+        if i > 10:
             try:
                 has_generated = page.evaluate("""() => {
                     const candidates = document.querySelectorAll(
@@ -211,9 +337,16 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
                         return (last.innerText || '').trim();
                     }""")
                     if err_text and len(err_text) > 20:
-                        log(f"[이미지] 텍스트 응답({len(err_text)}자): {err_text[:80]!r}")
-                        log(f"[이미지] 텍스트 오류 응답 감지 ({i}초) — 조기 종료")
-                        return None
+                        is_quota = any(kw in err_text for kw in _QUOTA_KEYWORDS)
+                        if is_quota:
+                            until = _parse_quota_until(err_text)
+                            _save_quota_block(until)
+                            log(f"[이미지] Gemini 쿼터 초과 감지 ({i}초) — 차단 해제: {until.strftime('%m/%d %H:%M')} → loremflickr 폴백")
+                            return _generate_via_fallback(prompt, filename, on_log, skip_webp)
+                        if i > 60:
+                            log(f"[이미지] 텍스트 응답({len(err_text)}자): {err_text[:80]!r}")
+                            log(f"[이미지] 텍스트 오류 응답 감지 ({i}초) — 조기 종료")
+                            return None
             except Exception:
                 pass
         if i % 15 == 0 and i > 0:
