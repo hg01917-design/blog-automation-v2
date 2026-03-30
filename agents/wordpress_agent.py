@@ -160,9 +160,14 @@ def _parse_raw(raw, keyword, log):
     # {{이미지N}} 마커가 본문에 있지만 이미지 정보가 없으면 마커 제거
     if images:
         defined_indices = {img["index"] for img in images}
-        def _remove_unmatched_marker(m):
-            return "" if int(m.group(1)) not in defined_indices else m.group(0)
-        body = re.sub(r'\{\{이미지(\d+)\}\}', _remove_unmatched_marker, body)
+        _seen_img = set()
+        def _dedup_marker(m):
+            idx = int(m.group(1))
+            if idx not in defined_indices or idx in _seen_img:
+                return ""
+            _seen_img.add(idx)
+            return m.group(0)
+        body = re.sub(r'\{\{이미지(\d+)\}\}', _dedup_marker, body)
     else:
         # 이미지 섹션 자체가 없으면 모든 마커 제거
         body = re.sub(r'\{\{이미지\d+\}\}\n?', '', body)
