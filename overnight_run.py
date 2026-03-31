@@ -423,11 +423,42 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     log(f"[파싱] 본문 미리보기: {body[:80]}...")
 
     # 3. Gemini 이미지 생성
+    MIN_IMAGES = 3
     image_paths = {}
     if images:
         log(f"[파이프라인] Gemini 이미지 생성 시작")
         image_paths = generate_images(images, on_log=log)
         log(f"[파이프라인] 이미지 {len(image_paths)}개 생성 완료")
+
+    # 3-1. 이미지 최소 3장 보장 — 부족하면 loremflickr 폴백 보충
+    if len(image_paths) < MIN_IMAGES:
+        log(f"[파이프라인] ⚠ 이미지 {len(image_paths)}개 < 최소 {MIN_IMAGES}개 — loremflickr 폴백 보충")
+        from gemini_image import _generate_via_fallback
+        extra_prompts = [keyword, f"{keyword} 관련 정보", f"{keyword} 생활 팁"]
+        for i in range(len(image_paths), MIN_IMAGES):
+            kw = extra_prompts[i % len(extra_prompts)]
+            fname = f"fallback_{blog_id}_{i+1}.jpg"
+            fp = _generate_via_fallback(kw, fname, on_log=log)
+            if fp:
+                new_idx = len(images) + 1
+                images.append({"index": new_idx, "prompt": kw, "filename": fname, "alt": kw})
+                image_paths[fname] = fp
+        log(f"[파이프라인] 이미지 보충 후 총 {len(image_paths)}개")
+
+    # 3-2. 발행 전 품질 검수
+    quality_ok = True
+    if char_count < 500:
+        log(f"[검수] ❌ 본문 너무 짧음 ({char_count}자 < 500자) — 발행 중단")
+        quality_ok = False
+    if not tags:
+        log(f"[검수] ❌ 태그 없음 — 발행 중단")
+        quality_ok = False
+    if len(image_paths) < MIN_IMAGES:
+        log(f"[검수] ❌ 이미지 부족 ({len(image_paths)}개 < {MIN_IMAGES}개) — 발행 중단")
+        quality_ok = False
+    if not quality_ok:
+        return False
+    log(f"[검수] ✅ 통과 — 본문 {char_count}자, 이미지 {len(image_paths)}개, 태그 {len(tags)}개")
 
     # 4. 포스팅
     log(f"[파이프라인] 포스팅 시작: {blog_id}")
