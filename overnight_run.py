@@ -546,6 +546,10 @@ if __name__ == "__main__":
     log("=" * 60)
 
     kw, page_id = fetch_next_keyword("salim1su")
+    if kw and not is_keyword_suitable("salim1su", kw):
+        log(f"[salim1su] ⚠ 테마 부적합 키워드 '{kw}' → 실패 처리")
+        update_keyword_status(page_id, "실패", memo="테마 부적합: 살림블로그")
+        kw, page_id = None, None
     if kw:
         log(f"[salim1su] 키워드: {kw}")
         try:
@@ -558,6 +562,44 @@ if __name__ == "__main__":
             update_keyword_status(page_id, "실패")
     else:
         log("[salim1su] 대기 키워드 없음 — 스킵")
+
+    save_log()
+
+    # ── 4단계: baremi542 포스팅 ──
+    log("\n" + "=" * 60)
+    log("[4단계] baremi542 포스팅")
+    log("=" * 60)
+
+    kw, page_id = fetch_next_keyword("baremi542")
+    if kw and not is_keyword_suitable("baremi542", kw):
+        log(f"[baremi542] ⚠ 테마 부적합 키워드 '{kw}' → 실패 처리")
+        update_keyword_status(page_id, "실패", memo="테마 부적합: 정부지원블로그")
+        kw, page_id = None, None
+    if not kw:
+        from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as _set_kw_status2
+        kw = fetch_next_pending("baremi542")
+        if kw:
+            log(f"[baremi542] SQLite 키워드 사용: {kw}")
+            _set_kw_status2(kw, "in_progress", blog_id="baremi542")
+            page_id = None
+    if kw:
+        log(f"[baremi542] 키워드: {kw}")
+        try:
+            if page_id:
+                update_keyword_status(page_id, "진행중")
+            ok = run_posting_pipeline("baremi542", kw, page_id=page_id)
+            if ok:
+                if page_id:
+                    update_keyword_status(page_id, "완료")
+                else:
+                    from keyword_engine.db_handler import set_keyword_status as _set_kw_status2
+                    _set_kw_status2(kw, "published", blog_id="baremi542")
+        except Exception as e:
+            log(f"[baremi542] 오류: {e}")
+            if page_id:
+                update_keyword_status(page_id, "실패")
+    else:
+        log("[baremi542] 대기 키워드 없음 — 스킵")
 
     # ── 최종 결과 ──
     log("\n" + "=" * 60)
