@@ -139,7 +139,10 @@ _BLOG_THEMES = {
                  "케이블카", "한옥", "올레길", "둘레길", "차박", "글램핑", "리조트"],
     "salim1su": ["살림", "절약", "가스", "전기", "요금", "주방", "청소", "정리", "수납",
                  "가계", "생활비", "난방", "냉방", "가전", "요리", "레시피", "기름때",
-                 "세탁", "빨래", "냉장고", "에어컨", "보일러", "다이소"],
+                 "세탁", "빨래", "냉장고", "에어컨", "보일러", "다이소",
+                 "화장실", "욕실", "물때", "곰팡이", "집안", "먼지", "바닥", "베란다",
+                 "주부", "신혼", "인테리어", "수납", "정돈", "소독", "탈취", "제거",
+                 "관리비", "수도", "가습기", "건조기", "식기", "행주", "찌든"],
     "baremi542": ["지원금", "보조금", "지원사업", "복지", "수당", "혜택", "신청", "환급",
                   "정부", "공공", "보험", "연금", "청년", "취업", "바우처", "감면"],
 }
@@ -526,6 +529,16 @@ if __name__ == "__main__":
     log(f"자동 실행 시작 ({datetime.now().strftime('%Y-%m-%d %H:%M')})")
     log("=" * 60)
 
+    # ── 화면 잠금/슬립 방지 (macOS caffeinate) ──
+    import subprocess as _sub
+    try:
+        _caffeinate = _sub.Popen(["caffeinate", "-d", "-i", "-s"],
+                                 stdout=_sub.DEVNULL, stderr=_sub.DEVNULL)
+        log("[시스템] caffeinate 시작 (화면 잠금/슬립 방지)")
+    except Exception as _e:
+        _caffeinate = None
+        log(f"[시스템] caffeinate 실패: {_e}")
+
     # ── 키워드 크롤링 (1회) ──
     log("[크롤링] salim1su, baremi542 키워드 수집")
     from keyword_crawler import crawl_keywords
@@ -559,3 +572,11 @@ if __name__ == "__main__":
     log("전체 완료")
     log("=" * 60)
     save_log()
+
+    # ── caffeinate 종료 ──
+    if _caffeinate:
+        try:
+            _caffeinate.terminate()
+            log("[시스템] caffeinate 종료")
+        except Exception:
+            pass
