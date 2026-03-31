@@ -599,13 +599,13 @@ def _post_tistory(account, title, body_html, tags=None,
             log("[포스팅] 대표이미지 설정 시도...")
             _tistory_set_thumbnail(page, log)
 
-        # ── 발행 ──
-        log("[포스팅] 발행 버튼 클릭...")
-        publish_clicked = page.evaluate("""() => {
+        # ── 임시저장 (검수 후 수동 발행) ──
+        log("[포스팅] 임시저장 중...")
+        saved = page.evaluate("""() => {
             const buttons = document.querySelectorAll('button, a, input[type="button"]');
             for (const btn of buttons) {
                 const text = btn.textContent.trim();
-                if (text === '발행' || text === '공개발행') {
+                if (text === '임시저장' || text.includes('임시저장')) {
                     btn.click();
                     return true;
                 }
@@ -613,50 +613,12 @@ def _post_tistory(account, title, body_html, tags=None,
             return false;
         }""")
         _rand_delay(page, 2000, 3000)
-
-        if publish_clicked:
-            # 발행 팝업: 전체공개 선택 + 완료 클릭
-            page.evaluate("""() => {
-                // 전체공개 라디오 선택
-                const els = document.querySelectorAll('input[type="radio"], label');
-                for (const el of els) {
-                    const text = (el.textContent || el.value || '').trim();
-                    if (text === '전체공개' || text.includes('전체공개')) {
-                        el.click();
-                        break;
-                    }
-                }
-                // 완료 버튼 클릭
-                const btns = document.querySelectorAll('button');
-                for (const btn of btns) {
-                    const text = btn.textContent.trim();
-                    if (text === '완료' || text === '발행' || text.includes('완료')) {
-                        btn.click();
-                        return true;
-                    }
-                }
-                return false;
-            }""")
-            _rand_delay(page, 2000, 3000)
-            log(f"[포스팅] 발행 완료: {title[:30]}...")
-            return True
-        else:
-            # 폴백: 임시저장
-            log("[포스팅] 발행 버튼 없음 — 임시저장 폴백")
-            page.evaluate("""() => {
-                const buttons = document.querySelectorAll('button, a, input[type="button"]');
-                for (const btn of buttons) {
-                    const text = btn.textContent.trim();
-                    if (text === '임시저장' || text.includes('임시저장')) {
-                        btn.click();
-                        return true;
-                    }
-                }
-                return false;
-            }""")
-            _rand_delay(page, 2000, 3000)
+        if saved:
             log(f"[포스팅] 임시저장 완료: {title[:30]}...")
             return True
+        else:
+            log("[포스팅] 임시저장 버튼 없음 — 실패")
+            return False
 
     finally:
         pw.stop()
