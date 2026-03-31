@@ -477,132 +477,106 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     return ok
 
 
+# ─── 블로그 1편 포스팅 ───
+def post_one_blog(blog_id):
+    """한 블로그에 키워드 1개 선택 → 포스팅"""
+    from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as _db_set
+
+    kw, page_id = fetch_next_keyword(blog_id)
+    if kw and not is_keyword_suitable(blog_id, kw):
+        log(f"[{blog_id}] ⚠ 테마 부적합 '{kw}' → 실패 처리 후 SQLite 폴백")
+        update_keyword_status(page_id, "실패", memo=f"테마 부적합: {blog_id}")
+        kw, page_id = None, None
+    if not kw:
+        kw = fetch_next_pending(blog_id)
+        if kw:
+            log(f"[{blog_id}] SQLite 키워드 사용: {kw}")
+            _db_set(kw, "in_progress", blog_id=blog_id)
+            page_id = None
+    if not kw:
+        log(f"[{blog_id}] 대기 키워드 없음 — 스킵")
+        return False
+    log(f"[{blog_id}] 키워드: {kw}")
+    try:
+        if page_id:
+            update_keyword_status(page_id, "진행중")
+        ok = run_posting_pipeline(blog_id, kw, page_id=page_id)
+        if ok:
+            if page_id:
+                update_keyword_status(page_id, "완료")
+            else:
+                _db_set(kw, "published", blog_id=blog_id)
+        else:
+            if page_id:
+                update_keyword_status(page_id, "실패")
+            else:
+                _db_set(kw, "failed", blog_id=blog_id)
+        return ok
+    except Exception as e:
+        log(f"[{blog_id}] 오류: {e}")
+        if page_id:
+            update_keyword_status(page_id, "실패")
+        else:
+            _db_set(kw, "failed", blog_id=blog_id)
+        return False
+
+
+def run_one_round(round_num):
+    """모든 블로그에 1편씩 포스팅 (1라운드)"""
+    import time as _time
+    BLOGS = ["nolja100", "salim1su", "baremi542", "goodisak"]
+    log(f"\n{'='*60}")
+    log(f"[라운드 {round_num}] 시작 ({datetime.now().strftime('%H:%M')})")
+    log(f"{'='*60}")
+    results = {}
+    for blog_id in BLOGS:
+        ok = post_one_blog(blog_id)
+        results[blog_id] = "✅" if ok else "⚠"
+        # 블로그 간 1-3분 랜덤 대기 (사람처럼)
+        _time.sleep(__import__('random').uniform(60, 180))
+    log(f"[라운드 {round_num}] 완료: " + " / ".join(f"{k}:{v}" for k, v in results.items()))
+    save_log()
+
+
 # ─── 메인 실행 ───
 if __name__ == "__main__":
+    import time as _time
+    import random as _random
+
     log("=" * 60)
-    log("야간 자동 실행 시작")
+    log(f"자동 실행 시작 ({datetime.now().strftime('%Y-%m-%d %H:%M')})")
     log("=" * 60)
 
-    # ── 1단계: salim1su, baremi542 키워드 크롤링 ──
-    log("\n" + "=" * 60)
-    log("[1단계] salim1su, baremi542 키워드 크롤링")
-    log("=" * 60)
-
+    # ── 키워드 크롤링 (1회) ──
+    log("[크롤링] salim1su, baremi542 키워드 수집")
     from keyword_crawler import crawl_keywords
-
     for bid in ["salim1su", "baremi542"]:
         try:
             result = crawl_keywords(blog_id=bid, on_log=log)
             log(f"[크롤링] {bid}: {result.get(bid, 0)}개 저장")
         except Exception as e:
             log(f"[크롤링] {bid} 오류: {e}")
-
     save_log()
 
-    # ── 2단계: nolja100 포스팅 테스트 ──
+    # ── 라운드 1: 0~30분 랜덤 지연 후 시작 ──
+    delay1 = _random.uniform(0, 30 * 60)
+    log(f"[라운드 1] {int(delay1/60)}분 후 시작 예정")
+    _time.sleep(delay1)
+    run_one_round(1)
+
+    # ── 라운드 2: 3~6시간 랜덤 대기 ──
+    delay2 = _random.uniform(3 * 3600, 6 * 3600)
+    log(f"[라운드 2] {int(delay2/3600)}시간 {int((delay2%3600)/60)}분 후 시작 예정")
+    _time.sleep(delay2)
+    run_one_round(2)
+
+    # ── 라운드 3: 3~6시간 랜덤 대기 ──
+    delay3 = _random.uniform(3 * 3600, 6 * 3600)
+    log(f"[라운드 3] {int(delay3/3600)}시간 {int((delay3%3600)/60)}분 후 시작 예정")
+    _time.sleep(delay3)
+    run_one_round(3)
+
     log("\n" + "=" * 60)
-    log("[2단계] nolja100 포스팅 테스트")
-    log("=" * 60)
-
-    kw, page_id = fetch_next_keyword("nolja100")
-    if kw and not is_keyword_suitable("nolja100", kw):
-        log(f"[nolja100] ⚠ 테마 부적합 키워드 '{kw}' (여행블로그) → 실패 처리 후 SQLite 폴백")
-        update_keyword_status(page_id, "실패", memo="테마 부적합: 여행블로그")
-        kw, page_id = None, None
-    if not kw:
-        from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as _set_kw_status
-        kw = fetch_next_pending("nolja100")
-        if kw:
-            log(f"[nolja100] SQLite 여행 키워드 사용: {kw}")
-            _set_kw_status(kw, "in_progress", blog_id="nolja100")
-            page_id = None
-    if kw:
-        log(f"[nolja100] 키워드: {kw}")
-        try:
-            if page_id:
-                update_keyword_status(page_id, "진행중")
-            ok = run_posting_pipeline("nolja100", kw, page_id=page_id)
-            if ok:
-                if page_id:
-                    update_keyword_status(page_id, "완료")
-                else:
-                    from keyword_engine.db_handler import set_keyword_status as _set_kw_status
-                    _set_kw_status(kw, "published", blog_id="nolja100")
-        except Exception as e:
-            log(f"[nolja100] 오류: {e}")
-            if page_id:
-                update_keyword_status(page_id, "실패")
-            else:
-                from keyword_engine.db_handler import set_keyword_status as _set_kw_status
-                _set_kw_status(kw, "failed", blog_id="nolja100")
-    else:
-        log("[nolja100] 대기 키워드 없음 — 스킵")
-
-    save_log()
-
-    # ── 3단계: salim1su 포스팅 테스트 ──
-    log("\n" + "=" * 60)
-    log("[3단계] salim1su 포스팅 테스트")
-    log("=" * 60)
-
-    kw, page_id = fetch_next_keyword("salim1su")
-    if kw and not is_keyword_suitable("salim1su", kw):
-        log(f"[salim1su] ⚠ 테마 부적합 키워드 '{kw}' → 실패 처리")
-        update_keyword_status(page_id, "실패", memo="테마 부적합: 살림블로그")
-        kw, page_id = None, None
-    if kw:
-        log(f"[salim1su] 키워드: {kw}")
-        try:
-            update_keyword_status(page_id, "진행중")
-            ok = run_posting_pipeline("salim1su", kw, page_id=page_id)
-            if ok:
-                update_keyword_status(page_id, "완료")
-        except Exception as e:
-            log(f"[salim1su] 오류: {e}")
-            update_keyword_status(page_id, "실패")
-    else:
-        log("[salim1su] 대기 키워드 없음 — 스킵")
-
-    save_log()
-
-    # ── 4단계: baremi542 포스팅 ──
-    log("\n" + "=" * 60)
-    log("[4단계] baremi542 포스팅")
-    log("=" * 60)
-
-    kw, page_id = fetch_next_keyword("baremi542")
-    if kw and not is_keyword_suitable("baremi542", kw):
-        log(f"[baremi542] ⚠ 테마 부적합 키워드 '{kw}' → 실패 처리")
-        update_keyword_status(page_id, "실패", memo="테마 부적합: 정부지원블로그")
-        kw, page_id = None, None
-    if not kw:
-        from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as _set_kw_status2
-        kw = fetch_next_pending("baremi542")
-        if kw:
-            log(f"[baremi542] SQLite 키워드 사용: {kw}")
-            _set_kw_status2(kw, "in_progress", blog_id="baremi542")
-            page_id = None
-    if kw:
-        log(f"[baremi542] 키워드: {kw}")
-        try:
-            if page_id:
-                update_keyword_status(page_id, "진행중")
-            ok = run_posting_pipeline("baremi542", kw, page_id=page_id)
-            if ok:
-                if page_id:
-                    update_keyword_status(page_id, "완료")
-                else:
-                    from keyword_engine.db_handler import set_keyword_status as _set_kw_status2
-                    _set_kw_status2(kw, "published", blog_id="baremi542")
-        except Exception as e:
-            log(f"[baremi542] 오류: {e}")
-            if page_id:
-                update_keyword_status(page_id, "실패")
-    else:
-        log("[baremi542] 대기 키워드 없음 — 스킵")
-
-    # ── 최종 결과 ──
-    log("\n" + "=" * 60)
-    log("야간 자동 실행 완료")
+    log("전체 완료")
     log("=" * 60)
     save_log()
