@@ -426,8 +426,8 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
 
     # 3. 글 품질 검수 (이미지 생성 전에 먼저 — Gemini 쿼터 낭비 방지)
     quality_ok = True
-    if char_count < 500:
-        log(f"[검수] ❌ 본문 너무 짧음 ({char_count}자 < 500자) — 발행 중단")
+    if char_count < 2000:
+        log(f"[검수] ❌ 본문 너무 짧음 ({char_count}자 < 2000자) — 발행 중단")
         quality_ok = False
     if not tags:
         log(f"[검수] ❌ 태그 없음 — 발행 중단")
@@ -524,9 +524,11 @@ def post_one_blog(blog_id):
 
 
 def run_one_round(round_num):
-    """모든 블로그에 1편씩 포스팅 (1라운드)"""
+    """모든 블로그에 1편씩 포스팅 (1라운드) — 순서 랜덤"""
     import time as _time
+    import random as _rand
     BLOGS = ["nolja100", "salim1su", "baremi542", "goodisak"]
+    _rand.shuffle(BLOGS)  # 매 라운드 랜덤 순서 (한 블로그 연달아 3개 방지)
     log(f"\n{'='*60}")
     log(f"[라운드 {round_num}] 시작 ({datetime.now().strftime('%H:%M')})")
     log(f"{'='*60}")
