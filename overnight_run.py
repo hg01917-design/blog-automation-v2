@@ -344,15 +344,6 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     from gemini_image import generate_images
     from poster import post_single
 
-    # 0-1. 노션 큐 내 중복 키워드 체크 (완료된 유사 키워드 존재 여부)
-    log(f"[파이프라인] {blog_id} / '{keyword}' — 노션 키워드 중복 체크")
-    is_notion_dup, notion_matched = check_keyword_duplicate_in_notion(blog_id, keyword)
-    if is_notion_dup:
-        log(f"[파이프라인] ⚠ 유사 키워드 이미 완료됨: '{notion_matched}' — '{keyword}' 건너뜀")
-        if page_id:
-            update_keyword_status(page_id, "실패", memo=f"유사키워드 중복: {notion_matched[:30]}")
-        return False
-
     # 0-2. 유사문서 체크 (블로그 내 기존 글)
     log(f"[파이프라인] {blog_id} / '{keyword}' — 유사문서 체크")
     is_dup, matched = check_duplicate_post(blog_id, keyword, on_log=log)
@@ -481,45 +472,29 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
 
 # ─── 블로그 1편 포스팅 ───
 def post_one_blog(blog_id):
-    """한 블로그에 키워드 1개 선택 → 포스팅"""
+    """한 블로그에 키워드 1개 선택 → 포스팅 (SQLite 키워드 엔진만 사용)"""
     from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as _db_set
 
-    kw, page_id = fetch_next_keyword(blog_id)
+    kw = fetch_next_pending(blog_id)
     if kw and not is_keyword_suitable(blog_id, kw):
-        log(f"[{blog_id}] ⚠ 테마 부적합 '{kw}' → 실패 처리 후 SQLite 폴백")
-        update_keyword_status(page_id, "실패", memo=f"테마 부적합: {blog_id}")
-        kw, page_id = None, None
-    if not kw:
-        kw = fetch_next_pending(blog_id)
-        if kw:
-            log(f"[{blog_id}] SQLite 키워드 사용: {kw}")
-            _db_set(kw, "in_progress", blog_id=blog_id)
-            page_id = None
+        log(f"[{blog_id}] ⚠ 테마 부적합 '{kw}' → 스킵")
+        _db_set(kw, "failed", blog_id=blog_id)
+        kw = None
     if not kw:
         log(f"[{blog_id}] 대기 키워드 없음 — 스킵")
         return False
     log(f"[{blog_id}] 키워드: {kw}")
+    _db_set(kw, "in_progress", blog_id=blog_id)
     try:
-        if page_id:
-            update_keyword_status(page_id, "진행중")
-        ok = run_posting_pipeline(blog_id, kw, page_id=page_id)
+        ok = run_posting_pipeline(blog_id, kw, page_id=None)
         if ok:
-            if page_id:
-                update_keyword_status(page_id, "완료")
-            else:
-                _db_set(kw, "published", blog_id=blog_id)
+            _db_set(kw, "published", blog_id=blog_id)
         else:
-            if page_id:
-                update_keyword_status(page_id, "실패")
-            else:
-                _db_set(kw, "failed", blog_id=blog_id)
+            _db_set(kw, "failed", blog_id=blog_id)
         return ok
     except Exception as e:
         log(f"[{blog_id}] 오류: {e}")
-        if page_id:
-            update_keyword_status(page_id, "실패")
-        else:
-            _db_set(kw, "failed", blog_id=blog_id)
+        _db_set(kw, "failed", blog_id=blog_id)
         return False
 
 
