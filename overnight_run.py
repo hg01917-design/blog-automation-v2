@@ -132,6 +132,27 @@ def fetch_failed_keywords(blog_id):
         return []
 
 
+# ─── 블로그 테마 적합성 검사 ───
+_BLOG_THEMES = {
+    "nolja100": ["여행", "관광", "숙소", "맛집", "코스", "캠핑", "펜션", "호텔", "드라이브",
+                 "당일치기", "트레킹", "등산", "해수욕", "바다", "산", "계곡", "레저", "축제",
+                 "케이블카", "한옥", "올레길", "둘레길", "차박", "글램핑", "리조트"],
+    "salim1su": ["살림", "절약", "가스", "전기", "요금", "주방", "청소", "정리", "수납",
+                 "가계", "생활비", "난방", "냉방", "가전", "요리", "레시피", "기름때",
+                 "세탁", "빨래", "냉장고", "에어컨", "보일러", "다이소"],
+    "baremi542": ["지원금", "보조금", "지원사업", "복지", "수당", "혜택", "신청", "환급",
+                  "정부", "공공", "보험", "연금", "청년", "취업", "바우처", "감면"],
+}
+
+
+def is_keyword_suitable(blog_id: str, keyword: str) -> bool:
+    """키워드가 블로그 테마에 적합한지 확인"""
+    theme_words = _BLOG_THEMES.get(blog_id)
+    if not theme_words:
+        return True
+    return any(w in keyword for w in theme_words)
+
+
 def update_keyword_status(page_id, status, memo=None):
     """Notion 키워드 상태 업데이트 (메모 옵션)"""
     props = {"상태": {"select": {"name": status}}}
@@ -453,16 +474,36 @@ if __name__ == "__main__":
     log("=" * 60)
 
     kw, page_id = fetch_next_keyword("nolja100")
+    if kw and not is_keyword_suitable("nolja100", kw):
+        log(f"[nolja100] ⚠ 테마 부적합 키워드 '{kw}' (여행블로그) → 실패 처리 후 SQLite 폴백")
+        update_keyword_status(page_id, "실패", memo="테마 부적합: 여행블로그")
+        kw, page_id = None, None
+    if not kw:
+        from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as _set_kw_status
+        kw = fetch_next_pending("nolja100")
+        if kw:
+            log(f"[nolja100] SQLite 여행 키워드 사용: {kw}")
+            _set_kw_status(kw, "in_progress", blog_id="nolja100")
+            page_id = None
     if kw:
         log(f"[nolja100] 키워드: {kw}")
         try:
-            update_keyword_status(page_id, "진행중")
+            if page_id:
+                update_keyword_status(page_id, "진행중")
             ok = run_posting_pipeline("nolja100", kw, page_id=page_id)
             if ok:
-                update_keyword_status(page_id, "완료")
+                if page_id:
+                    update_keyword_status(page_id, "완료")
+                else:
+                    from keyword_engine.db_handler import set_keyword_status as _set_kw_status
+                    _set_kw_status(kw, "published", blog_id="nolja100")
         except Exception as e:
             log(f"[nolja100] 오류: {e}")
-            update_keyword_status(page_id, "실패")
+            if page_id:
+                update_keyword_status(page_id, "실패")
+            else:
+                from keyword_engine.db_handler import set_keyword_status as _set_kw_status
+                _set_kw_status(kw, "failed", blog_id="nolja100")
     else:
         log("[nolja100] 대기 키워드 없음 — 스킵")
 
