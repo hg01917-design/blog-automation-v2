@@ -18,22 +18,46 @@ TARGET_BLOGS = [
 
 def gen_comment(post_title, body, name):
     lines = [l.strip() for l in body.split('\n') if 15 < len(l.strip()) < 70]
-    key = lines[0] if lines else post_title[:30]
+    key1 = lines[0] if len(lines) > 0 else post_title[:30]
+    key2 = lines[1] if len(lines) > 1 else key1
     nums = re.findall(r'\d+(?:만|천|원|%|개|가지|번|분|시간)', body)
-    specific = f" {nums[0]}이라는 부분" if nums else ""
+    num_str = nums[0] if nums else ""
+
+    reactions = ["아 진짜요?", "맞아요ㅠㅠ", "저도 그랬는데", "완전 공감이에요", "헉 이거 몰랐어요"]
+    endings = [
+        "저도 써봐야겠어요. 좋은 글 감사해요!",
+        "저한테 딱 필요한 정보였어요 감사합니다 :)",
+        "이렇게 자세히 써주셔서 너무 도움됐어요!",
+        "다음 글도 기대할게요~",
+        "북마크 해뒀어요 ㅎㅎ",
+    ]
 
     options = [
-        f'"{key[:35]}" 이 부분 읽으면서 정말 유용하다 싶었어요! 저도 비슷한 고민 하던 참이었거든요{specific}. 앞으로도 이런 현실적인 정보 기대할게요 😊',
-        f'안녕하세요~ {post_title[:22]} 글 읽고 많이 배워갔어요. {key[:35]} — 실제 경험이 담긴 글이라 더 와닿았어요. 자주 올게요!',
-        f'오늘 {name} 블로그 방문했다가 {post_title[:18]} 글에 멈췄어요 ☺️ {key[:35]}처럼 구체적으로 써주셔서 저한테 딱 맞는 정보였어요. 감사해요!',
+        # 본문 첫 문장 인용 + 공감
+        f'"{key1[:38]}" — 이 부분에서 멈춰서 두 번 읽었어요. {random.choice(reactions)} {num_str + "이라는 수치도 놀랍고요. " if num_str else ""}{random.choice(endings)}',
+        # 두 번째 문장 언급 + 질문 느낌
+        f'{key1[:30]} 이야기 읽으면서 저도 비슷한 상황이었던 게 생각났어요. 특히 {key2[:28]} 부분이 현실적이어서 더 와닿았어요. {random.choice(endings)}',
+        # 구체적 수치/내용 언급
+        f'글 읽다가 {key1[:32]} 이 대목에서 완전 공감했어요. {"" + num_str + " " if num_str else ""}{"이 부분 특히 유용했고요. " if num_str else ""}{random.choice(endings)}',
     ]
     return random.choice(options)
 
-def gen_neighbor_msg(name, keyword):
+def gen_neighbor_msg(name, keyword, post_title="", body_snippet=""):
+    # 본문 내용이 있으면 첫 문장 활용, 없으면 keyword 사용
+    content_ref = ""
+    if body_snippet:
+        lines = [l.strip() for l in body_snippet.split('\n') if 15 < len(l.strip()) < 60]
+        if lines:
+            content_ref = lines[0][:40]
+    if not content_ref and post_title:
+        content_ref = post_title[:30]
+    if not content_ref:
+        content_ref = keyword
+
     options = [
-        f'안녕하세요! {name} 블로그에서 {keyword} 관련 글 읽고 방문인사 드려요. 저도 살림/절약 정보 나누는 블로그 운영 중인데 — 서로 정보 나누며 이웃으로 지내면 좋겠어요! 신청드립니다 😊',
-        f'오늘 {name} 블로그에서 제가 찾던 정보 발견했어요! 같은 주제로 글 쓰는 사람끼리 이웃 맺으면 더 풍성해질 것 같아서 용기 내서 신청해봐요 :) 잘 부탁드려요~',
-        f'{name} 블로그 처음 왔는데 {keyword} 내용이 현실적이고 딱 제 취향이에요. 앞으로 서로 좋은 정보 주고받으며 지내고 싶어서 서로이웃 신청해봅니다. 맞이해주시면 감사해요 💕',
+        f'안녕하세요! 오늘 방문해서 글 읽다가 "{content_ref}" 이 부분에서 저랑 비슷한 고민 하고 계신 것 같아서 반가웠어요. 저도 비슷한 주제로 블로그 하고 있는데 서로이웃 신청해도 될까요? 잘 부탁드려요 😊',
+        f'안녕하세요~ 글 읽다가 {content_ref} — 이 내용이 딱 제가 찾던 거라서 저도 모르게 이웃신청 누르게 됐어요 ㅎㅎ 저도 살림/절약 관련 글 쓰는데 앞으로 좋은 정보 나눠요! 잘 부탁드립니다 :)',
+        f'오늘 처음 방문했는데 "{content_ref}" 이 글 보고 완전 공감해서 댓글도 남기고 이웃신청도 드려요. 같은 관심사를 가진 분들끼리 소통하면 좋을 것 같아서요. 맞이해주시면 감사해요 💕',
     ]
     return random.choice(options)
 
@@ -128,9 +152,9 @@ def do_comment(page, blog_id, log_no, comment_text):
         print("  등록 버튼 없음")
         return False, title, body
 
-def do_neighbor(page, blog_id, blog_name, keyword):
+def do_neighbor(page, blog_id, blog_name, keyword, post_title="", body_snippet=""):
     """서로이웃 신청"""
-    msg = gen_neighbor_msg(blog_name, keyword)
+    msg = gen_neighbor_msg(blog_name, keyword, post_title=post_title, body_snippet=body_snippet)
 
     # 기존 BuddyAdd 페이지 닫기
     for p in page.context.pages:
@@ -243,14 +267,31 @@ try:
 
         print(f"\n{'='*55}")
         print(f"처리: {blog['name']} ({blog['blog_id']})")
-        r = {"blog": blog['name'], "blog_id": blog['blog_id'], "comment_ok": True, "neighbor_ok": False}
+        r = {"blog": blog['name'], "blog_id": blog['blog_id'], "comment_ok": False, "neighbor_ok": False,
+             "post_title": "", "body": ""}
 
-        # 댓글은 이미 완료됨 — 서로이웃만 신청
-        r['comment_ok'] = True  # 이전 실행에서 완료
+        # 1. 최신 글 ID 가져오기
+        log_no = get_latest_post_id(page, blog['blog_id'])
+        post_title, body = "", ""
+        if log_no:
+            # 2. 댓글 작성
+            comment_text = gen_comment("", "", "")  # 임시, 아래서 실제 내용으로 교체
+            title, body, _ = get_post_info(page, blog['blog_id'], log_no)
+            comment_text = gen_comment(title, body, blog['name'])
+            print(f"  댓글: {comment_text[:60]}...")
+            try:
+                comment_ok, post_title, body = do_comment(page, blog['blog_id'], log_no, comment_text)
+            except Exception as e:
+                print(f"  댓글 오류: {e}")
+                comment_ok = False
+            r['comment_ok'] = comment_ok
+            r['post_title'] = post_title
+            r['body'] = body[:200]
 
-        # 서로이웃 신청
+        # 3. 서로이웃 신청 (댓글에서 읽은 본문 내용 전달)
         try:
-            neighbor_ok = do_neighbor(page, blog['blog_id'], blog['name'], blog['keyword'])
+            neighbor_ok = do_neighbor(page, blog['blog_id'], blog['name'], blog['keyword'],
+                                      post_title=post_title, body_snippet=body)
         except Exception as e:
             print(f"  서로이웃 오류: {e}")
             neighbor_ok = False
