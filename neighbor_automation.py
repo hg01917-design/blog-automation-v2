@@ -7,13 +7,38 @@ import sys
 sys.path.insert(0, '/Users/hana/Downloads/blog-automation-v2')
 
 from browser import connect_cdp
-import re, random, time, json
+import re, random, time, json, os
+from datetime import date
+
+DAILY_LIMIT = 5
+VISITED_FILE = os.path.join(os.path.dirname(__file__), 'visited_blogs.json')
+
+def load_visited():
+    if os.path.exists(VISITED_FILE):
+        with open(VISITED_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def save_visited(visited):
+    with open(VISITED_FILE, 'w', encoding='utf-8') as f:
+        json.dump(visited, f, ensure_ascii=False, indent=2)
 
 TARGET_BLOGS = [
-    {"blog_id": "planwithme",      "name": "가계부 쓰는 독립여정",    "keyword": "가계부/절약",    "done": False},
-    {"blog_id": "cash_victo",      "name": "캐시빅토",               "keyword": "가계부/절약",    "done": False},
-    {"blog_id": "joiie",           "name": "치치피의 짠순재테크",     "keyword": "재테크/절약",    "done": False},
-    {"blog_id": "bokdaeng_living", "name": "bokdaeng_living",        "keyword": "살림/신혼",      "done": False},
+    {"blog_id": "planwithme",      "name": "가계부 쓰는 독립여정",    "keyword": "가계부/절약",    "done": True},
+    {"blog_id": "cash_victo",      "name": "캐시빅토",               "keyword": "가계부/절약",    "done": True},
+    {"blog_id": "joiie",           "name": "치치피의 짠순재테크",     "keyword": "재테크/절약",    "done": True},
+    {"blog_id": "bokdaeng_living", "name": "bokdaeng_living",        "keyword": "살림/신혼",      "done": True},
+    {"blog_id": "dailyw",          "name": "dailyw",                 "keyword": "가계부/절약",    "done": False},
+    {"blog_id": "yh120105",        "name": "yh120105",               "keyword": "가계부/절약",    "done": False},
+    {"blog_id": "kurumihodu",      "name": "kurumihodu",             "keyword": "가계부/절약",    "done": False},
+    {"blog_id": "justdo100",       "name": "justdo100",              "keyword": "가계부/절약",    "done": False},
+    {"blog_id": "ejykorea",        "name": "ejykorea",               "keyword": "가계부/절약",    "done": False},
+    {"blog_id": "skyluck314",      "name": "skyluck314",             "keyword": "가계부/절약",    "done": False},
+    {"blog_id": "sallim_lumora",   "name": "sallim_lumora",          "keyword": "살림/신혼",      "done": False},
+    {"blog_id": "khlovems",        "name": "khlovems",               "keyword": "살림/신혼",      "done": False},
+    {"blog_id": "khysh7",          "name": "khysh7",                 "keyword": "살림/신혼",      "done": False},
+    {"blog_id": "iamevelyn96",     "name": "iamevelyn96",            "keyword": "살림/신혼",      "done": False},
+    {"blog_id": "mykjife",         "name": "mykjife",                "keyword": "살림/신혼",      "done": False},
 ]
 
 def gen_comment(post_title, body, name):
@@ -187,22 +212,20 @@ def do_neighbor(page, blog_id, blog_name, keyword, post_title="", body_snippet="
 
     print(f"  프레임: {src_frame.url[:60]}")
 
-    # _addBuddyPop 클릭 → 새 탭 열림
-    new_pages = []
-    page.context.on("page", lambda p: new_pages.append(p))
-
-    src_frame.locator('a._addBuddyPop').first.click(timeout=8000)
-
-    # BuddyAdd 페이지 대기 (최대 15초)
-    buddy_page = None
-    for _ in range(30):
-        time.sleep(0.5)
+    # _addBuddyPop 클릭 → 팝업 감지 (expect_popup 방식)
+    try:
+        with page.expect_popup(timeout=10000) as popup_info:
+            src_frame.locator('a._addBuddyPop').first.click(timeout=8000)
+        buddy_page = popup_info.value
+        buddy_page.wait_for_load_state('domcontentloaded', timeout=10000)
+    except Exception as e:
+        print(f"  팝업 감지 실패: {e}")
+        # 폴백: context.pages 에서 BuddyAdd 찾기
+        buddy_page = None
         for p in page.context.pages:
             if 'BuddyAdd' in p.url:
                 buddy_page = p
                 break
-        if buddy_page:
-            break
 
     if not buddy_page:
         print("  BuddyAdd 페이지 없음")
@@ -251,6 +274,11 @@ def do_neighbor(page, blog_id, blog_name, keyword, post_title="", body_snippet="
 
 
 # ── 메인 ──────────────────────────────────────────────────────────────────────
+visited = load_visited()
+today = str(date.today())
+today_count = sum(1 for v in visited.values() if v.get('date') == today)
+print(f"오늘({today}) 방문 완료: {today_count}개 / 한도: {DAILY_LIMIT}개")
+
 pw, browser = connect_cdp()
 ctx = browser.contexts[0]
 page = ctx.new_page()
@@ -261,26 +289,30 @@ results = []
 
 try:
     for blog in TARGET_BLOGS:
-        if blog.get("done"):
-            print(f"\n[스킵] {blog['name']} — 이미 처리됨")
+        if today_count >= DAILY_LIMIT:
+            print(f"\n[한도도달] 오늘 {DAILY_LIMIT}개 완료 — 중단")
+            break
+
+        blog_id = blog['blog_id']
+        if blog_id in visited:
+            print(f"\n[스킵] {blog['name']} — 이미 방문함 ({visited[blog_id].get('date','')})")
             continue
 
         print(f"\n{'='*55}")
-        print(f"처리: {blog['name']} ({blog['blog_id']})")
-        r = {"blog": blog['name'], "blog_id": blog['blog_id'], "comment_ok": False, "neighbor_ok": False,
+        print(f"처리: {blog['name']} ({blog_id})")
+        r = {"blog": blog['name'], "blog_id": blog_id, "comment_ok": False, "neighbor_ok": False,
              "post_title": "", "body": ""}
 
         # 1. 최신 글 ID 가져오기
-        log_no = get_latest_post_id(page, blog['blog_id'])
+        log_no = get_latest_post_id(page, blog_id)
         post_title, body = "", ""
         if log_no:
             # 2. 댓글 작성
-            comment_text = gen_comment("", "", "")  # 임시, 아래서 실제 내용으로 교체
-            title, body, _ = get_post_info(page, blog['blog_id'], log_no)
+            title, body, _ = get_post_info(page, blog_id, log_no)
             comment_text = gen_comment(title, body, blog['name'])
             print(f"  댓글: {comment_text[:60]}...")
             try:
-                comment_ok, post_title, body = do_comment(page, blog['blog_id'], log_no, comment_text)
+                comment_ok, post_title, body = do_comment(page, blog_id, log_no, comment_text)
             except Exception as e:
                 print(f"  댓글 오류: {e}")
                 comment_ok = False
@@ -288,17 +320,22 @@ try:
             r['post_title'] = post_title
             r['body'] = body[:200]
 
-        # 3. 서로이웃 신청 (댓글에서 읽은 본문 내용 전달)
+        # 3. 서로이웃 신청
         try:
-            neighbor_ok = do_neighbor(page, blog['blog_id'], blog['name'], blog['keyword'],
+            neighbor_ok = do_neighbor(page, blog_id, blog['name'], blog['keyword'],
                                       post_title=post_title, body_snippet=body)
         except Exception as e:
             print(f"  서로이웃 오류: {e}")
             neighbor_ok = False
         r['neighbor_ok'] = neighbor_ok
 
+        # 방문 기록 저장
+        visited[blog_id] = {"date": today, "comment_ok": r['comment_ok'], "neighbor_ok": neighbor_ok}
+        save_visited(visited)
+        today_count += 1
+
         results.append(r)
-        print(f"\n  → 댓글:{r['comment_ok']} / 서로이웃:{neighbor_ok}")
+        print(f"\n  → 댓글:{r['comment_ok']} / 서로이웃:{neighbor_ok} | 오늘 {today_count}/{DAILY_LIMIT}")
         time.sleep(random.uniform(15, 25))
 
 finally:
