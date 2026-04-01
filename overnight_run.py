@@ -474,27 +474,37 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
 
 
 # ─── 블로그 1편 포스팅 ───
-def _already_posted_today(blog_id: str) -> bool:
-    """오늘 이미 이 블로그에 published 글이 있으면 True"""
+MIN_POST_GAP_HOURS = 3  # 같은 블로그 포스팅 최소 간격
+
+
+def _hours_since_last_post(blog_id: str) -> float:
+    """마지막 published 이후 경과 시간(시간). 발행 이력 없으면 999 반환."""
     from keyword_engine.db_handler import _conn
     with _conn() as db:
         row = db.execute(
-            """SELECT 1 FROM keyword_blog_status
+            """SELECT updated_at FROM keyword_blog_status
                WHERE blog_id = ? AND status = 'published'
-               AND date(updated_at) = date('now', 'localtime')
-               LIMIT 1""",
+               ORDER BY updated_at DESC LIMIT 1""",
             (blog_id,),
         ).fetchone()
-    return row is not None
+    if not row:
+        return 999.0
+    from datetime import datetime as _dt
+    try:
+        last_time = _dt.fromisoformat(row[0])
+        return (_dt.now() - last_time).total_seconds() / 3600
+    except Exception:
+        return 999.0
 
 
 def post_one_blog(blog_id):
     """한 블로그에 키워드 1개 선택 → 포스팅 (SQLite 키워드 엔진만 사용)"""
     from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as _db_set
 
-    # 오늘 이미 발행했으면 스킵 (하루 1편 제한)
-    if _already_posted_today(blog_id):
-        log(f"[{blog_id}] 오늘 이미 포스팅 완료 — 스킵 (하루 1편 제한)")
+    # 최소 포스팅 간격 체크 (같은 블로그 3시간 이상 텀)
+    elapsed = _hours_since_last_post(blog_id)
+    if elapsed < MIN_POST_GAP_HOURS:
+        log(f"[{blog_id}] 마지막 포스팅 {elapsed:.1f}시간 전 — 최소 {MIN_POST_GAP_HOURS}시간 필요, 스킵")
         return False
 
     kw = fetch_next_pending(blog_id)
