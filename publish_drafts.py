@@ -252,9 +252,36 @@ def _tistory_get_draft_id(page, blog_id: str) -> str | None:
     # 이미 발행된 글 목록 (중복 방지)
     published_titles = _get_published_titles(blog_id, 'tistory')
 
+    # --- 1단계: 중복 드래프트 삭제 ---
+    if published_titles:
+        # dialog 자동 수락 핸들러 등록
+        def _accept(d): d.accept()
+        page.on("dialog", _accept)
+        try:
+            links_all = page.query_selector_all('a.link_info')
+            for link in links_all:
+                try:
+                    title = (link.text_content() or '').strip()
+                    if title in published_titles:
+                        del_btn = link.evaluate_handle(
+                            "el => el.parentElement.querySelector('button.ico_trash')"
+                        ).as_element()
+                        if del_btn:
+                            _log(f"[{blog_id}] 중복 삭제: '{title}'")
+                            del_btn.evaluate("el => el.click()")
+                            time.sleep(1.5)
+                except Exception:
+                    pass
+        finally:
+            page.remove_listener("dialog", _accept)
+
+    # --- 2단계: 첫 번째 유효 드래프트 로드 ---
     links = page.query_selector_all('a.link_info')
     for link in links:
-        title = (link.text_content() or '').strip()
+        try:
+            title = (link.text_content() or '').strip()
+        except Exception:
+            continue
         if title in SKIP_TITLES:
             continue
         if any(kw in title for kw in SKIP_KEYWORDS):
@@ -269,10 +296,8 @@ def _tistory_get_draft_id(page, blog_id: str) -> str | None:
             preview = ''
         if '[내용 없음]' == (preview or '').strip():
             continue
-        # 중복 발행 방지
         if title in published_titles:
-            _log(f"[{blog_id}] 중복 스킵: '{title}' (이미 발행됨)")
-            continue
+            continue  # 방금 삭제 못 한 경우 스킵
 
         _log(f"[{blog_id}] 드래프트 로드: {title}")
         link.click()
@@ -531,19 +556,52 @@ def _naver_get_draft(page, blog_id: str) -> bool:
     # 이미 발행된 글 목록 (중복 방지)
     published_titles = _get_published_titles(blog_id, 'naver')
 
-    # 팝업 내 첫 번째 유효 드래프트 클릭 (중복 제외)
     SKIP = {'제목 없음', ''}
+
+    # --- 1단계: 중복 드래프트 삭제 ---
+    if published_titles:
+        def _accept_naver(d): d.accept()
+        page.on("dialog", _accept_naver)
+        try:
+            duplicates = page.evaluate("""(publishedSet) => {
+                var lis = document.querySelectorAll('li');
+                var found = [];
+                for (var i = 0; i < lis.length; i++) {
+                    var titleEl = lis[i].querySelector('[class*="title__"]');
+                    var delBtn = lis[i].querySelector('[class*="delete_button"], [title="삭제"]');
+                    if (titleEl && delBtn) {
+                        var t = titleEl.textContent.trim();
+                        if (publishedSet.includes(t)) found.push(t);
+                    }
+                }
+                return found;
+            }""", list(published_titles))
+            for dup_title in duplicates:
+                _log(f"[{blog_id}] 중복 삭제: '{dup_title}'")
+                page.evaluate("""(dupTitle) => {
+                    var lis = document.querySelectorAll('li');
+                    for (var i = 0; i < lis.length; i++) {
+                        var titleEl = lis[i].querySelector('[class*="title__"]');
+                        if (titleEl && titleEl.textContent.trim() === dupTitle) {
+                            var delBtn = lis[i].querySelector('[class*="delete_button"], [title="삭제"]');
+                            if (delBtn) { delBtn.click(); return true; }
+                        }
+                    }
+                    return false;
+                }""", dup_title)
+                time.sleep(1.5)
+        finally:
+            page.remove_listener("dialog", _accept_naver)
+
+    # --- 2단계: 첫 번째 유효 드래프트 로드 ---
     loaded = page.evaluate("""(skipSet, publishedSet) => {
-        const items = [...document.querySelectorAll(
-            '[class*="list__"] [class*="item__"], [class*="list__"] li, [class*="popup"] li'
-        )];
-        for (const item of items) {
-            const titleEl = item.querySelector('[class*="title__"], a, span');
-            const title = (titleEl ? titleEl.textContent : item.textContent).trim();
-            if (!title || skipSet.includes(title)) continue;
-            if (publishedSet.includes(title)) continue;  // 중복 스킵
-            // 드래프트 항목 클릭
-            const clickable = item.querySelector('a, button, [class*="title__"]') || item;
+        var lis = document.querySelectorAll('li');
+        for (var i = 0; i < lis.length; i++) {
+            var titleEl = lis[i].querySelector('[class*="title__"]');
+            if (!titleEl) continue;
+            var title = titleEl.textContent.trim();
+            if (!title || skipSet.includes(title) || publishedSet.includes(title)) continue;
+            var clickable = lis[i].querySelector('[class*="article_button"]') || lis[i];
             clickable.click();
             return title;
         }
