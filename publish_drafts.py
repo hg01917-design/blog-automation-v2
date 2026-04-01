@@ -198,6 +198,31 @@ def publish_wp_draft():
 
 
 # ══════════════════════════════════════════════
+# 중복 체크 (발행 전 RSS 비교)
+# ══════════════════════════════════════════════
+def _get_published_titles(blog_id: str, blog_type: str = 'tistory') -> set:
+    """RSS에서 이미 발행된 글 제목 목록을 가져온다."""
+    import re as _re
+    try:
+        if blog_type == 'naver':
+            url = f"https://rss.blog.naver.com/{blog_id}.xml"
+        else:
+            url = f"https://{blog_id}.tistory.com/rss"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        data = urllib.request.urlopen(req, timeout=10, context=ctx).read().decode('utf-8', errors='ignore')
+        titles = _re.findall(r'<title><!\[CDATA\[(.*?)\]\]></title>|<title>(.*?)</title>', data)
+        result = {(t[0] or t[1]).strip() for t in titles if (t[0] or t[1]).strip()}
+        _log(f"[{blog_id}] 발행된 글 {len(result)}개 확인")
+        return result
+    except Exception as e:
+        _log(f"[{blog_id}] RSS 조회 실패: {e}")
+        return set()
+
+
+# ══════════════════════════════════════════════
 # Tistory (goodisak / nolja100)
 # ══════════════════════════════════════════════
 def _tistory_get_draft_id(page, blog_id: str) -> str | None:
@@ -224,6 +249,9 @@ def _tistory_get_draft_id(page, blog_id: str) -> str | None:
     SKIP_TITLES = {'제목 없음', '토스 행운퀴즈'}
     SKIP_KEYWORDS = ['규칙 확인', '[내용 없음]']
 
+    # 이미 발행된 글 목록 (중복 방지)
+    published_titles = _get_published_titles(blog_id, 'tistory')
+
     links = page.query_selector_all('a.link_info')
     for link in links:
         title = (link.text_content() or '').strip()
@@ -240,6 +268,10 @@ def _tistory_get_draft_id(page, blog_id: str) -> str | None:
         except Exception:
             preview = ''
         if '[내용 없음]' == (preview or '').strip():
+            continue
+        # 중복 발행 방지
+        if title in published_titles:
+            _log(f"[{blog_id}] 중복 스킵: '{title}' (이미 발행됨)")
             continue
 
         _log(f"[{blog_id}] 드래프트 로드: {title}")
@@ -466,45 +498,65 @@ def publish_tistory_draft(blog_id: str) -> bool:
 # ══════════════════════════════════════════════
 # Naver (salim1su)
 # ══════════════════════════════════════════════
-def _naver_get_draft(page, blog_id: str) -> str | None:
-    """Naver 블로그 임시저장 글 편집 URL 반환."""
-    # 네이버 임시저장 목록
-    for draft_url in [
-        f"https://blog.naver.com/{blog_id}?redirect=DraftBox",
-        f"https://blog.naver.com/PostTempList.nhn?blogId={blog_id}",
-        f"https://blog.naver.com/{blog_id}/manage/posts/temporary",
-    ]:
-        _log(f"[{blog_id}] 임시저장 목록 시도: {draft_url}")
-        try:
-            page.goto(draft_url, wait_until="domcontentloaded", timeout=20000)
-            time.sleep(3)
-            if "nidlogin" in page.url or "nid.naver.com" in page.url:
-                _log(f"[{blog_id}] 로그인 필요 — 중단")
-                return None
+def _naver_get_draft(page, blog_id: str) -> bool:
+    """Naver 에디터를 열고, 임시저장 팝업에서 첫 번째 유효한 드래프트를 로드.
+    성공 시 True 반환 (이미 에디터에 로드됨). 없으면 False."""
+    from config import ACCOUNT_MAP
+    editor_url = ACCOUNT_MAP.get(blog_id, {}).get("editor_url",
+                                                   f"https://blog.naver.com/{blog_id}/postwrite")
+    _log(f"[{blog_id}] 에디터 이동: {editor_url}")
+    page.goto(editor_url, wait_until="domcontentloaded", timeout=30000)
+    time.sleep(4)
 
-            # postwrite/{id} 링크 탐색
-            post_url = page.evaluate("""() => {
-                const links = [...document.querySelectorAll('a[href*="postview"],'
-                    + 'a[href*="EditPost"],'
-                    + 'a[href*="postwrite"]')];
-                if (links.length > 0) return links[0].href;
-                // iframe 내부도 탐색
-                try {
-                    const f = document.querySelector('iframe#mainFrame');
-                    if (f) {
-                        const inner = [...f.contentDocument.querySelectorAll(
-                            'a[href*="postview"], a[href*="EditPost"], a[href*="postwrite"]')];
-                        if (inner.length > 0) return inner[0].href;
-                    }
-                } catch(e) {}
-                return null;
-            }""")
-            if post_url:
-                _log(f"[{blog_id}] 임시저장 글 URL: {post_url}")
-                return post_url
-        except Exception as e:
-            _log(f"[{blog_id}] {draft_url} 접근 실패: {e}")
-    return None
+    if "nidlogin" in page.url or "nid.naver.com" in page.url:
+        _log(f"[{blog_id}] 로그인 필요 — 중단")
+        return False
+
+    # 임시저장 개수 버튼 클릭
+    opened = page.evaluate("""() => {
+        const btn = document.querySelector('.save_count_btn__ZTLNa, [class*="save_count_btn"]');
+        if (btn && parseInt(btn.textContent.trim()) > 0) {
+            btn.click();
+            return parseInt(btn.textContent.trim());
+        }
+        return 0;
+    }""")
+    if not opened:
+        _log(f"[{blog_id}] 임시저장 글 없음 (버튼 0 또는 없음)")
+        return False
+
+    _log(f"[{blog_id}] 임시저장 {opened}개 — 팝업 오픈")
+    time.sleep(2)
+
+    # 이미 발행된 글 목록 (중복 방지)
+    published_titles = _get_published_titles(blog_id, 'naver')
+
+    # 팝업 내 첫 번째 유효 드래프트 클릭 (중복 제외)
+    SKIP = {'제목 없음', ''}
+    loaded = page.evaluate("""(skipSet, publishedSet) => {
+        const items = [...document.querySelectorAll(
+            '[class*="list__"] [class*="item__"], [class*="list__"] li, [class*="popup"] li'
+        )];
+        for (const item of items) {
+            const titleEl = item.querySelector('[class*="title__"], a, span');
+            const title = (titleEl ? titleEl.textContent : item.textContent).trim();
+            if (!title || skipSet.includes(title)) continue;
+            if (publishedSet.includes(title)) continue;  // 중복 스킵
+            // 드래프트 항목 클릭
+            const clickable = item.querySelector('a, button, [class*="title__"]') || item;
+            clickable.click();
+            return title;
+        }
+        return null;
+    }""", list(SKIP), list(published_titles))
+
+    if not loaded:
+        _log(f"[{blog_id}] 유효한 임시저장 글 없음 (모두 발행됨이거나 비어있음)")
+        return False
+
+    _log(f"[{blog_id}] 드래프트 로드: {loaded}")
+    time.sleep(4)
+    return True
 
 
 def _naver_open_draft_in_editor(page, blog_id: str, draft_url: str) -> bool:
@@ -541,53 +593,49 @@ def _naver_check_editor_content(page) -> dict:
     return result or {}
 
 
-def _naver_publish_private(page) -> bool:
-    """Naver Smart Editor에서 비공개 발행."""
+def _naver_publish_public(page) -> bool:
+    """Naver Smart Editor에서 공개 발행."""
     # 발행 버튼 클릭
-    pub_btn = page.query_selector('button[class*="publish_btn"]')
-    if not pub_btn:
-        pub_btn_js = page.evaluate("""() => {
-            const btns = [...document.querySelectorAll('button')];
-            const btn = btns.find(b => b.textContent.includes('발행'));
-            if (btn) { btn.click(); return true; }
-            return false;
-        }""")
-        if not pub_btn_js:
-            _log("[Naver] 발행 버튼 없음")
-            return False
-    else:
-        pub_btn.click()
+    clicked = page.evaluate("""() => {
+        const btn = document.querySelector('button[class*="publish_btn"]')
+                 || [...document.querySelectorAll('button')].find(b => b.textContent.trim() === '발행');
+        if (btn) { btn.click(); return true; }
+        return false;
+    }""")
+    if not clicked:
+        _log("[Naver] 발행 버튼 없음")
+        return False
     time.sleep(2)
 
-    # 발행 팝업에서 비공개 선택
-    set_private = page.evaluate("""() => {
-        // 비공개/나만보기 옵션 클릭
-        const options = [...document.querySelectorAll('label, span, button, li, a, input')];
-        const priv = options.find(el => {
-            const t = el.textContent.trim();
-            return t === '비공개' || t === '나만보기' || el.value === 'only_me';
+    # 발행 팝업 대기
+    try:
+        page.wait_for_selector('[class*="layer_popup"][class*="isShow"], [class*="isShow__"]', timeout=5000)
+    except Exception:
+        pass
+
+    # 공개 옵션 선택 (공개 라디오 버튼)
+    page.evaluate("""() => {
+        const inputs = [...document.querySelectorAll('input[type="radio"]')];
+        const pub = inputs.find(r => {
+            const v = (r.value || r.id || '').toLowerCase();
+            return v.includes('public') || v.includes('all') || v === '1' || v === 'open';
         });
-        if (priv) { priv.click(); return 'found:' + (priv.textContent.trim() || priv.value); }
-        // input[type=radio] 중 value/id가 private 관련인 것
-        const radios = [...document.querySelectorAll('input[type="radio"]')];
-        const privRadio = radios.find(r =>
-            ['private', 'only_me', '비공개', 'onlyMe'].includes(r.value || r.id || '')
-        );
-        if (privRadio) { privRadio.click(); return 'radio:' + privRadio.value; }
-        return null;
+        if (pub) { pub.click(); return; }
+        // 텍스트로 "전체공개" 또는 "공개" 찾기
+        const labels = [...document.querySelectorAll('label, span, li, a')];
+        const pubLabel = labels.find(el => {
+            const t = el.textContent.trim();
+            return t === '전체공개' || t === '공개' || t === '전체 공개';
+        });
+        if (pubLabel) pubLabel.click();
     }""")
-    if set_private:
-        _log(f"[Naver] 비공개 선택: {set_private}")
-        time.sleep(1)
-    else:
-        _log("[Naver] 비공개 옵션 못 찾음 — 기본 설정으로 진행")
+    time.sleep(1)
 
     # 발행 확인 버튼
     confirmed = page.evaluate("""() => {
-        const labels = ['발행', '확인', '저장', '등록', '게시'];
+        const labels = ['발행', '확인', '게시', '등록'];
         const btns = [...document.querySelectorAll(
-            '[class*="layer_popup"] button, [class*="popup"] button, ' +
-            '[class*="modal"] button, button'
+            '[class*="isShow__"] button, [class*="layer_popup"] button, button'
         )];
         for (const lbl of labels) {
             const btn = btns.find(b => b.textContent.trim() === lbl && !b.disabled);
@@ -615,13 +663,12 @@ def publish_naver_draft(blog_id="salim1su") -> bool:
     pw, browser = connect_cdp(on_log=_log)
     try:
         page = get_or_create_page(browser)
-        draft_url = _naver_get_draft(page, blog_id)
-        if not draft_url:
+
+        # 임시저장 드래프트 로드 (에디터 내 save_count_btn 방식)
+        loaded = _naver_get_draft(page, blog_id)
+        if not loaded:
             _log(f"[{blog_id}] 임시저장 글 없음 — 스킵")
             return False
-
-        # 에디터로 열기
-        _naver_open_draft_in_editor(page, blog_id, draft_url)
 
         if "nidlogin" in page.url or "nid.naver.com" in page.url:
             _log(f"[{blog_id}] 로그인 만료 — 중단")
@@ -638,14 +685,19 @@ def publish_naver_draft(blog_id="salim1su") -> bool:
         # 콘텐츠 확인
         info = _naver_check_editor_content(page)
         _log(f"[{blog_id}] 제목: {info.get('title','?')}")
-        _log(f"[{blog_id}] 이미지: {info.get('hasImages')}, 애드센스: {info.get('hasAdsense')}")
+        _log(f"[{blog_id}] 이미지: {info.get('hasImages')}, 글자수: {info.get('length','?')}")
 
-        # 비공개 발행
-        ok = _naver_publish_private(page)
+        # 글자수 체크
+        if info.get('length', 0) < 1700:
+            _log(f"[{blog_id}] 글자수 부족({info.get('length')}자) — 스킵")
+            return False
+
+        # 공개 발행
+        ok = _naver_publish_public(page)
         if ok:
-            _log(f"[{blog_id}] ✓ 비공개 발행 완료")
+            _log(f"[{blog_id}] ✓ 공개 발행 완료")
         else:
-            _log(f"[{blog_id}] 발행 불확실 — 임시저장 상태 유지")
+            _log(f"[{blog_id}] 발행 불확실 — 확인 필요")
         return ok
 
     finally:
