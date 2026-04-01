@@ -201,59 +201,54 @@ def publish_wp_draft():
 # Tistory (goodisak / nolja100)
 # ══════════════════════════════════════════════
 def _tistory_get_draft_id(page, blog_id: str) -> str | None:
-    """Tistory 관리 포스트 목록에서 가장 최근 임시저장 게시물 ID 반환."""
-    manage_url = f"https://{blog_id}.tistory.com/manage/posts"
-    _log(f"[{blog_id}] 포스트 목록 이동: {manage_url}")
-    page.goto(manage_url, wait_until="domcontentloaded", timeout=30000)
-    time.sleep(3)
+    """에디터 임시저장 목록에서 첫 번째 유효한 드래프트를 에디터에 로드.
+    성공 시 'loaded' 반환 (이후 page.goto 불필요).
+    """
+    editor_url = f"https://{blog_id}.tistory.com/manage/newpost/"
+    _log(f"[{blog_id}] 에디터 이동: {editor_url}")
+    try:
+        page.goto(editor_url, wait_until="domcontentloaded", timeout=30000)
+    except Exception:
+        pass
+    time.sleep(4)
 
-    # JavaScript로 임시저장 글 링크 추출
-    draft_id = page.evaluate("""() => {
-        // 임시저장 뱃지/상태 텍스트를 찾아 해당 행의 편집 링크에서 ID 추출
-        const rows = document.querySelectorAll('tr, li, .item, [class*="post"]');
-        for (const row of rows) {
-            const text = row.textContent || '';
-            if (text.includes('임시저장') || text.includes('draft')) {
-                // /manage/newpost/{id} 패턴 링크 찾기
-                const link = row.querySelector('a[href*="/manage/newpost/"]');
-                if (link) {
-                    const m = link.href.match(/newpost\\/(\d+)/);
-                    if (m) return m[1];
-                }
-            }
-        }
-        // 폴백: 페이지 전체에서 임시저장 관련 edit 링크 탐색
-        const allLinks = document.querySelectorAll('a[href*="/manage/newpost/"]');
-        for (const a of allLinks) {
-            const row = a.closest('tr, li, .item') || a.parentElement;
-            if (row && (row.textContent.includes('임시저장') || row.textContent.includes('draft'))) {
-                const m = a.href.match(/newpost\\/(\d+)/);
-                if (m) return m[1];
-            }
-        }
-        return null;
-    }""")
-
-    if draft_id:
-        _log(f"[{blog_id}] 임시저장 ID: {draft_id}")
-        return draft_id
-
-    # 폴백: URL 파라미터로 임시저장 필터
-    draft_url = f"https://{blog_id}.tistory.com/manage/posts?type=1"
-    _log(f"[{blog_id}] 폴백 URL 시도: {draft_url}")
-    page.goto(draft_url, wait_until="domcontentloaded", timeout=20000)
+    # 임시저장 개수 버튼 클릭
+    count_btn = page.query_selector('a.count[aria-label*="임시저장"]')
+    if not count_btn:
+        _log(f"[{blog_id}] 임시저장 버튼 없음 — 임시저장 글 없음")
+        return None
+    count_btn.click()
     time.sleep(2)
-    draft_id = page.evaluate("""() => {
-        const links = document.querySelectorAll('a[href*="/manage/newpost/"]');
-        if (links.length > 0) {
-            const m = links[0].href.match(/newpost\\/(\d+)/);
-            return m ? m[1] : null;
-        }
-        return null;
-    }""")
-    if draft_id:
-        _log(f"[{blog_id}] 폴백으로 임시저장 ID: {draft_id}")
-    return draft_id
+
+    # 스킵 목록
+    SKIP_TITLES = {'제목 없음', '토스 행운퀴즈'}
+    SKIP_KEYWORDS = ['규칙 확인', '[내용 없음]']
+
+    links = page.query_selector_all('a.link_info')
+    for link in links:
+        title = (link.text_content() or '').strip()
+        if title in SKIP_TITLES:
+            continue
+        if any(kw in title for kw in SKIP_KEYWORDS):
+            continue
+        # 내용 미리보기도 확인
+        preview_el = link.evaluate_handle(
+            "el => el.closest('.info_editor')?.querySelector('.inner_layer')"
+        )
+        try:
+            preview = preview_el.as_element().text_content() if preview_el else ''
+        except Exception:
+            preview = ''
+        if '[내용 없음]' == (preview or '').strip():
+            continue
+
+        _log(f"[{blog_id}] 드래프트 로드: {title}")
+        link.click()
+        time.sleep(5)
+        return 'loaded'
+
+    _log(f"[{blog_id}] 유효한 임시저장 글 없음")
+    return None
 
 
 def _tistory_wait_editor(page):
@@ -277,13 +272,13 @@ def _tistory_check_and_fix(page, blog_id: str, post_id: str):
         return False
 
     content = page.evaluate("() => tinymce.activeEditor.getContent()")
-    title_el = page.query_selector('#title')
+    title_el = page.query_selector('#post-title-inp') or page.query_selector('#title')
     title = title_el.input_value() if title_el else f"post-{post_id}"
     _log(f"[{blog_id}] 제목: {title}")
     _log(f"[{blog_id}] 콘텐츠 길이: {len(content)}자")
 
-    # 이미지 체크
-    has_images = '<img' in content
+    # 이미지 체크 (Tistory [##_Image 형식 포함)
+    has_images = '<img' in content or '[##_Image' in content
     _log(f"[{blog_id}] 이미지 있음: {has_images}")
 
     # 애드센스 체크 (Tistory 서식 삽입 시 나타나는 class/data 속성)
@@ -330,16 +325,38 @@ def _tistory_check_and_fix(page, blog_id: str, post_id: str):
             _log(f"[{blog_id}] 애드센스 삽입 성공")
             time.sleep(1)
 
+    # 태그 추가 (비어있으면 제목 키워드로 자동 추가)
+    current_tags = page.evaluate("() => document.getElementById('tagText')?.value || ''")
+    if not current_tags.strip():
+        words = re.findall(r'[가-힣]{2,6}', title)
+        auto_tags = list(dict.fromkeys(words))[:7]  # 중복제거, 최대 7개
+        _log(f"[{blog_id}] 태그 자동 추가: {auto_tags}")
+        page.evaluate("""(tags) => {
+            const el = document.getElementById('tagText');
+            if (!el) return;
+            tags.forEach(kw => {
+                const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                setter.call(el, kw);
+                el.dispatchEvent(new Event('input', {bubbles: true}));
+                el.dispatchEvent(new Event('change', {bubbles: true}));
+                el.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', keyCode: 13, bubbles: true}));
+                el.dispatchEvent(new KeyboardEvent('keypress', {key: 'Enter', keyCode: 13, bubbles: true}));
+                el.dispatchEvent(new KeyboardEvent('keyup', {key: 'Enter', keyCode: 13, bubbles: true}));
+            });
+        }""", auto_tags)
+        time.sleep(1)
+
     return True
 
 
 def _tistory_publish_private(page, blog_id: str) -> bool:
-    """Tistory 에디터에서 비공개 발행."""
-    _log(f"[{blog_id}] 비공개 발행 시작...")
+    """Tistory 에디터에서 공개 발행."""
+    _log(f"[{blog_id}] 공개 발행 시작...")
 
-    # 1. 완료/발행 버튼 클릭 — 여러 셀렉터 시도
+    # 1. 완료 버튼 클릭 (발행 다이얼로그 열기)
     clicked = page.evaluate("""() => {
         const candidates = [
+            document.querySelector('#publish-layer-btn'),
             document.querySelector('#btn-submit'),
             document.querySelector('#publish-btn'),
             document.querySelector('.btn_publish'),
@@ -357,44 +374,21 @@ def _tistory_publish_private(page, blog_id: str) -> bool:
     _log(f"[{blog_id}] '{clicked}' 버튼 클릭")
     time.sleep(2)
 
-    # 2. 비공개 옵션 선택
-    set_private = page.evaluate("""() => {
-        // 라디오 버튼 또는 라벨로 비공개 설정
-        const selectors = [
-            'input[value="private"]',
-            'input[id*="private"]',
-            'input[id*="비공개"]',
-            'label[for*="private"]',
-        ];
-        for (const sel of selectors) {
-            const el = document.querySelector(sel);
-            if (el) { el.click(); return 'selector:' + sel; }
-        }
-        // 텍스트로 찾기
-        const labels = [...document.querySelectorAll('label, span, button, li, a')];
-        const priv = labels.find(el => {
-            const t = el.textContent.trim();
-            return t === '비공개' || t === '나만보기' || t === '비공개 글';
-        });
-        if (priv) { priv.click(); return 'text:' + priv.textContent.trim(); }
-        return null;
+    # 2. 공개 라디오 선택 (open20 = 공개)
+    page.evaluate("""() => {
+        const r = document.getElementById('open20');
+        if (r) { r.click(); r.checked = true; return; }
+        // 폴백: 라벨 텍스트로 찾기
+        const labels = [...document.querySelectorAll('label')];
+        const pub = labels.find(l => l.textContent.trim() === '공개');
+        if (pub) pub.click();
     }""")
-    if set_private:
-        _log(f"[{blog_id}] 비공개 선택: {set_private}")
-        time.sleep(1)
-    else:
-        _log(f"[{blog_id}] 비공개 옵션 못 찾음 — 그대로 진행")
+    time.sleep(1)
 
-    # 3. 최종 발행 버튼
+    # 3. 공개 발행 버튼 클릭
     confirmed = page.evaluate("""() => {
-        const labels = [
-            '발행하기', '발행', '확인', '게시', '저장 후 발행',
-            '공개', '비공개 발행', '완료',
-        ];
-        const btns = [...document.querySelectorAll(
-            '.layer-publish button, .publish-layer button, dialog button, ' +
-            '.modal button, .popup button, button'
-        )];
+        const labels = ['공개 발행', '발행하기', '발행', '확인', '게시'];
+        const btns = [...document.querySelectorAll('button')];
         for (const lbl of labels) {
             const btn = btns.find(b => b.textContent.trim() === lbl && !b.disabled);
             if (btn) { btn.click(); return lbl; }
@@ -402,11 +396,10 @@ def _tistory_publish_private(page, blog_id: str) -> bool:
         return null;
     }""")
     if confirmed:
-        _log(f"[{blog_id}] 발행 확인 버튼: '{confirmed}'")
+        _log(f"[{blog_id}] 발행 버튼: '{confirmed}'")
         time.sleep(3)
     else:
-        _log(f"[{blog_id}] 발행 확인 버튼 없음 — 임시저장으로 저장됨")
-        # 폴백: 임시저장
+        _log(f"[{blog_id}] 발행 버튼 없음 — 임시저장으로 저장됨")
         page.evaluate("""() => {
             const btn = [...document.querySelectorAll('button')]
                 .find(b => b.textContent.includes('임시저장'));
@@ -440,41 +433,30 @@ def publish_tistory_draft(blog_id: str) -> bool:
     try:
         page = get_or_create_page(browser)
 
-        # 임시저장 게시물 ID 조회
+        # 임시저장 게시물 로드 (에디터 드래프트 목록에서 직접 로드)
         draft_id = _tistory_get_draft_id(page, blog_id)
         if not draft_id:
             _log(f"[{blog_id}] 임시저장 글 없음 — 스킵")
             return False
-
-        # 편집 페이지 이동
-        edit_url = f"https://{blog_id}.tistory.com/manage/newpost/{draft_id}"
-        _log(f"[{blog_id}] 편집 페이지: {edit_url}")
-        page.goto(edit_url, wait_until="domcontentloaded", timeout=30000)
-        time.sleep(5)
 
         # 로그인 상태 확인
         if "accounts.kakao.com" in page.url or "auth/login" in page.url:
             _log(f"[{blog_id}] 로그인 필요 — 중단")
             return False
 
-        # iframe 로드 대기
-        try:
-            page.wait_for_selector("#editor-tistory_ifr", timeout=15000)
-        except Exception:
-            _log(f"[{blog_id}] 에디터 iframe 로드 실패")
-            return False
-        time.sleep(3)
+        # TinyMCE 로드 대기
+        time.sleep(2)
 
         # 이미지/애드센스 체크 및 보완
         if not _tistory_check_and_fix(page, blog_id, draft_id):
             return False
 
-        # 비공개 발행
+        # 공개 발행
         ok = _tistory_publish_private(page, blog_id)
         if ok:
-            _log(f"[{blog_id}] ✓ 비공개 발행 완료")
+            _log(f"[{blog_id}] ✓ 공개 발행 완료")
         else:
-            _log(f"[{blog_id}] 비공개 발행 불확실 — 임시저장 상태")
+            _log(f"[{blog_id}] 발행 불확실 — manage/posts 확인 필요")
         return ok
 
     finally:
