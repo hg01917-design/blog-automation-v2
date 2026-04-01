@@ -400,9 +400,11 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
             log(f"[파싱] ⚠ raw에 '이미지' 텍스트 없음. raw 끝 200자: {repr(raw[-200:])}")
     if img_m:
         img_text = img_m.group(1)
+        log(f"[파싱] 이미지 섹션 발견 (길이={len(img_text)}자), 내용: {repr(img_text[:300])}")
         for m in re.finditer(
-            r"\[이미지(\d+)\]\s*\n?-\s*Gemini\s*프롬프트:\s*(.+)\n-\s*파일명:\s*(.+)\n-\s*alt:\s*(.+)",
+            r"\[이미지\s*(\d+)\]\s*[-\n]*\s*(?:Gemini\s*)?프롬프트:\s*(.+?)[\n\r]+-\s*파일명:\s*(.+?)[\n\r]+-\s*alt:\s*(.+?)(?=\[이미지|\Z)",
             img_text,
+            re.DOTALL,
         ):
             images.append({
                 "index": int(m.group(1)),
@@ -410,6 +412,20 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
                 "filename": m.group(3).strip(),
                 "alt": m.group(4).strip(),
             })
+        if not images:
+            # 더 단순한 fallback 파싱: 각 [이미지N] 블록을 찾아 필드 추출
+            for block in re.findall(r"\[이미지\s*\d+\][^\[]+", img_text, re.DOTALL):
+                n_m = re.search(r"\[이미지\s*(\d+)\]", block)
+                p_m = re.search(r"프롬프트:\s*(.+)", block)
+                f_m = re.search(r"파일명:\s*(.+)", block)
+                a_m = re.search(r"alt:\s*(.+)", block)
+                if n_m and p_m:
+                    images.append({
+                        "index": int(n_m.group(1)),
+                        "prompt": p_m.group(1).strip(),
+                        "filename": f_m.group(1).strip() if f_m else f"image-{n_m.group(1)}.jpg",
+                        "alt": a_m.group(1).strip() if a_m else "",
+                    })
 
     plain = re.sub(r"##.*|{{.*?}}|\[애드센스\]|\|.*", "", body)
     char_count = len(re.sub(r"\s+", "", plain))
