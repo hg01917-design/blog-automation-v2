@@ -423,9 +423,9 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
     # 프로젝트 미설정 blog_id면 기존대로 Notion에서 전체 프롬프트 가져오기
     if blog_id and keyword:
         if blog_id in BLOG_PROJECT_URLS:
-            # 프로젝트 모드: 키워드 + 형식 규칙 (프로젝트 지침이 내용/문체 담당, 형식은 여기서 강제)
-            prompt = keyword + _FORMAT_RULE
-            log(f"[Playwright] 프로젝트 모드 — 키워드+형식규칙 전송: '{keyword}'")
+            # 프로젝트 모드: 키워드만 전송 — 프로젝트 지침이 형식/이미지/길이 모두 담당
+            prompt = keyword
+            log(f"[Playwright] 프로젝트 모드 — 키워드만 전송: '{keyword}'")
         else:
             try:
                 prompt = fetch_prompt(blog_id, keyword, on_log)
