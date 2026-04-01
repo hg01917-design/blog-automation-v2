@@ -1,0 +1,17 @@
+{
+  "dailyw": {"date": "2026-04-01", "comment_ok": true, "neighbor_ok": true},
+  "yh120105": {"date": "2026-04-01", "comment_ok": true, "neighbor_ok": true},
+  "kurumihodu": {"date": "2026-04-01", "comment_ok": false, "neighbor_ok": true},
+  "justdo100": {"date": "2026-04-01", "comment_ok": false, "neighbor_ok": true},
+  "ejykorea": {"date": "2026-04-01", "comment_ok": true, "neighbor_ok": true},
+  "skyluck314": {"date": "2026-04-01", "comment_ok": false, "neighbor_ok": true},
+  "sallim_lumora": {"date": "2026-04-01", "comment_ok": false, "neighbor_ok": true},
+  "khlovems": {"date": "2026-04-01", "comment_ok": false, "neighbor_ok": true},
+  "khysh7": {"date": "2026-04-01", "comment_ok": false, "neighbor_ok": true},
+  "iamevelyn96": {"date": "2026-04-01", "comment_ok": true, "neighbor_ok": true},
+  "mykjife": {"date": "2026-04-01", "comment_ok": true, "neighbor_ok": true},
+  "planwithme": {"date": "2026-03-31", "comment_ok": true, "neighbor_ok": false},
+  "cash_victo": {"date": "2026-03-31", "comment_ok": true, "neighbor_ok": false},
+  "joiie": {"date": "2026-03-31", "comment_ok": true, "neighbor_ok": false},
+  "bokdaeng_living": {"date": "2026-03-31", "comment_ok": true, "neighbor_ok": false}
+}
