@@ -531,7 +531,7 @@ def post_one_blog(blog_id):
 
 
 def run_one_round(round_num):
-    """모든 블로그에 1편씩 포스팅 (1라운드) — 순서 랜덤"""
+    """모든 블로그에 1편씩 포스팅 (1라운드) — 순서 랜덤. 실패 블로그는 1회 재시도."""
     import time as _time
     import random as _rand
     BLOGS = ["nolja100", "salim1su", "baremi542", "goodisak"]
@@ -544,9 +544,21 @@ def run_one_round(round_num):
         ok = post_one_blog(blog_id)
         results[blog_id] = "✅" if ok else "⚠"
         # 블로그 간 1-3분 랜덤 대기 (사람처럼)
-        _time.sleep(__import__('random').uniform(60, 180))
+        _time.sleep(_rand.uniform(60, 180))
     log(f"[라운드 {round_num}] 완료: " + " / ".join(f"{k}:{v}" for k, v in results.items()))
     save_log()
+
+    # ── 실패 블로그 즉시 재시도 (1회) ──
+    failed = [b for b, s in results.items() if s == "⚠"]
+    if failed:
+        log(f"[라운드 {round_num}] 실패 블로그 재시도: {failed}")
+        _time.sleep(_rand.uniform(60, 120))  # 1-2분 후 재시도
+        for blog_id in failed:
+            ok = post_one_blog(blog_id)
+            results[blog_id] = "✅" if ok else "⚠"
+            _time.sleep(_rand.uniform(30, 90))
+        log(f"[라운드 {round_num}] 재시도 결과: " + " / ".join(f"{b}:{results[b]}" for b in failed))
+        save_log()
 
 
 # ─── 메인 실행 ───
