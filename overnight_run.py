@@ -388,10 +388,20 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
         tags = [keyword]
 
     images = []
+    # 이미지 섹션 미발견 시 raw에서 직접 탐색 (===본문=== 내부에 포함된 경우 대응)
+    if not img_m:
+        img_m = re.search(r"===이미지===\s*(.*?)\s*===이미지끝===", raw, re.DOTALL)
+    if not img_m:
+        # 디버그: raw에 ===이미지=== 텍스트가 있는지 확인
+        if "이미지" in raw:
+            idx = raw.find("이미지")
+            log(f"[파싱] ⚠ ===이미지=== 섹션 불일치. 'raw' 내 '이미지' 주변: {repr(raw[max(0,idx-10):idx+80])}")
+        else:
+            log(f"[파싱] ⚠ raw에 '이미지' 텍스트 없음. raw 끝 200자: {repr(raw[-200:])}")
     if img_m:
         img_text = img_m.group(1)
         for m in re.finditer(
-            r"\[이미지(\d+)\]\s*\n- Gemini\s*프롬프트:\s*(.+)\n- 파일명:\s*(.+)\n- alt:\s*(.+)",
+            r"\[이미지(\d+)\]\s*\n?-\s*Gemini\s*프롬프트:\s*(.+)\n-\s*파일명:\s*(.+)\n-\s*alt:\s*(.+)",
             img_text,
         ):
             images.append({
