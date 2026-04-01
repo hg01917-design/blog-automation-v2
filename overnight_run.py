@@ -446,8 +446,8 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
 
     # 3. 글 품질 검수 (이미지 생성 전에 먼저 — Gemini 쿼터 낭비 방지)
     quality_ok = True
-    if char_count < 2000:
-        log(f"[검수] ❌ 본문 너무 짧음 ({char_count}자 < 2000자) — 발행 중단")
+    if char_count < 1700:
+        log(f"[검수] ❌ 본문 너무 짧음 ({char_count}자 < 1700자) — 발행 중단")
         quality_ok = False
     if not tags:
         log(f"[검수] ❌ 태그 없음 — 발행 중단")
