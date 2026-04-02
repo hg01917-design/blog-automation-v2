@@ -99,10 +99,10 @@ def find_cafes(on_log=None):
         print(msg)
 
     init_db()
+    login_blog(BLOG_ID, on_log)
     pw, browser = connect_cdp(on_log)
 
     try:
-        login_blog(BLOG_ID, on_log)
         context = browser.contexts[0]
         page = context.new_page()
 
@@ -110,73 +110,74 @@ def find_cafes(on_log=None):
             for kw in keywords:
                 try:
                     log(f"[탐색] 키워드: {kw} (카테고리: {category})")
-                    search_url = f"https://cafe.naver.com/SectionCafeSearch.nhn?query={kw}&searchBy=0"
+                    search_url = f"https://search.naver.com/search.naver?where=cafe&query={kw}+카페"
                     page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
                     rand_delay(page, 2, 4)
 
-                    # 검색 결과에서 카페 링크 수집
-                    cafe_links = page.query_selector_all("a[href*='cafe.naver.com/']")
-                    saved = 0
+                    # Step1: 검색 결과에서 카페 ID/이름 수집 (페이지 이동 전)
+                    SKIP_IDS = {"", "ArticleRead.nhn", "SectionCafeSearch", "ca-fe"}
+                    collected = []
                     seen_ids = set()
-                    for link in cafe_links[:15]:
+                    for link in page.query_selector_all("a[href*='cafe.naver.com/']")[:40]:
                         try:
                             href = link.get_attribute("href") or ""
-                            if "cafe.naver.com/" not in href:
-                                continue
                             parts = href.split("cafe.naver.com/")
                             if len(parts) < 2:
                                 continue
                             cafe_id = parts[1].split("/")[0].split("?")[0].strip()
-                            if not cafe_id or cafe_id in ("", "ArticleRead.nhn", "SectionCafeSearch"):
-                                continue
-                            if cafe_id in seen_ids:
+                            if cafe_id in SKIP_IDS or cafe_id in seen_ids:
                                 continue
                             seen_ids.add(cafe_id)
+                            raw_name = link.inner_text().strip()
+                            if "cafe.naver.com" in raw_name or not raw_name:
+                                cafe_name = cafe_id
+                            else:
+                                cafe_name = raw_name.split("\n")[0].strip() or cafe_id
+                            collected.append((cafe_id, cafe_name))
+                        except Exception:
+                            continue
 
-                            cafe_name = link.inner_text().strip() or cafe_id
+                    # Step2: 각 카페 방문하여 회원수/실명인증 확인
+                    saved = 0
+                    for cafe_id, cafe_name in collected:
+                        try:
                             cafe_url = f"https://cafe.naver.com/{cafe_id}"
+                            page.goto(cafe_url, wait_until="domcontentloaded", timeout=15000)
+                            rand_delay(page, 1, 2)
 
-                            # 카페 정보 페이지 방문하여 회원수/실명인증 확인
-                            try:
-                                page.goto(cafe_url, wait_until="domcontentloaded", timeout=15000)
-                                rand_delay(page, 1, 2)
+                            info = page.evaluate("""() => {
+                                const bodyText = document.body.innerText;
+                                let memberCount = 0;
+                                const memLabelIdx = bodyText.indexOf('카페멤버수');
+                                if (memLabelIdx >= 0) {
+                                    const after = bodyText.substring(memLabelIdx, memLabelIdx + 30);
+                                    const m = after.match(/([\\d,]+)/);
+                                    if (m) memberCount = parseInt(m[1].replace(/,/g,''));
+                                }
+                                if (!memberCount) {
+                                    const m2 = bodyText.match(/회원수[^\\n]*?([\\d,]+)/);
+                                    if (m2) memberCount = parseInt(m2[1].replace(/,/g,''));
+                                }
+                                const requiresAuth = bodyText.includes('실명인증') || bodyText.includes('본인인증') || bodyText.includes('휴대폰 인증');
+                                // 카페 이름을 페이지에서 추출
+                                const titleEl = document.querySelector('h2.cafe_name, .cafe_name, #cafe-name, h1');
+                                const pageTitle = titleEl ? titleEl.innerText.trim() : '';
+                                return {memberCount, requiresAuth, pageTitle};
+                            }""")
 
-                                info = page.evaluate("""() => {
-                                    // 회원수 파싱
-                                    const memberEls = [...document.querySelectorAll('em, strong, span, td')];
-                                    let memberCount = 0;
-                                    for (const el of memberEls) {
-                                        const txt = el.textContent.trim().replace(/,/g,'');
-                                        if (/^[0-9]+$/.test(txt) && parseInt(txt) > 100) {
-                                            const prev = el.previousSibling?.textContent || el.closest('tr')?.querySelector('th,td')?.textContent || '';
-                                            if (prev.includes('회원') || prev.includes('멤버') || el.closest('[class*="member"]')) {
-                                                memberCount = parseInt(txt);
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    // 실명인증 감지
-                                    const bodyText = document.body.innerText;
-                                    const requiresAuth = bodyText.includes('실명인증') || bodyText.includes('본인인증') || bodyText.includes('휴대폰 인증');
-                                    return {memberCount, requiresAuth};
-                                }""")
+                            member_count = info.get('memberCount', 0)
+                            requires_auth = 1 if info.get('requiresAuth', False) else 0
+                            page_title = info.get('pageTitle', '') or cafe_name
 
-                                member_count = info.get('memberCount', 0)
-                                requires_auth = 1 if info.get('requiresAuth', False) else 0
-
-                                # 필터: 회원수 500~50000, 실명인증 불필요
-                                if requires_auth:
-                                    log(f"[탐색] {cafe_name} — 실명인증 필요, 스킵")
-                                    continue
-                                if member_count > 50000:
-                                    log(f"[탐색] {cafe_name} — 회원수 너무 많음({member_count:,}명), 스킵")
-                                    continue
-                                if member_count > 0 and member_count < 300:
-                                    log(f"[탐색] {cafe_name} — 회원수 너무 적음({member_count:,}명), 스킵")
-                                    continue
-                            except Exception:
-                                member_count = 0
-                                requires_auth = 0
+                            if requires_auth:
+                                log(f"[탐색] {cafe_id} — 실명인증 필요, 스킵")
+                                continue
+                            if member_count > 50000:
+                                log(f"[탐색] {cafe_id} — 회원수 너무 많음({member_count:,}명), 스킵")
+                                continue
+                            if 0 < member_count < 300:
+                                log(f"[탐색] {cafe_id} — 회원수 너무 적음({member_count:,}명), 스킵")
+                                continue
 
                             conn = get_conn()
                             try:
@@ -184,11 +185,11 @@ def find_cafes(on_log=None):
                                     """INSERT OR IGNORE INTO cafe_list
                                        (cafe_id, cafe_name, category, url, member_count, requires_auth)
                                        VALUES (?, ?, ?, ?, ?, ?)""",
-                                    (cafe_id, cafe_name, category, cafe_url, member_count, requires_auth),
+                                    (cafe_id, page_title, category, cafe_url, member_count, requires_auth),
                                 )
                                 conn.commit()
                                 saved += 1
-                                log(f"[탐색] 저장: {cafe_name} (회원 {member_count:,}명)")
+                                log(f"[탐색] 저장: {page_title} ({cafe_id}, 회원 {member_count:,}명)")
                             except Exception:
                                 pass
                             finally:
@@ -241,9 +242,9 @@ def join_cafe(cafe_id=None, on_log=None):
         log("[가입] 가입할 카페 없음")
         return
 
+    login_blog(BLOG_ID, on_log)
     pw, browser = connect_cdp(on_log)
     try:
-        login_blog(BLOG_ID, on_log)
         context = browser.contexts[0]
 
         for (cid, cname, curl) in rows:
@@ -605,9 +606,9 @@ def do_persona_activity(on_log=None):
         log("[페르소나] 가입된 카페 없음")
         return
 
+    login_blog(BLOG_ID, on_log)
     pw, browser = connect_cdp(on_log)
     try:
-        login_blog(BLOG_ID, on_log)
         context = browser.contexts[0]
 
         for (cid, cname, category, curl, persona_days) in rows:
@@ -739,9 +740,9 @@ def share_blog_post(blog_url=None, blog_title=None, blog_excerpt=None, on_log=No
 
     post_text = f"{blog_title}\n\n{blog_excerpt}\n\n▶ 자세히 보기: {blog_url}"
 
+    login_blog(BLOG_ID, on_log)
     pw, browser = connect_cdp(on_log)
     try:
-        login_blog(BLOG_ID, on_log)
         context = browser.contexts[0]
 
         for (cid, cname, category, curl) in targets:
