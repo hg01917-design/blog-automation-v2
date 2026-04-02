@@ -12,6 +12,64 @@ from datetime import date
 
 DAILY_LIMIT = 5
 VISITED_FILE = os.path.join(os.path.dirname(__file__), 'visited_blogs.json')
+DISCOVERED_FILE = os.path.join(os.path.dirname(__file__), 'discovered_blogs.json')
+
+SEARCH_KEYWORDS = ["살림 노하우", "절약 생활", "가계부 공유", "주부 일상", "국내 여행 후기", "정부지원금 정보"]
+
+
+def load_discovered():
+    if os.path.exists(DISCOVERED_FILE):
+        with open(DISCOVERED_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return []
+
+
+def save_discovered(blogs):
+    with open(DISCOVERED_FILE, 'w', encoding='utf-8') as f:
+        json.dump(blogs, f, ensure_ascii=False, indent=2)
+
+
+def discover_blogs(page, count=20):
+    """네이버 블로그 검색으로 새 블로그 ID 발굴"""
+    visited = load_visited()
+    discovered = {b['blog_id'] for b in load_discovered()}
+    hardcoded = {b['blog_id'] for b in TARGET_BLOGS}
+    already_known = visited.keys() | discovered | hardcoded
+
+    new_blogs = []
+    kw = random.choice(SEARCH_KEYWORDS)
+    print(f"[발굴] 검색 키워드: {kw}")
+    try:
+        search_url = f"https://search.naver.com/search.naver?where=blog&query={kw}"
+        page.goto(search_url, wait_until="domcontentloaded", timeout=20000)
+        page.wait_for_timeout(3000)
+
+        blog_ids = page.evaluate("""() => {
+            const ids = new Set();
+            for (const a of document.querySelectorAll('a[href*="blog.naver.com/"]')) {
+                const m = a.href.match(/blog\\.naver\\.com\\/([A-Za-z0-9_]+)/);
+                if (m && m[1] && !['PostView', 'PostList', 'search'].includes(m[1])) {
+                    ids.add(m[1]);
+                }
+            }
+            return [...ids].slice(0, 30);
+        }""")
+
+        for bid in blog_ids:
+            if bid not in already_known and len(new_blogs) < count:
+                new_blogs.append({"blog_id": bid, "name": bid, "keyword": kw})
+
+        print(f"[발굴] 새 블로그 {len(new_blogs)}개 발굴")
+    except Exception as e:
+        print(f"[발굴] 오류: {e}")
+
+    existing = load_discovered()
+    existing_ids = {b['blog_id'] for b in existing}
+    for b in new_blogs:
+        if b['blog_id'] not in existing_ids:
+            existing.append(b)
+    save_discovered(existing)
+    return new_blogs
 
 def load_visited():
     if os.path.exists(VISITED_FILE):
@@ -28,17 +86,21 @@ TARGET_BLOGS = [
     {"blog_id": "cash_victo",      "name": "캐시빅토",               "keyword": "가계부/절약",    "done": True},
     {"blog_id": "joiie",           "name": "치치피의 짠순재테크",     "keyword": "재테크/절약",    "done": True},
     {"blog_id": "bokdaeng_living", "name": "bokdaeng_living",        "keyword": "살림/신혼",      "done": True},
-    {"blog_id": "dailyw",          "name": "dailyw",                 "keyword": "가계부/절약",    "done": False},
-    {"blog_id": "yh120105",        "name": "yh120105",               "keyword": "가계부/절약",    "done": False},
-    {"blog_id": "kurumihodu",      "name": "kurumihodu",             "keyword": "가계부/절약",    "done": False},
-    {"blog_id": "justdo100",       "name": "justdo100",              "keyword": "가계부/절약",    "done": False},
-    {"blog_id": "ejykorea",        "name": "ejykorea",               "keyword": "가계부/절약",    "done": False},
-    {"blog_id": "skyluck314",      "name": "skyluck314",             "keyword": "가계부/절약",    "done": False},
-    {"blog_id": "sallim_lumora",   "name": "sallim_lumora",          "keyword": "살림/신혼",      "done": False},
-    {"blog_id": "khlovems",        "name": "khlovems",               "keyword": "살림/신혼",      "done": False},
-    {"blog_id": "khysh7",          "name": "khysh7",                 "keyword": "살림/신혼",      "done": False},
-    {"blog_id": "iamevelyn96",     "name": "iamevelyn96",            "keyword": "살림/신혼",      "done": False},
-    {"blog_id": "mykjife",         "name": "mykjife",                "keyword": "살림/신혼",      "done": False},
+    {"blog_id": "dailyw",          "name": "dailyw",                 "keyword": "가계부/절약",    "done": True},
+    {"blog_id": "yh120105",        "name": "yh120105",               "keyword": "가계부/절약",    "done": True},
+    {"blog_id": "kurumihodu",      "name": "kurumihodu",             "keyword": "가계부/절약",    "done": True},
+    {"blog_id": "justdo100",       "name": "justdo100",              "keyword": "가계부/절약",    "done": True},
+    {"blog_id": "ejykorea",        "name": "ejykorea",               "keyword": "가계부/절약",    "done": True},
+    {"blog_id": "skyluck314",      "name": "skyluck314",             "keyword": "가계부/절약",    "done": True},
+    {"blog_id": "sallim_lumora",   "name": "sallim_lumora",          "keyword": "살림/신혼",      "done": True},
+    {"blog_id": "khlovems",        "name": "khlovems",               "keyword": "살림/신혼",      "done": True},
+    {"blog_id": "khysh7",          "name": "khysh7",                 "keyword": "살림/신혼",      "done": True},
+    {"blog_id": "iamevelyn96",     "name": "iamevelyn96",            "keyword": "살림/신혼",      "done": True},
+    {"blog_id": "mykjife",         "name": "mykjife",                "keyword": "살림/신혼",      "done": True},
+    # 2026-04-02 추가 (서로이웃 성공 확인된 블로그)
+    {"blog_id": "soo_clean",       "name": "수클린 살림일기",         "keyword": "살림/청소",      "done": True},
+    {"blog_id": "haeun_life",      "name": "해은의 일상",             "keyword": "살림/일상",      "done": True},
+    # 나머지는 discovered_blogs.json에서 자동 공급
 ]
 
 def gen_comment(post_title, body, name):
@@ -276,8 +338,10 @@ def do_neighbor(page, blog_id, blog_name, keyword, post_title="", body_snippet="
 # ── 메인 ──────────────────────────────────────────────────────────────────────
 visited = load_visited()
 today = str(date.today())
-today_count = sum(1 for v in visited.values() if v.get('date') == today)
-print(f"오늘({today}) 방문 완료: {today_count}개 / 한도: {DAILY_LIMIT}개")
+# 성공(neighbor_ok=True)한 것만 한도에 포함
+today_count = sum(1 for v in visited.values() if v.get('date') == today and v.get('neighbor_ok'))
+today_total = sum(1 for v in visited.values() if v.get('date') == today)
+print(f"오늘({today}) 방문: {today_total}개 (서로이웃 성공: {today_count}개) / 한도: {DAILY_LIMIT}개")
 
 pw, browser = connect_cdp()
 ctx = browser.contexts[0]
@@ -288,14 +352,26 @@ time.sleep(1)
 results = []
 
 try:
-    for blog in TARGET_BLOGS:
+    # TARGET_BLOGS + discovered 블로그 합치기
+    discovered_blogs = load_discovered()
+    all_blogs = TARGET_BLOGS + [b for b in discovered_blogs if b['blog_id'] not in {x['blog_id'] for x in TARGET_BLOGS}]
+
+    # 모든 블로그 처리 전에 발굴 부족하면 먼저 발굴
+    if today_count < DAILY_LIMIT:
+        remaining = [b for b in all_blogs if b['blog_id'] not in visited]
+        if len(remaining) < (DAILY_LIMIT - today_count) * 2:
+            print("[발굴] 후보 부족 — 새 블로그 탐색 중...")
+            new = discover_blogs(page, count=30)
+            all_blogs = TARGET_BLOGS + [b for b in load_discovered() if b['blog_id'] not in {x['blog_id'] for x in TARGET_BLOGS}]
+
+    for blog in all_blogs:
         if today_count >= DAILY_LIMIT:
-            print(f"\n[한도도달] 오늘 {DAILY_LIMIT}개 완료 — 중단")
+            print(f"\n[한도도달] 오늘 {DAILY_LIMIT}개 성공 — 중단")
             break
 
         blog_id = blog['blog_id']
         if blog_id in visited:
-            print(f"\n[스킵] {blog['name']} — 이미 방문함 ({visited[blog_id].get('date','')})")
+            print(f"\n[스킵] {blog.get('name', blog_id)} — 이미 방문함 ({visited[blog_id].get('date','')})")
             continue
 
         print(f"\n{'='*55}")

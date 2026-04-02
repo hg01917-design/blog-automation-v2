@@ -1,6 +1,6 @@
 """
 publish_drafts.py
-각 블로그의 임시저장 글 1개씩 → 이미지/애드센스 확인·보완 → 비공개 발행
+각 블로그의 임시저장 글 1개씩 → 이미지/애드센스 확인·보완 → 공개 발행
 
 사용법:
     python publish_drafts.py                    # 4개 블로그 모두
@@ -109,8 +109,31 @@ def _wp_api(path: str, method="GET", data=None, auth=None):
     return json.loads(_wp_urlopen(req, timeout=20).read())
 
 
+def _wp_health_check() -> bool:
+    """baremi542.com 사이트 살아있는지 확인"""
+    try:
+        req = urllib.request.Request(
+            f"{SITE_URL}/wp-json/",
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        resp = urllib.request.urlopen(req, timeout=8, context=ctx)
+        return resp.status == 200
+    except Exception as e:
+        _log(f"[WP] 헬스체크 실패: {e}")
+        return False
+
+
 def publish_wp_draft():
     _log("── baremi542 (WordPress) 드래프트 처리 시작 ──")
+
+    # 사이트 헬스체크 먼저
+    if not _wp_health_check():
+        _log("[WP] baremi542.com 응답 없음 (사이트 다운) — 스킵. 호스팅 상태 확인 필요.")
+        return False
+
     try:
         auth = _wp_auth()
     except RuntimeError as e:
@@ -193,16 +216,19 @@ def publish_wp_draft():
             parts.insert(n // 2, adsense_html)
         updated_content = '</p>'.join(parts)
 
-    # 비공개 발행
+    # 공개 발행
     patch_data = {
-        "status": "private",
+        "status": "publish",
         "content": updated_content,
     }
     result = _wp_api(f"posts/{post_id}", method="POST", data=patch_data, auth=auth)
     new_status = result.get("status", "?")
     new_link = result.get("link", "")
     _log(f"[WP] 발행 완료 → status={new_status}, link={new_link}")
-    return new_status == "private"
+    if new_link:
+        from gsc_indexing import request_indexing
+        request_indexing(new_link)
+    return new_status == "publish"
 
 
 # ══════════════════════════════════════════════
@@ -847,6 +873,6 @@ if __name__ == "__main__":
     print("\n" + "=" * 50)
     print("[최종 결과]")
     for blog, ok in results.items():
-        status = "✅ 비공개 발행 완료" if ok else "⚠ 처리 불완전 (확인 필요)"
+        status = "✅ 공개 발행 완료" if ok else "⚠ 처리 불완전 (확인 필요)"
         print(f"  {blog}: {status}")
     print("=" * 50)
