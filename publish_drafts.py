@@ -859,6 +859,145 @@ def publish_naver_draft(blog_id="salim1su") -> bool:
 
 
 # ══════════════════════════════════════════════
+# 3라운드 완료 후 분석 & 보고
+# ══════════════════════════════════════════════
+def _fetch_rss_titles(url: str, limit: int = 10) -> list:
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        resp = urllib.request.urlopen(req, timeout=10, context=ctx).read().decode()
+        items = re.findall(r'<item>(.*?)</item>', resp, re.DOTALL)
+        result = []
+        for item in items[:limit]:
+            t = re.search(r'<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>', item)
+            d = re.search(r'<pubDate>(.*?)</pubDate>', item)
+            if t:
+                result.append({"title": t.group(1).strip(), "date": (d.group(1)[:16] if d else "")})
+        return result
+    except Exception:
+        return []
+
+
+def _analyze_and_report(all_results: list):
+    """3라운드 전체 결과 분석 → Telegram 보고 + Notion 기록."""
+    import datetime, sqlite3
+
+    today = datetime.date.today().isoformat()
+    _log("[분석] 3라운드 완료 — 블로그 집계 시작")
+
+    # ── 오늘 발행 집계 ──────────────────────────
+    rss_map = {
+        "goodisak":  "https://welfare.baremi542.com/rss",
+        "nolja100":  "https://issue.baremi542.com/rss",
+        "salim1su":  "https://rss.blog.naver.com/salim1su.xml",
+        "baremi542": "https://baremi542.com/feed",
+    }
+    today_posts = {}
+    for blog, rss in rss_map.items():
+        posts = _fetch_rss_titles(rss, limit=20)
+        today_count = sum(1 for p in posts if today[:7] in p["date"])  # 이번 달
+        today_exact = sum(1 for p in posts if today in p["date"])
+        today_posts[blog] = {"total_recent": len(posts), "this_month": today_count, "today": today_exact}
+
+    # ── 라운드별 발행 집계 ──────────────────────
+    round_summary = []
+    blog_total = {"goodisak": 0, "nolja100": 0, "salim1su": 0, "baremi542": 0}
+    for rnum, results in all_results:
+        ok_blogs = [b for b, v in results.items() if v is True]
+        skip_blogs = [b for b, v in results.items() if v is None]
+        fail_blogs = [b for b, v in results.items() if v is False]
+        for b in ok_blogs:
+            blog_total[b] = blog_total.get(b, 0) + 1
+        round_summary.append(f"R{rnum}: ✅{','.join(ok_blogs) or '없음'} | ⏭{','.join(skip_blogs) or '없음'} | ⚠{','.join(fail_blogs) or '없음'}")
+
+    # ── 키워드 잔량 ──────────────────────────────
+    kw_remain = {}
+    try:
+        db = sqlite3.connect("keyword_engine/engine.db")
+        rows = db.execute(
+            "SELECT category, COUNT(*) FROM keywords WHERE status NOT IN ('published','failed') GROUP BY category"
+        ).fetchall()
+        for cat, cnt in rows:
+            kw_remain[cat] = cnt
+        db.close()
+    except Exception:
+        pass
+
+    # ── 부진 원인 분석 ──────────────────────────
+    issues = []
+    blog_theme = {"goodisak": "IT", "nolja100": "여행", "salim1su": "살림", "baremi542": "정부지원금"}
+    for blog, totals in blog_total.items():
+        if totals == 0:
+            theme = blog_theme.get(blog, "")
+            kw_cat = "정부지원" if blog == "baremi542" else theme
+            remain = kw_remain.get(kw_cat, 0) + kw_remain.get("정부지원금", 0) if blog == "baremi542" else kw_remain.get(theme, 0)
+            if remain == 0:
+                issues.append(f"{blog}: 키워드 고갈 → 키워드 엔진 재실행 필요")
+            else:
+                issues.append(f"{blog}: 임시저장 없음 (overnight bot 확인 필요)")
+
+    if "salim1su" in blog_total and blog_total["salim1su"] < 2:
+        issues.append("salim1su: 네이버 애드포스트 미신청 → 수익 불가 (신청 필요)")
+
+    # ── Telegram 보고 ────────────────────────────
+    kw_str = " | ".join(f"{k} {v}개" for k, v in kw_remain.items())
+    msg_lines = [
+        f"📊 [3라운드 완료 보고] {today}",
+        "",
+        "📝 블로그별 오늘 발행:",
+    ]
+    for blog, cnt in blog_total.items():
+        icon = "✅" if cnt > 0 else "⚠"
+        msg_lines.append(f"  {icon} {blog}: {cnt}건")
+    msg_lines += ["", "🔄 라운드 상세:"] + [f"  {s}" for s in round_summary]
+    msg_lines += ["", f"📦 키워드 잔량: {kw_str}"]
+    if issues:
+        msg_lines += ["", "⚠ 보완 필요:"] + [f"  • {i}" for i in issues]
+
+    telegram_msg = "\n".join(msg_lines)
+
+    # Telegram 전송
+    try:
+        env = Path(os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(Path(__file__).parent))) / ".env"
+        bot_token, chat_id = "", ""
+        if env.exists():
+            for line in env.read_text().splitlines():
+                if line.startswith("TELEGRAM_BOT_TOKEN="):
+                    bot_token = line.split("=", 1)[1].strip()
+                elif line.startswith("TELEGRAM_CHAT_ID="):
+                    chat_id = line.split("=", 1)[1].strip()
+        if bot_token and chat_id:
+            payload = json.dumps({"chat_id": chat_id, "text": telegram_msg}).encode()
+            req = urllib.request.Request(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            urllib.request.urlopen(req, timeout=10)
+            _log("[분석] Telegram 보고 전송 완료")
+    except Exception as e:
+        _log(f"[분석] Telegram 전송 실패: {e}")
+
+    # Notion 기록 (notion_report.json에 저장 — 다음 CCR 세션이 읽어서 업로드)
+    try:
+        report = {
+            "date": today,
+            "round_summary": round_summary,
+            "blog_total": blog_total,
+            "kw_remain": kw_remain,
+            "issues": issues,
+        }
+        Path("/tmp/daily_report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
+        _log("[분석] /tmp/daily_report.json 저장 완료")
+    except Exception as e:
+        _log(f"[분석] 보고서 저장 실패: {e}")
+
+    print(telegram_msg)
+
+
+# ══════════════════════════════════════════════
 # 메인
 # ══════════════════════════════════════════════
 if __name__ == "__main__":
@@ -939,3 +1078,7 @@ if __name__ == "__main__":
                 status = "⚠ 처리 불완전"
             print(f"    {blog}: {status}")
     print("=" * 50)
+
+    # 3라운드 완료 후 분석 & 보고
+    if target == "all":
+        _analyze_and_report(all_results)
