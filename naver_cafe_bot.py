@@ -53,6 +53,8 @@ def init_db():
             joined_at TEXT,
             persona_days INTEGER DEFAULT 0,
             last_activity TEXT,
+            member_count INTEGER DEFAULT 0,
+            requires_auth INTEGER DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now','localtime'))
         );
 
@@ -115,10 +117,10 @@ def find_cafes(on_log=None):
                     # 검색 결과에서 카페 링크 수집
                     cafe_links = page.query_selector_all("a[href*='cafe.naver.com/']")
                     saved = 0
-                    for link in cafe_links[:10]:
+                    seen_ids = set()
+                    for link in cafe_links[:15]:
                         try:
                             href = link.get_attribute("href") or ""
-                            # cafe.naver.com/카페ID 형식 추출
                             if "cafe.naver.com/" not in href:
                                 continue
                             parts = href.split("cafe.naver.com/")
@@ -127,20 +129,66 @@ def find_cafes(on_log=None):
                             cafe_id = parts[1].split("/")[0].split("?")[0].strip()
                             if not cafe_id or cafe_id in ("", "ArticleRead.nhn", "SectionCafeSearch"):
                                 continue
+                            if cafe_id in seen_ids:
+                                continue
+                            seen_ids.add(cafe_id)
 
                             cafe_name = link.inner_text().strip() or cafe_id
                             cafe_url = f"https://cafe.naver.com/{cafe_id}"
+
+                            # 카페 정보 페이지 방문하여 회원수/실명인증 확인
+                            try:
+                                page.goto(cafe_url, wait_until="domcontentloaded", timeout=15000)
+                                rand_delay(page, 1, 2)
+
+                                info = page.evaluate("""() => {
+                                    // 회원수 파싱
+                                    const memberEls = [...document.querySelectorAll('em, strong, span, td')];
+                                    let memberCount = 0;
+                                    for (const el of memberEls) {
+                                        const txt = el.textContent.trim().replace(/,/g,'');
+                                        if (/^[0-9]+$/.test(txt) && parseInt(txt) > 100) {
+                                            const prev = el.previousSibling?.textContent || el.closest('tr')?.querySelector('th,td')?.textContent || '';
+                                            if (prev.includes('회원') || prev.includes('멤버') || el.closest('[class*="member"]')) {
+                                                memberCount = parseInt(txt);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    // 실명인증 감지
+                                    const bodyText = document.body.innerText;
+                                    const requiresAuth = bodyText.includes('실명인증') || bodyText.includes('본인인증') || bodyText.includes('휴대폰 인증');
+                                    return {memberCount, requiresAuth};
+                                }""")
+
+                                member_count = info.get('memberCount', 0)
+                                requires_auth = 1 if info.get('requiresAuth', False) else 0
+
+                                # 필터: 회원수 500~50000, 실명인증 불필요
+                                if requires_auth:
+                                    log(f"[탐색] {cafe_name} — 실명인증 필요, 스킵")
+                                    continue
+                                if member_count > 50000:
+                                    log(f"[탐색] {cafe_name} — 회원수 너무 많음({member_count:,}명), 스킵")
+                                    continue
+                                if member_count > 0 and member_count < 300:
+                                    log(f"[탐색] {cafe_name} — 회원수 너무 적음({member_count:,}명), 스킵")
+                                    continue
+                            except Exception:
+                                member_count = 0
+                                requires_auth = 0
 
                             conn = get_conn()
                             try:
                                 conn.execute(
                                     """INSERT OR IGNORE INTO cafe_list
-                                       (cafe_id, cafe_name, category, url)
-                                       VALUES (?, ?, ?, ?)""",
-                                    (cafe_id, cafe_name, category, cafe_url),
+                                       (cafe_id, cafe_name, category, url, member_count, requires_auth)
+                                       VALUES (?, ?, ?, ?, ?, ?)""",
+                                    (cafe_id, cafe_name, category, cafe_url, member_count, requires_auth),
                                 )
                                 conn.commit()
                                 saved += 1
+                                log(f"[탐색] 저장: {cafe_name} (회원 {member_count:,}명)")
                             except Exception:
                                 pass
                             finally:
@@ -180,12 +228,12 @@ def join_cafe(cafe_id=None, on_log=None):
     conn = get_conn()
     if cafe_id:
         rows = conn.execute(
-            "SELECT cafe_id, cafe_name, url FROM cafe_list WHERE cafe_id=? AND joined=0",
+            "SELECT cafe_id, cafe_name, url FROM cafe_list WHERE cafe_id=? AND joined=0 AND requires_auth=0",
             (cafe_id,),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT cafe_id, cafe_name, url FROM cafe_list WHERE joined=0 LIMIT 10"
+            "SELECT cafe_id, cafe_name, url FROM cafe_list WHERE joined=0 AND requires_auth=0 LIMIT 10"
         ).fetchall()
     conn.close()
 
@@ -228,7 +276,21 @@ def join_cafe(cafe_id=None, on_log=None):
                     continue
 
                 join_btn.click()
-                rand_delay(page, 2, 5)
+                rand_delay(page, 2, 4)
+
+                # 실명인증 감지 → 스킵
+                auth_required = page.evaluate("""() => {
+                    const t = document.body.innerText;
+                    return t.includes('실명인증') || t.includes('본인인증') || t.includes('휴대폰 인증');
+                }""")
+                if auth_required:
+                    log(f"[가입] {cname} — 실명인증 필요, 스킵")
+                    conn2 = get_conn()
+                    conn2.execute("UPDATE cafe_list SET requires_auth=1 WHERE cafe_id=?", (cid,))
+                    conn2.commit()
+                    conn2.close()
+                    page.close()
+                    continue
 
                 # 가입 완료 확인
                 success = False
