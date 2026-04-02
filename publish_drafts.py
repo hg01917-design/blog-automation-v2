@@ -21,6 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from browser import connect_cdp, get_or_create_page
+from gsc_indexing import request_indexing
 from config import ACCOUNTS, ACCOUNT_MAP
 from login_playwright import login_blog
 from poster import (
@@ -512,6 +513,30 @@ def publish_tistory_draft(blog_id: str) -> bool:
         ok = _tistory_publish_private(page, blog_id)
         if ok:
             _log(f"[{blog_id}] ✓ 공개 발행 완료")
+            # 색인 요청: 최신 발행글 URL 가져오기
+            try:
+                time.sleep(3)
+                page.goto(f"https://{blog_id}.tistory.com/manage/posts/", wait_until="domcontentloaded", timeout=20000)
+                time.sleep(2)
+                latest_url = page.evaluate("""() => {
+                    const a = document.querySelector('table a[href*="/' + location.hostname.split('.')[0] + '"]') ||
+                              document.querySelector('.list_post a[href]') ||
+                              document.querySelector('td a[href*="tistory.com"]');
+                    return a ? a.href : null;
+                }""")
+                if not latest_url:
+                    # Fallback: check links with numeric path
+                    latest_url = page.evaluate("""() => {
+                        const links = document.querySelectorAll('a[href]');
+                        for (const a of links) {
+                            if (/tistory\\.com\\/\\d+/.test(a.href)) return a.href;
+                        }
+                        return null;
+                    }""")
+                if latest_url:
+                    request_indexing(latest_url)
+            except Exception as e:
+                _log(f"[{blog_id}] 색인 요청 실패: {e}")
         else:
             _log(f"[{blog_id}] 발행 불확실 — manage/posts 확인 필요")
         return ok
@@ -754,6 +779,14 @@ def publish_naver_draft(blog_id="salim1su") -> bool:
         ok = _naver_publish_public(page)
         if ok:
             _log(f"[{blog_id}] ✓ 공개 발행 완료")
+            # 색인 요청: 발행 후 URL 캡처
+            try:
+                time.sleep(3)
+                post_url = page.url
+                if "PostView" in post_url or f"blog.naver.com/{blog_id}" in post_url:
+                    request_indexing(post_url)
+            except Exception as e:
+                _log(f"[{blog_id}] 색인 요청 실패: {e}")
         else:
             _log(f"[{blog_id}] 발행 불확실 — 확인 필요")
         return ok
