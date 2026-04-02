@@ -276,7 +276,13 @@ def join_cafe(cafe_id=None, on_log=None):
                     page.close()
                     continue
 
-                join_btn.click()
+                # 오버레이 팝업 닫기 시도 (랭킹 공지 등)
+                page.evaluate("""() => {
+                    const overlays = document.querySelectorAll('.box-g, [class*="ranking"], [class*="notice"], [class*="popup"]');
+                    overlays.forEach(el => { try { el.style.display='none'; } catch(e){} });
+                }""")
+                # JS로 직접 클릭 (오버레이 우회)
+                page.evaluate("el => el.click()", join_btn)
                 rand_delay(page, 2, 4)
 
                 # 실명인증 감지 → 스킵
