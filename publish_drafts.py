@@ -720,12 +720,17 @@ def _naver_publish_public(page) -> bool:
     }""")
     time.sleep(1)
 
-    # 발행 확인 버튼
+    # 발행 확인 버튼 (confirm_btn__* 우선, 메인 publish_btn 제외)
     confirmed = page.evaluate("""() => {
+        const mainPublishBtn = document.querySelector('button[class*="publish_btn__"]');
+        // 1순위: confirm_btn 클래스 버튼
+        const confirmBtn = document.querySelector('[class*="confirm_btn__"]');
+        if (confirmBtn && !confirmBtn.disabled) { confirmBtn.click(); return '발행(confirm)'; }
+        // 2순위: 팝업 레이어 내 발행/확인 버튼 (메인 버튼 제외)
         const labels = ['발행', '확인', '게시', '등록'];
         const btns = [...document.querySelectorAll(
-            '[class*="isShow__"] button, [class*="layer_popup"] button, button'
-        )];
+            '[class*="layer_publish"] button, [class*="is_show__"] button, [class*="isShow__"] button'
+        )].filter(b => b !== mainPublishBtn);
         for (const lbl of labels) {
             const btn = btns.find(b => b.textContent.trim() === lbl && !b.disabled);
             if (btn) { btn.click(); return lbl; }
