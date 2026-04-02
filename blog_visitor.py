@@ -103,21 +103,70 @@ def _scrape_naver(blog_id: str, page, on_log=None):
     except Exception as e:
         log(f"[방문자] 네이버 통계 페이지 실패: {e}")
 
-    # 2차: NVisitorgp4Ajax API (공개 접근 시도)
+    # 2차: 통계 페이지 JS 기반 추출
     try:
-        api_url = (
-            f"https://blog.naver.com/NVisitorgp4Ajax.naver"
-            f"?blogId={blog_id}&countTerm=1"
-        )
-        page.goto(api_url, wait_until="domcontentloaded", timeout=10000)
-        page.wait_for_timeout(1500)
-        body = page.evaluate("() => document.body.innerText")
-        nums = re.findall(r'"count"\s*:\s*(\d+)', body)
-        if nums:
-            log(f"[방문자] 네이버 {blog_id} API: {nums[0]}명")
-            return int(nums[0])
+        result = page.evaluate("""() => {
+            // 통계 페이지 내 숫자 탐색
+            const selectors = [
+                '.item_visitor .num', '.visitor_daily', '.count_today',
+                '.statistics_visitor .count', '.num_today', '.daily_visitor',
+                '[class*="visitor"] [class*="num"]', '[class*="today"] [class*="count"]',
+                '.area_visitor .num', '.visitor_count .num',
+            ];
+            for (const sel of selectors) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    const n = parseInt(el.innerText.replace(/[^0-9]/g,''));
+                    if (!isNaN(n)) return n;
+                }
+            }
+            // 프레임 내 탐색
+            return null;
+        }""")
+        if result is not None and result >= 0:
+            log(f"[방문자] 네이버 {blog_id} JS추출: {result}명")
+            return result
+    except Exception:
+        pass
+
+    # 3차: 블로그 메인 페이지 — 프로필 아래 통계 위젯
+    try:
+        blog_url = f"https://blog.naver.com/{blog_id}"
+        log(f"[방문자] 네이버 블로그 메인 접속: {blog_url}")
+        page.goto(blog_url, wait_until="domcontentloaded", timeout=20000)
+        page.wait_for_timeout(2000)
+
+        # iframe 내부 탐색 (네이버 블로그는 iframe 기반)
+        frames = page.frames
+        for frame in frames:
+            try:
+                result = frame.evaluate("""() => {
+                    const selectors = [
+                        '.blog_visitor_cnt', '.visitor_cnt', '.cnt_visitor',
+                        '#visitorcntWrap .cnt', '.statistics_area .count',
+                        '[class*="visitor_cnt"]', '[class*="visitorcnt"]',
+                        '.area_info_visitor .cnt', '.info_visitor .count',
+                    ];
+                    for (const sel of selectors) {
+                        const el = document.querySelector(sel);
+                        if (el) {
+                            const n = parseInt(el.innerText.replace(/[^0-9]/g,''));
+                            if (!isNaN(n)) return n;
+                        }
+                    }
+                    // 텍스트 "오늘" 옆 숫자 탐색
+                    const allText = document.body ? document.body.innerText : '';
+                    const m = allText.match(/오늘\s*[:\s]*([0-9,]+)/);
+                    if (m) return parseInt(m[1].replace(/,/g,''));
+                    return null;
+                }""")
+                if result is not None and result >= 0:
+                    log(f"[방문자] 네이버 {blog_id} 메인페이지: {result}명")
+                    return result
+            except Exception:
+                continue
     except Exception as e:
-        log(f"[방문자] 네이버 API 실패: {e}")
+        log(f"[방문자] 네이버 메인 페이지 실패: {e}")
 
     return None
 
