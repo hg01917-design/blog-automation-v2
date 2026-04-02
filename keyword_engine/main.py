@@ -18,6 +18,7 @@ from keyword_engine import keyword_scorer
 
 DEFAULT_MIN_SCORE = 1_000
 DEFAULT_MIN_VOLUME = 500
+DEFAULT_MAX_PUB_COUNT = 30_000  # 경쟁 글 30,000개 초과 키워드 제외
 DEFAULT_TOP_N = 50
 
 
@@ -33,6 +34,7 @@ def run(
     blog_id: str = None,
     min_score: float = DEFAULT_MIN_SCORE,
     min_volume: int = DEFAULT_MIN_VOLUME,
+    max_pub_count: int = DEFAULT_MAX_PUB_COUNT,
     push_to_notion: bool = False,
     use_playwright: bool = True,
     on_log=None,
@@ -150,11 +152,13 @@ def run(
     # ── 7단계: 필터링 ─────────────────────────────────────
     filtered = [
         k for k in scored
-        if k["volume"] >= min_volume and k["score"] >= min_score
+        if k["volume"] >= min_volume
+        and k["score"] >= min_score
+        and k["pub_count"] <= max_pub_count
     ]
     _log(
         f"\n[7단계] 필터 후 {len(filtered)}개 "
-        f"(검색량 {min_volume:,}+, 점수 {min_score:,}+)",
+        f"(검색량 {min_volume:,}+, 점수 {min_score:,}+, 경쟁글 {max_pub_count:,}개 이하)",
         on_log,
     )
 
@@ -226,6 +230,8 @@ if __name__ == "__main__":
     parser.add_argument("--blog", default=None)
     parser.add_argument("--min-score", type=float, default=DEFAULT_MIN_SCORE)
     parser.add_argument("--min-volume", type=int, default=DEFAULT_MIN_VOLUME)
+    parser.add_argument("--max-pub", type=int, default=DEFAULT_MAX_PUB_COUNT,
+                        help="경쟁 글 최대 수 (기본: 30,000)")
     parser.add_argument("--no-push", action="store_true")
     parser.add_argument("--no-playwright", action="store_true",
                         help="Playwright 대신 경량 urllib 모드 사용")
@@ -236,6 +242,7 @@ if __name__ == "__main__":
         blog_id=args.blog,
         min_score=args.min_score,
         min_volume=args.min_volume,
+        max_pub_count=args.max_pub,
         push_to_notion=not args.no_push,
         use_playwright=not args.no_playwright,
     )
