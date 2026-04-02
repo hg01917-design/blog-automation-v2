@@ -91,23 +91,32 @@ def _extract_tistory_root(url: str):
 
 
 def collect_tistory_urls(queries: list = None, display: int = 100, on_log=None) -> set:
-    """다양한 쿼리로 검색 → Tistory URL만 필터해서 반환 (웹+블로그 API 병용)"""
+    """다양한 쿼리로 검색 → Tistory URL만 필터해서 반환.
+    webkr.json 권한 없으면 Playwright CDP로 자동 폴백.
+    """
     queries = queries or SEARCH_QUERIES
     tistory_urls = set()
+    webkr_ok = True
 
     for query in queries:
-        # 1) 웹 검색
-        try:
-            data = _search("webkr.json", query, min(display, 100))
-            for item in data.get("items", []):
-                root = _extract_tistory_root(item.get("link", ""))
-                if root:
-                    tistory_urls.add(root)
-        except Exception as e:
-            if on_log:
-                on_log(f"[naver_api] webkr '{query}' 오류: {e}")
+        # 1) 웹 검색 (webkr.json)
+        if webkr_ok:
+            try:
+                data = _search("webkr.json", query, min(display, 100))
+                for item in data.get("items", []):
+                    root = _extract_tistory_root(item.get("link", ""))
+                    if root:
+                        tistory_urls.add(root)
+            except Exception as e:
+                err_str = str(e)
+                if "401" in err_str or "403" in err_str:
+                    webkr_ok = False  # 권한 없음 — 이후 시도 중단
+                    if on_log:
+                        on_log(f"[naver_api] webkr 권한 없음 → Playwright 모드로 전환")
+                elif on_log:
+                    on_log(f"[naver_api] webkr '{query}' 오류: {e}")
 
-        # 2) 블로그 검색 (Tistory 블로그 포스트 URL 추가 확보)
+        # 2) 블로그 검색 (blog.json — Tistory 포스트 URL 확보)
         try:
             data = _search("blog.json", query, min(display, 100))
             for item in data.get("items", []):
@@ -122,6 +131,54 @@ def collect_tistory_urls(queries: list = None, display: int = 100, on_log=None) 
             on_log(f"[naver_api] '{query}' → 누적 Tistory {len(tistory_urls)}개")
         time.sleep(0.2)
 
+    # webkr 권한 없으면 Playwright로 구글 검색 폴백
+    if not webkr_ok and len(tistory_urls) < 50:
+        if on_log:
+            on_log("[naver_api] Playwright 폴백으로 구글 검색 시작...")
+        pw_urls = collect_tistory_urls_playwright(queries[:10], on_log=on_log)
+        tistory_urls |= pw_urls
+
+    return tistory_urls
+
+
+def collect_tistory_urls_playwright(queries: list, on_log=None) -> set:
+    """Playwright CDP로 구글 검색 → Tistory URL 수집 (webkr.json 폴백용)"""
+    tistory_urls = set()
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            try:
+                browser = p.chromium.connect_over_cdp("http://localhost:9222")
+                ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+            except Exception:
+                browser = p.chromium.launch(headless=True)
+                ctx = browser.new_context(
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+                )
+            page = ctx.new_page()
+            for query in queries:
+                try:
+                    search_url = f"https://www.google.com/search?q={urllib.parse.quote(query + ' site:tistory.com')}&num=20"
+                    page.goto(search_url, timeout=15000, wait_until="domcontentloaded")
+                    page.wait_for_timeout(1500)
+                    links = page.eval_on_selector_all(
+                        "a[href]",
+                        "els => els.map(e => e.href)"
+                    )
+                    for link in links:
+                        root = _extract_tistory_root(link)
+                        if root:
+                            tistory_urls.add(root)
+                    if on_log:
+                        on_log(f"[playwright] '{query}' → 누적 {len(tistory_urls)}개")
+                    time.sleep(1.5)
+                except Exception as e:
+                    if on_log:
+                        on_log(f"[playwright] '{query}' 오류: {e}")
+            page.close()
+    except Exception as e:
+        if on_log:
+            on_log(f"[playwright] 초기화 오류: {e}")
     return tistory_urls
 
 
