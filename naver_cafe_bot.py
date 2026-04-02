@@ -17,10 +17,10 @@ DB_PATH = "keyword_engine/engine.db"
 BLOG_ID = "salim1su"
 
 CATEGORIES = {
-    "여행": ["여행", "국내여행", "해외여행", "여행정보"],
-    "IT/기술": ["IT", "기술", "개발", "스마트폰"],
-    "정부지원금/복지": ["정부지원금", "복지", "지원금", "보조금"],
-    "살림/가계": ["살림", "가계", "절약", "주부"],
+    "여행": ["국내여행 소모임", "혼자 여행", "캠핑 여행", "제주도 여행", "부산 여행"],
+    "IT/기술": ["노트북 추천", "스마트폰 팁", "앱 추천", "IT정보", "가성비 전자제품"],
+    "정부지원금/복지": ["청년지원금", "복지혜택 정보", "생활지원 정보", "정부지원 소식"],
+    "살림/가계": ["가계부 모임", "절약 꿀팁", "주부 생활정보", "살림 노하우", "소비절약"],
 }
 
 COMMENTS = [
@@ -395,87 +395,74 @@ def _do_comment(page, cafe_id, cafe_name, on_log=None):
         print(msg)
 
     try:
-        # 카페 게시글 목록에서 첫 번째 글 클릭
-        post_link = None
-        for selector in [
-            ".article-board tbody tr td.td_article a",
-            ".board-list .item a.article",
-            "a.article",
-            ".cF-list__item a",
-        ]:
-            try:
-                post_link = page.query_selector(selector)
-                if post_link:
-                    break
-            except Exception:
-                continue
+        # MyCafeIntro iframe에서 게시글 링크 추출
+        article_url = None
+        for frame in page.frames:
+            if "MyCafeIntro.nhn" in frame.url or "cafe.naver.com/" in frame.url:
+                try:
+                    links = frame.evaluate("""() => {
+                        const sel = 'a[href*="ArticleRead"], td.td_article a, .article a, .cF-list__item a';
+                        const el = document.querySelector(sel);
+                        return el ? el.href : null;
+                    }""")
+                    if links:
+                        article_url = links
+                        break
+                except Exception:
+                    continue
 
-        if not post_link:
+        if not article_url:
             log(f"[댓글] {cafe_name} — 게시글 링크 없음")
             return
 
-        post_link.click()
+        page.goto(article_url, wait_until="domcontentloaded", timeout=20000)
         rand_delay(page, 2, 4)
 
-        # iframe 내 컨텐츠 처리 (카페 게시글은 iframe에 있을 수 있음)
-        frame = page
-        try:
-            iframe = page.frame_locator("#cafe_main")
-            if iframe:
-                frame = iframe
-        except Exception:
-            pass
+        # 페이지 로드 대기 (iframe 포함)
+        rand_delay(page, 3, 5)
 
-        # 공감 버튼 클릭
-        for like_selector in [
-            "a.on_sympathy",
-            ".btn_sympathy",
-            "button:has-text('공감')",
-            ".sympathy_area a",
-        ]:
+        # 공감 버튼 — 모든 프레임에서 탐색
+        for frm in [page] + list(page.frames):
             try:
-                like_btn = frame.locator(like_selector).first
-                if like_btn:
-                    like_btn.click()
-                    rand_delay(page, 1, 2)
+                clicked = frm.evaluate("""() => {
+                    const selectors = ['a.on_sympathy', '.btn_sympathy', 'button[class*="sympathy"]',
+                                       'a[class*="sympathy"]', '.btn_like', 'button[class*="like"]'];
+                    for (const s of selectors) {
+                        const el = document.querySelector(s);
+                        if (el) { el.click(); return true; }
+                    }
+                    return false;
+                }""")
+                if clicked:
                     log_activity(cafe_id, "like", "공감 클릭")
                     break
             except Exception:
                 continue
 
-        # 댓글 작성
+        # 댓글 작성 — 메인 프레임 textarea (class/placeholder 없이 바로 찾기)
         comment_text = random.choice(COMMENTS)
-        for comment_selector in [
-            "textarea.comment_textarea",
-            "#clfix textarea",
-            ".comment_write textarea",
-            "textarea[placeholder*='댓글']",
-        ]:
+        for frm in [page] + list(page.frames):
             try:
-                textarea = frame.locator(comment_selector).first
-                if textarea:
-                    textarea.click()
-                    rand_delay(page, 1, 2)
-                    textarea.fill(comment_text)
-                    rand_delay(page, 1, 2)
+                ta = frm.query_selector("textarea")
+                if not ta:
+                    continue
+                ta.click()
+                rand_delay(page, 1, 2)
+                ta.fill(comment_text)
+                rand_delay(page, 1, 2)
 
-                    # 댓글 등록 버튼
-                    for submit_selector in [
-                        "button.btn_register",
-                        "button:has-text('등록')",
-                        ".comment_write button[type='submit']",
-                    ]:
-                        try:
-                            submit = frame.locator(submit_selector).first
-                            if submit:
-                                submit.click()
-                                rand_delay(page, 2, 4)
-                                log_activity(cafe_id, "comment", comment_text)
-                                log(f"[댓글] {cafe_name} — '{comment_text}' 등록")
-                                break
-                        except Exception:
-                            continue
-                    break
+                # 등록 버튼
+                submitted = frm.evaluate("""() => {
+                    const btns = [...document.querySelectorAll('button, input[type="submit"]')];
+                    const btn = btns.find(b => b.textContent.includes('등록') || b.value?.includes('등록'));
+                    if (btn) { btn.click(); return true; }
+                    return false;
+                }""")
+                if submitted:
+                    rand_delay(page, 2, 4)
+                    log_activity(cafe_id, "comment", comment_text)
+                    log(f"[댓글] {cafe_name} — '{comment_text}' 등록")
+                break
             except Exception:
                 continue
 
