@@ -34,6 +34,13 @@ from poster import (
 IMAGES_DIR = Path(__file__).parent / "images"
 SITE_URL = "https://baremi542.com"
 
+# 블로그별 실제 도메인 (GSC 색인 요청용)
+BLOG_DOMAIN = {
+    "goodisak": "welfare.baremi542.com",
+    "nolja100": "issue.baremi542.com",
+    "baremi542": "baremi542.com",
+}
+
 # ─── 로그 ───────────────────────────────────────
 def _log(msg):
     ts = time.strftime("%H:%M:%S")
@@ -516,23 +523,22 @@ def publish_tistory_draft(blog_id: str) -> bool:
             # 색인 요청: 최신 발행글 URL 가져오기
             try:
                 time.sleep(3)
+                custom_domain = BLOG_DOMAIN.get(blog_id)
                 page.goto(f"https://{blog_id}.tistory.com/manage/posts/", wait_until="domcontentloaded", timeout=20000)
                 time.sleep(2)
                 latest_url = page.evaluate("""() => {
-                    const a = document.querySelector('table a[href*="/' + location.hostname.split('.')[0] + '"]') ||
-                              document.querySelector('.list_post a[href]') ||
-                              document.querySelector('td a[href*="tistory.com"]');
-                    return a ? a.href : null;
+                    const links = document.querySelectorAll('a[href]');
+                    for (const a of links) {
+                        if (/tistory\\.com\\/\\d+/.test(a.href)) return a.href;
+                    }
+                    return null;
                 }""")
-                if not latest_url:
-                    # Fallback: check links with numeric path
-                    latest_url = page.evaluate("""() => {
-                        const links = document.querySelectorAll('a[href]');
-                        for (const a of links) {
-                            if (/tistory\\.com\\/\\d+/.test(a.href)) return a.href;
-                        }
-                        return null;
-                    }""")
+                if latest_url and custom_domain:
+                    # tistory.com URL → 커스텀 도메인 URL로 변환
+                    import re as _re
+                    m = _re.search(r'/(\d+)$', latest_url.rstrip('/'))
+                    if m:
+                        latest_url = f"https://{custom_domain}/{m.group(1)}"
                 if latest_url:
                     request_indexing(latest_url)
             except Exception as e:
