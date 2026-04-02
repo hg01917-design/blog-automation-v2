@@ -249,22 +249,41 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
                 "baremi542": "정부지원금",
             }
             category = _BLOG_CATEGORY.get(blog_id)
+            # baremi542는 '정부지원금'+'정부지원' 두 카테고리 모두 사용
+            extra_category = "정부지원" if blog_id == "baremi542" else None
             if category:
-                row = db.execute(
-                    """
-                    SELECT k.keyword FROM keywords k
-                    WHERE k.category = ?
-                      AND k.status NOT IN ('published')
-                      AND NOT EXISTS (
-                        SELECT 1 FROM keyword_blog_status kbs
-                        WHERE kbs.keyword = k.keyword
-                          AND kbs.blog_id = ?
-                          AND kbs.status IN ('published', 'failed', 'in_progress')
-                      )
-                    ORDER BY k.score DESC LIMIT 1
-                    """,
-                    (category, blog_id),
-                ).fetchone()
+                if extra_category:
+                    row = db.execute(
+                        """
+                        SELECT k.keyword FROM keywords k
+                        WHERE k.category IN (?, ?)
+                          AND k.status NOT IN ('published')
+                          AND NOT EXISTS (
+                            SELECT 1 FROM keyword_blog_status kbs
+                            WHERE kbs.keyword = k.keyword
+                              AND kbs.blog_id = ?
+                              AND kbs.status IN ('published', 'failed', 'in_progress')
+                          )
+                        ORDER BY k.score DESC LIMIT 1
+                        """,
+                        (category, extra_category, blog_id),
+                    ).fetchone()
+                else:
+                    row = db.execute(
+                        """
+                        SELECT k.keyword FROM keywords k
+                        WHERE k.category = ?
+                          AND k.status NOT IN ('published')
+                          AND NOT EXISTS (
+                            SELECT 1 FROM keyword_blog_status kbs
+                            WHERE kbs.keyword = k.keyword
+                              AND kbs.blog_id = ?
+                              AND kbs.status IN ('published', 'failed', 'in_progress')
+                          )
+                        ORDER BY k.score DESC LIMIT 1
+                        """,
+                        (category, blog_id),
+                    ).fetchone()
             else:
                 row = db.execute(
                     """
