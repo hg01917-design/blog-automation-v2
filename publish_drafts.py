@@ -625,7 +625,7 @@ def _naver_get_draft(page, blog_id: str) -> bool:
             page.remove_listener("dialog", _accept_naver)
 
     # --- 2단계: 첫 번째 유효 드래프트 로드 ---
-    loaded = page.evaluate("""(skipSet, publishedSet) => {
+    loaded = page.evaluate("""([skipSet, publishedSet]) => {
         var lis = document.querySelectorAll('li');
         for (var i = 0; i < lis.length; i++) {
             var titleEl = lis[i].querySelector('[class*="title__"]');
@@ -637,7 +637,7 @@ def _naver_get_draft(page, blog_id: str) -> bool:
             return title;
         }
         return null;
-    }""", list(SKIP), list(published_titles))
+    }""", [list(SKIP), list(published_titles)])
 
     if not loaded:
         _log(f"[{blog_id}] 유효한 임시저장 글 없음 (모두 발행됨이거나 비어있음)")
