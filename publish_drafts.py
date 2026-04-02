@@ -600,12 +600,32 @@ def _naver_get_draft(page, blog_id: str) -> bool:
         _log(f"[{blog_id}] 로그인 필요 — 중단")
         return False
 
-    # 임시저장 개수 버튼 클릭
+    # 임시저장 개수 버튼 클릭 (다양한 셀렉터 시도)
     opened = page.evaluate("""() => {
-        const btn = document.querySelector('.save_count_btn__ZTLNa, [class*="save_count_btn"]');
-        if (btn && parseInt(btn.textContent.trim()) > 0) {
-            btn.click();
-            return parseInt(btn.textContent.trim());
+        const selectors = [
+            '.save_count_btn__ZTLNa',
+            '[class*="save_count_btn"]',
+            '[class*="draftCount"]',
+            '[class*="draft_count"]',
+            '[class*="saveDraftCount"]',
+            'button[aria-label*="임시저장"]',
+            'a[aria-label*="임시저장"]',
+        ];
+        for (const sel of selectors) {
+            const btn = document.querySelector(sel);
+            if (btn) {
+                const n = parseInt(btn.textContent.trim().replace(/[^0-9]/g,''));
+                if (n > 0) { btn.click(); return n; }
+            }
+        }
+        // 텍스트 "임시저장"이 포함된 버튼 중 숫자가 있는 것
+        const allBtns = [...document.querySelectorAll('button, a')];
+        for (const btn of allBtns) {
+            const txt = btn.textContent.trim();
+            if (txt.includes('임시저장')) {
+                const n = parseInt(txt.replace(/[^0-9]/g,''));
+                if (n > 0) { btn.click(); return n; }
+            }
         }
         return 0;
     }""")
