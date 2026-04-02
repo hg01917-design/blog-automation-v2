@@ -843,36 +843,79 @@ def publish_naver_draft(blog_id="salim1su") -> bool:
 # ══════════════════════════════════════════════
 if __name__ == "__main__":
     import random
+    import json as _json
+
     target = sys.argv[1] if len(sys.argv) > 1 else "all"
-    results = {}
+    ROUNDS = 3
+    ROUND_GAP_MIN = 12600   # 3.5시간
+    ROUND_GAP_MAX = 14400   # 4시간
+    MIN_BLOG_GAP  = 12600   # 같은 블로그 재발행 최소 간격 (3.5시간)
 
-    # 블로그 순서 랜덤화 (봇 티 방지)
-    blog_order = ["baremi542", "goodisak", "nolja100", "salim1su"]
-    random.shuffle(blog_order)
-    _log(f"발행 순서: {blog_order}")
+    # 마지막 발행 시간 파일 (세션 간 유지)
+    TIMES_FILE = Path("/tmp/blog_publish_times.json")
+    last_published: dict = {}
+    if TIMES_FILE.exists():
+        try:
+            last_published = _json.loads(TIMES_FILE.read_text())
+        except Exception:
+            pass
 
-    for blog_id in blog_order:
-        if target not in ("all", blog_id):
-            continue
+    all_results = []
 
-        if blog_id == "baremi542":
-            results["baremi542"] = publish_wp_draft()
-        elif blog_id == "goodisak":
-            results["goodisak"] = publish_tistory_draft("goodisak")
-        elif blog_id == "nolja100":
-            results["nolja100"] = publish_tistory_draft("nolja100")
-        elif blog_id == "salim1su":
-            results["salim1su"] = publish_naver_draft("salim1su")
+    for round_num in range(1, ROUNDS + 1):
+        blog_order = ["baremi542", "goodisak", "nolja100", "salim1su"]
+        random.shuffle(blog_order)
+        _log(f"[라운드 {round_num}] 순서: {blog_order}")
+        round_results = {}
 
-        # 발행 간격: 12600~14400초 사이 랜덤 (3.5~4시간)
-        if blog_id != blog_order[-1] and target == "all":
-            gap = random.randint(12600, 14400)
-            _log(f"다음 발행까지 대기: {gap//3600}시간 {(gap%3600)//60}분")
+        for blog_id in blog_order:
+            if target not in ("all", blog_id):
+                continue
+
+            # 같은 블로그 재발행 간격 체크
+            now = time.time()
+            last = last_published.get(blog_id, 0)
+            elapsed = now - last
+            if elapsed < MIN_BLOG_GAP:
+                remain = int(MIN_BLOG_GAP - elapsed)
+                _log(f"[{blog_id}] 간격 미충족 — {remain//3600}시간 {(remain%3600)//60}분 후 재시도 가능, 스킵")
+                round_results[blog_id] = None
+                continue
+
+            if blog_id == "baremi542":
+                ok = publish_wp_draft()
+            elif blog_id == "goodisak":
+                ok = publish_tistory_draft("goodisak")
+            elif blog_id == "nolja100":
+                ok = publish_tistory_draft("nolja100")
+            elif blog_id == "salim1su":
+                ok = publish_naver_draft("salim1su")
+            else:
+                ok = False
+
+            round_results[blog_id] = ok
+            if ok:
+                last_published[blog_id] = time.time()
+                TIMES_FILE.write_text(_json.dumps(last_published))
+
+        all_results.append((round_num, round_results))
+
+        # 라운드 간 대기 (마지막 라운드 제외)
+        if round_num < ROUNDS:
+            gap = random.randint(ROUND_GAP_MIN, ROUND_GAP_MAX)
+            _log(f"[라운드 {round_num} 완료] {gap//3600}시간 {(gap%3600)//60}분 후 라운드 {round_num+1} 시작")
             time.sleep(gap)
 
     print("\n" + "=" * 50)
-    print("[최종 결과]")
-    for blog, ok in results.items():
-        status = "✅ 공개 발행 완료" if ok else "⚠ 처리 불완전 (확인 필요)"
-        print(f"  {blog}: {status}")
+    print("[전체 결과]")
+    for rnum, results in all_results:
+        print(f"  라운드 {rnum}:")
+        for blog, ok in results.items():
+            if ok is None:
+                status = "⏭ 간격 미충족 (스킵)"
+            elif ok:
+                status = "✅ 공개 발행 완료"
+            else:
+                status = "⚠ 처리 불완전"
+            print(f"    {blog}: {status}")
     print("=" * 50)
