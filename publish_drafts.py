@@ -1059,11 +1059,21 @@ if __name__ == "__main__":
 
         all_results.append((round_num, round_results))
 
+        # 라운드 완료 후 소셜 포스팅 (RSS 반영 5분 대기 후)
+        if any(v for v in round_results.values()):
+            _log(f"[소셜] 5분 후 RSS→Facebook/Threads 포스팅 예정...")
+            time.sleep(300)
+            try:
+                import social_post
+                social_post.run(on_log=_log)
+            except Exception as e:
+                _log(f"[소셜] 오류: {e}")
+
         # 라운드 간 대기 (마지막 라운드 제외)
         if round_num < ROUNDS:
             gap = random.randint(ROUND_GAP_MIN, ROUND_GAP_MAX)
             _log(f"[라운드 {round_num} 완료] {gap//3600}시간 {(gap%3600)//60}분 후 라운드 {round_num+1} 시작")
-            time.sleep(gap)
+            time.sleep(gap - 300 if gap > 300 else gap)
 
     print("\n" + "=" * 50)
     print("[전체 결과]")
