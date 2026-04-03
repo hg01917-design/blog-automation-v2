@@ -245,6 +245,7 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
             _BLOG_CATEGORY = {
                 "goodisak": "IT",
                 "nolja100": "여행",
+                "triplog": "여행",
                 "salim1su": "살림",
                 "baremi542": "정부지원금",
             }
