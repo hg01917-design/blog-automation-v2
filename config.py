@@ -57,6 +57,14 @@ ACCOUNTS = [
         "editor_url": "https://baremi542.com/wp-admin/post-new.php",
         "category": "정부지원금",
     },
+    {
+        "blog": "triplog",
+        "platform": "wordpress",
+        "editor_url": "https://app.baremi542.com/wp-admin/post-new.php",
+        "category": "여행",
+        "wp_user_env": "TRIPLOG_WP_USER",
+        "wp_pass_env": "TRIPLOG_WP_APP_PASSWORD",
+    },
 ]
 
 # 계정별 빠른 조회용

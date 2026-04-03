@@ -86,22 +86,26 @@ def _make_image(prompt: str, filename: str) -> str | None:
 # ══════════════════════════════════════════════
 # WordPress (baremi542)
 # ══════════════════════════════════════════════
-def _wp_auth():
-    wp_user = os.environ.get("WP_USER", "")
-    wp_pass = os.environ.get("WP_APP_PASSWORD", "").replace(" ", "")
+TRIPLOG_URL = "https://app.baremi542.com"
+
+
+def _wp_auth(user_env="WP_USER", pass_env="WP_APP_PASSWORD"):
+    wp_user = os.environ.get(user_env, "") or os.environ.get("WP_USER", "")
+    wp_pass = (os.environ.get(pass_env, "") or os.environ.get("WP_APP_PASSWORD", "")).replace(" ", "")
     if not wp_user or not wp_pass:
-        raise RuntimeError("WP_USER / WP_APP_PASSWORD 환경변수 미설정")
+        raise RuntimeError(f"{user_env} / {pass_env} 환경변수 미설정")
     token = base64.b64encode(f"{wp_user}:{wp_pass}".encode()).decode()
     return f"Basic {token}"
 
 
-def _wp_api(path: str, method="GET", data=None, auth=None):
+def _wp_api(path: str, method="GET", data=None, auth=None, site_url=None):
     """WordPress REST API 요청."""
+    url = site_url or SITE_URL
     headers = {"Content-Type": "application/json"}
     if auth:
         headers["Authorization"] = auth
     req = urllib.request.Request(
-        f"{SITE_URL}/wp-json/wp/v2/{path}",
+        f"{url}/wp-json/wp/v2/{path}",
         data=json.dumps(data).encode() if data else None,
         headers=headers,
         method=method,
@@ -109,11 +113,12 @@ def _wp_api(path: str, method="GET", data=None, auth=None):
     return json.loads(_wp_urlopen(req, timeout=20).read())
 
 
-def _wp_health_check() -> bool:
-    """baremi542.com 사이트 살아있는지 확인"""
+def _wp_health_check(url=None) -> bool:
+    """WordPress 사이트 살아있는지 확인"""
+    check_url = url or SITE_URL
     try:
         req = urllib.request.Request(
-            f"{SITE_URL}/wp-json/",
+            f"{check_url}/wp-json/",
             headers={"User-Agent": "Mozilla/5.0"},
         )
         ctx = ssl.create_default_context()
@@ -122,7 +127,7 @@ def _wp_health_check() -> bool:
         resp = urllib.request.urlopen(req, timeout=8, context=ctx)
         return resp.status == 200
     except Exception as e:
-        _log(f"[WP] 헬스체크 실패: {e}")
+        _log(f"[WP] 헬스체크 실패 ({check_url}): {e}")
         return False
 
 
@@ -510,6 +515,61 @@ def _tistory_publish_private(page, blog_id: str) -> bool:
     _log(f"[{blog_id}] 최종 URL: {cur_url}")
     # URL이 변경됐으면 확실히 성공, 아니면 버튼 클릭 자체를 성공으로 간주
     return True
+
+
+def publish_triplog_draft() -> bool:
+    """app.baremi542.com (트립로그) 드래프트 발행"""
+    _log("── triplog (WordPress) 드래프트 처리 시작 ──")
+
+    if not _wp_health_check(TRIPLOG_URL):
+        _log("[triplog] 사이트 응답 없음 — 스킵")
+        return False
+
+    try:
+        auth = _wp_auth("TRIPLOG_WP_USER", "TRIPLOG_WP_APP_PASSWORD")
+    except RuntimeError as e:
+        _log(f"[triplog] {e} — 스킵")
+        return False
+
+    drafts = _wp_api("posts?status=draft&per_page=10&orderby=modified&order=desc", auth=auth, site_url=TRIPLOG_URL)
+    if not drafts:
+        _log("[triplog] 드래프트 없음 — 스킵")
+        return False
+
+    def _score(p):
+        return len(re.sub(r'<[^>]+>', '', p.get("content", {}).get("rendered", "")))
+    post = max(drafts, key=_score)
+    post_id = post["id"]
+    title = post["title"]["rendered"]
+    content_html = post["content"]["rendered"]
+    _log(f"[triplog] 선택된 드래프트: [{post_id}] {title} ({len(content_html)}자)")
+
+    has_images = bool(re.search(r'<img\s', content_html))
+    updated_content = content_html
+
+    if not has_images:
+        _log("[triplog] 이미지 없음 → loremflickr 생성 중...")
+        slug = re.sub(r'[^\w가-힣]', '-', title.strip()).strip('-')[:40]
+        for i in range(1, 3):
+            fp = _make_image(title, f"{slug}-img{i}.jpg")
+            if fp:
+                img_url, _ = _wp_upload_image_with_id(TRIPLOG_URL, auth, fp, alt=title, on_log=_log)
+                if img_url:
+                    fig = f'<figure class="wp-block-image"><img src="{img_url}" alt="{title}"/></figure>\n'
+                    if i == 1:
+                        updated_content = re.sub(r'(</p>)', r'\1' + fig, updated_content, count=1)
+                    else:
+                        mid = len(updated_content) // 2
+                        ins = updated_content.find('</p>', mid)
+                        if ins > 0:
+                            updated_content = updated_content[:ins + 4] + fig + updated_content[ins + 4:]
+
+    result = _wp_api(f"posts/{post_id}", method="POST",
+                     data={"status": "publish", "content": updated_content},
+                     auth=auth, site_url=TRIPLOG_URL)
+    new_status = result.get("status", "")
+    _log(f"[triplog] 발행 결과: {new_status} — {title}")
+    return new_status == "publish"
 
 
 def publish_tistory_draft(blog_id: str) -> bool:
@@ -1022,7 +1082,7 @@ if __name__ == "__main__":
     all_results = []
 
     for round_num in range(1, ROUNDS + 1):
-        blog_order = ["baremi542", "goodisak", "nolja100", "salim1su"]
+        blog_order = ["baremi542", "goodisak", "nolja100", "salim1su", "triplog"]
         random.shuffle(blog_order)
         _log(f"[라운드 {round_num}] 순서: {blog_order}")
         round_results = {}
@@ -1043,6 +1103,8 @@ if __name__ == "__main__":
 
             if blog_id == "baremi542":
                 ok = publish_wp_draft()
+            elif blog_id == "triplog":
+                ok = publish_triplog_draft()
             elif blog_id == "goodisak":
                 ok = publish_tistory_draft("goodisak")
             elif blog_id == "nolja100":

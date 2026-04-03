@@ -46,6 +46,10 @@ BLOGS = {
         "rss": "https://rss.blog.naver.com/salim1su.xml",
         "fb_page_id": "955279141010789",   # 퇴근후살림
     },
+    "triplog": {
+        "rss": "https://app.baremi542.com/feed",
+        "fb_page_id": "981891965017107",   # 이거알아요 (임시, 전용 페이지 생기면 변경)
+    },
 }
 
 # 블로그 간 포스팅 최소 간격 (초)

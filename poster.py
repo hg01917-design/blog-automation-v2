@@ -1549,8 +1549,11 @@ def _post_wordpress(account, title, content, tags=None,
     if not site_url:
         site_url = "https://baremi542.com"
 
-    wp_user = os.environ.get("WP_USER", "")
-    wp_pass = os.environ.get("WP_APP_PASSWORD", "").replace(" ", "")
+    # 블로그별 전용 자격증명 우선, 없으면 공통 WP_USER/WP_APP_PASSWORD 사용
+    user_env = account.get("wp_user_env", "WP_USER")
+    pass_env = account.get("wp_pass_env", "WP_APP_PASSWORD")
+    wp_user = os.environ.get(user_env) or os.environ.get("WP_USER", "")
+    wp_pass = (os.environ.get(pass_env) or os.environ.get("WP_APP_PASSWORD", "")).replace(" ", "")
 
     if not wp_user or not wp_pass:
         log("[WordPress] ⚠ WP_USER / WP_APP_PASSWORD 환경변수 미설정 — 발행 스킵")
