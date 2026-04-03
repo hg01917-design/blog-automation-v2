@@ -47,20 +47,12 @@ def _log(msg):
     print(f"[{ts}] {msg}", flush=True)
 
 
-# ─── 이미지 생성 (loremflickr) ──────────────────
+# ─── 이미지 생성 (picsum.photos) ──────────────────
 def _make_image(prompt: str, filename: str) -> str | None:
-    """loremflickr 스톡 이미지 다운로드 → images/ 에 저장. 경로 반환."""
-    import re as _re
-    STOP = {
-        'with', 'from', 'that', 'this', 'photo', 'image', 'realistic',
-        'style', 'clean', 'bright', 'light', 'scene', 'interior', 'modern',
-        'korean', 'ratio', 'text', 'people', 'watermark', 'icon', 'flat',
-        'white', 'background', 'type', 'natural', 'infographic',
-    }
-    words = _re.findall(r'[A-Za-z]{4,}', prompt)
-    kws = [w.lower() for w in words if w.lower() not in STOP][:3]
-    kw_str = ','.join(kws) if kws else 'lifestyle'
-    url = f"https://loremflickr.com/1024/768/{urllib.parse.quote(kw_str)}"
+    """picsum.photos 스톡 이미지 다운로드 → images/ 에 저장. 경로 반환."""
+    import random as _random
+    seed = abs(hash(prompt)) % 1000
+    url = f"https://picsum.photos/seed/{seed}/1024/768"
 
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
@@ -76,7 +68,7 @@ def _make_image(prompt: str, filename: str) -> str | None:
             filename = Path(filename).stem + ext
         out = IMAGES_DIR / filename
         out.write_bytes(data)
-        _log(f"[이미지] loremflickr → {filename}")
+        _log(f"[이미지] picsum.photos → {filename}")
         return str(out)
     except Exception as e:
         _log(f"[이미지] 다운로드 실패: {e}")

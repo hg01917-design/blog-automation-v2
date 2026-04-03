@@ -84,8 +84,9 @@ def _generate_via_fallback(prompt: str, filename: str, on_log=None, skip_webp=Fa
     kw_str = ','.join(keywords) if keywords else 'lifestyle'
 
     try:
-        url = f"https://loremflickr.com/1024/768/{urllib.parse.quote(kw_str)}"
-        log(f"[이미지] loremflickr 폴백: {kw_str}")
+        seed = abs(hash(kw_str)) % 1000
+        url = f"https://picsum.photos/seed/{seed}/1024/768"
+        log(f"[이미지] picsum.photos 폴백: seed={seed} ({kw_str})")
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         resp = urllib.request.urlopen(req, timeout=30, context=_ctx)
         data = resp.read()
@@ -97,10 +98,10 @@ def _generate_via_fallback(prompt: str, filename: str, on_log=None, skip_webp=Fa
             img.convert("RGB").save(str(final_path), "JPEG", quality=90)
         else:
             img.convert("RGB").save(str(final_path), "WEBP", quality=85)
-        log(f"[이미지] loremflickr 저장 완료: {filename} ({w}x{h})")
+        log(f"[이미지] picsum.photos 저장 완료: {filename} ({w}x{h})")
         return str(final_path)
     except Exception as e:
-        log(f"[이미지] loremflickr 폴백 실패: {e}")
+        log(f"[이미지] picsum.photos 폴백 실패: {e}")
         return None
 
 
