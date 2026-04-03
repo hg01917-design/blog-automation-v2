@@ -482,6 +482,36 @@ def _tistory_publish_private(page, blog_id: str) -> bool:
     }""")
     time.sleep(1)
 
+    # 2-1. 댓글 비허용 설정
+    page.evaluate("""() => {
+        // 댓글 허용 체크박스/라디오 해제
+        const ids = ['commentStatus', 'comment-allow', 'commentAllow'];
+        for (const id of ids) {
+            const el = document.getElementById(id);
+            if (el && el.type === 'checkbox' && el.checked) {
+                el.click(); return;
+            }
+            if (el && el.type === 'radio') {
+                // 댓글 비허용 라디오 찾기
+            }
+        }
+        // 라벨 텍스트로 댓글 비허용 찾기
+        const labels = [...document.querySelectorAll('label')];
+        const noComment = labels.find(l => l.textContent.includes('댓글') && l.textContent.includes('비허용'));
+        if (noComment) { noComment.click(); return; }
+        // 댓글 토글 스위치 (ON 상태면 OFF로)
+        const toggle = [...document.querySelectorAll('button[role=\\"switch\\"], input[type=checkbox]')]
+            .find(el => {
+                const lbl = el.closest('label') || document.querySelector(`label[for="${el.id}"]`);
+                return lbl && lbl.textContent.includes('댓글');
+            });
+        if (toggle && (toggle.checked || toggle.getAttribute('aria-checked') === 'true')) {
+            toggle.click();
+        }
+    }""")
+    time.sleep(0.5)
+    _log(f"[{blog_id}] 댓글 비허용 설정")
+
     # 3. 공개 발행 버튼 클릭
     confirmed = page.evaluate("""() => {
         const labels = ['공개 발행', '발행하기', '발행', '확인', '게시'];
