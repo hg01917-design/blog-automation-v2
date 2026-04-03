@@ -840,21 +840,31 @@ def _naver_publish_public(page) -> bool:
     except Exception:
         pass
 
-    # 공개 옵션 선택 (공개 라디오 버튼)
+    # 공개 옵션 선택 — 반드시 전체공개 (이웃공개 아님)
     page.evaluate("""() => {
+        // 1순위: 라벨 텍스트로 정확히 "전체공개" 찾기
+        const allEls = [...document.querySelectorAll('label, span, li, a, button')];
+        const pubLabel = allEls.find(el => el.textContent.trim() === '전체공개');
+        if (pubLabel) { pubLabel.click(); return; }
+
+        // 2순위: radio value/id에서 public/0/open 포함 (all/1 제외 — 이웃공개일 수 있음)
         const inputs = [...document.querySelectorAll('input[type="radio"]')];
         const pub = inputs.find(r => {
             const v = (r.value || r.id || '').toLowerCase();
-            return v.includes('public') || v.includes('all') || v === '1' || v === 'open';
+            // 'all'/'1' 은 이웃공개일 수 있으므로 제외
+            return v === 'public' || v === 'open' || v === '0' || v === 'everyone';
         });
         if (pub) { pub.click(); return; }
-        // 텍스트로 "전체공개" 또는 "공개" 찾기
-        const labels = [...document.querySelectorAll('label, span, li, a')];
-        const pubLabel = labels.find(el => {
-            const t = el.textContent.trim();
-            return t === '전체공개' || t === '공개' || t === '전체 공개';
-        });
-        if (pubLabel) pubLabel.click();
+
+        // 3순위: label[for] 연결된 radio 중 전체공개 텍스트
+        for (const label of document.querySelectorAll('label')) {
+            if (label.textContent.trim() === '전체공개') {
+                const radio = document.getElementById(label.getAttribute('for'));
+                if (radio) radio.click();
+                else label.click();
+                return;
+            }
+        }
     }""")
     time.sleep(1)
 
