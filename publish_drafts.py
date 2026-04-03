@@ -634,6 +634,27 @@ def publish_tistory_draft(blog_id: str) -> bool:
         if not _tistory_check_and_fix(page, blog_id, draft_id):
             return False
 
+        # nolja100: 여행 주제 아닌 글은 발행 금지 (임시저장 삭제)
+        if blog_id == "nolja100":
+            title_el = page.query_selector('#post-title-inp') or page.query_selector('#title')
+            title_val = title_el.input_value() if title_el else ""
+            TRAVEL_KW = ["여행", "관광", "숙소", "호텔", "펜션", "맛집", "카페", "코스",
+                         "드라이브", "당일치기", "뚜벅", "트레킹", "둘레길", "섬", "해변",
+                         "온천", "리조트", "캠핑", "글램핑", "국내", "해외", "항공", "투어",
+                         "페리", "지하철", "자갈치", "제주", "강릉", "부산", "경주", "강원",
+                         "서울", "인천", "대전", "광주", "전주", "수원", "춘천", "속초"]
+            is_travel = any(kw in title_val for kw in TRAVEL_KW)
+            if not is_travel:
+                _log(f"[nolja100] ⛔ 여행 주제 아님 (제목: {title_val[:40]}) → 발행 중단 (임시저장 삭제)")
+                # 임시저장 삭제
+                page.evaluate("""() => {
+                    const btns = [...document.querySelectorAll('button')];
+                    const del = btns.find(b => b.textContent.includes('삭제'));
+                    if (del) del.click();
+                }""")
+                return False
+            _log(f"[nolja100] ✅ 여행 주제 확인: {title_val[:40]}")
+
         # 공개 발행
         ok = _tistory_publish_private(page, blog_id)
         if ok:
