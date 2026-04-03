@@ -380,14 +380,14 @@ def _tistory_check_and_fix(page, blog_id: str, post_id: str):
     )
     _log(f"[{blog_id}] 애드센스 있음: {has_adsense}")
 
-    # 이미지 보완 — 없으면 loremflickr로 2개 생성 후 업로드
+    # 이미지 보완 — 없으면 picsum으로 3개 생성 후 업로드
     if not has_images:
         _log(f"[{blog_id}] 이미지 없음 → 생성·업로드 중...")
         slug = re.sub(r'[^\w가-힣]', '-', title.strip()).strip('-')[:30]
-        for i in range(1, 3):
+        uploaded = 0
+        for i in range(1, 4):
             fp = _make_image(title, f"{blog_id}-{slug}-{i}.jpg")
             if fp:
-                # 에디터 커서를 콘텐츠 앞/뒤로 이동 후 이미지 삽입
                 if i == 1:
                     page.evaluate("""() => {
                         const ed = tinymce.activeEditor;
@@ -396,8 +396,12 @@ def _tistory_check_and_fix(page, blog_id: str, post_id: str):
                     }""")
                 ok = _tistory_upload_image(page, fp, alt=title, on_log=_log)
                 if ok:
+                    uploaded += 1
                     _log(f"[{blog_id}] 이미지 {i} 업로드 성공")
                     time.sleep(2)
+        if uploaded == 0:
+            _log(f"[{blog_id}] ❌ 이미지 생성/업로드 모두 실패 → 발행 중단")
+            return False
 
     # 애드센스 보완
     if not has_adsense:

@@ -383,6 +383,16 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
 
     body = body_m.group(1).strip() if body_m else raw
 
+    # 품질 검수 체크리스트가 본문에 포함된 경우 제거
+    body = re.sub(
+        r'\n*항목기준충족.*$', '', body,
+        flags=re.DOTALL
+    ).strip()
+    # ===검수=== 섹션이 본문 내 포함된 경우 제거
+    body = re.sub(r'\n*===검수===.*?(?:===검수끝===|$)', '', body, flags=re.DOTALL).strip()
+    # ✅/❌ 로 시작하는 체크리스트 줄 제거
+    body = re.sub(r'\n[✅❌☑️].{0,60}(?:\n[✅❌☑️].{0,60}){2,}', '', body).strip()
+
     # 태그: 첫 줄만 (여러 줄이면 첫 줄의 쉼표 구분)
     if tag_m:
         tag_line = tag_m.group(1).strip().split('\n')[0].strip()
