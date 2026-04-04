@@ -130,7 +130,8 @@ def connect_cdp(on_log=None):
 
 
 def get_or_create_page(browser, url_contains=None, navigate_to=None):
-    """기존 탭에서 url_contains 매칭 탭을 찾거나, navigate_to로 새 탭 생성"""
+    """기존 탭에서 url_contains 매칭 탭을 찾거나, 없으면 첫 번째 기존 탭 반환.
+    navigate_to가 지정된 경우에만 새 탭 생성."""
     if url_contains:
         for ctx in browser.contexts:
             for p in ctx.pages:
@@ -138,6 +139,12 @@ def get_or_create_page(browser, url_contains=None, navigate_to=None):
                     return p
 
     context = browser.contexts[0] if browser.contexts else browser.new_context()
+
+    # navigate_to 없이 호출 시: 기존 탭 재사용 (새 탭 열지 않음)
+    if not navigate_to:
+        if context.pages:
+            return context.pages[0]
+
     page = context.new_page()
     if navigate_to:
         page.goto(navigate_to, wait_until="domcontentloaded", timeout=30000)
