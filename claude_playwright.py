@@ -154,11 +154,11 @@ def _wait_for_response(page, prev_response_count, log):
         prev_len = cur_len
 
         # 스트리밍 중 ===제목=== 포함 텍스트 포착 (나중에 collapse되기 전에 저장)
-        # 매 5초마다 + cur_len > 100 이면 확인 (threshold 낮춤 — tool result collapse 대응)
-        if not best_streamed_text and (cur_len >= 100 or i % 5 == 0):
+        # 매 5초마다 + cur_len > 100 이면 확인 — 더 긴 버전이 올 때마다 갱신
+        if cur_len >= 100 or i % 5 == 0:
             try:
                 captured = page.evaluate(_JS_CAPTURE_STREAMING)
-                if captured and "===제목===" in captured:
+                if captured and "===제목===" in captured and len(captured) > len(best_streamed_text):
                     best_streamed_text = captured
                     log(f"[Playwright] 스트리밍 중 응답 포착 ({len(best_streamed_text)}자)")
             except Exception:
@@ -169,26 +169,24 @@ def _wait_for_response(page, prev_response_count, log):
         # 조건A: 충분한 글자수 + 20초 변화 없음
         if cur_len >= MIN_CHARS_FOR_DONE and stable_count >= STABLE_SECS_REQUIRED:
             # 완료 직전 마지막 포착 시도
-            if not best_streamed_text:
-                try:
-                    captured = page.evaluate(_JS_CAPTURE_STREAMING)
-                    if captured and "===제목===" in captured:
-                        best_streamed_text = captured
-                except Exception:
-                    pass
+            try:
+                captured = page.evaluate(_JS_CAPTURE_STREAMING)
+                if captured and "===제목===" in captured and len(captured) > len(best_streamed_text):
+                    best_streamed_text = captured
+            except Exception:
+                pass
             log(f"[Playwright] 응답 완료 ({cur_len}자, {stable_count}초 변화 없음)")
             return cur_len, best_streamed_text
 
         # 조건B: 스트리밍이 확실히 끝남 (전송 버튼 재출현) + 최소 대기 20초
         if i >= 20 and stable_count >= 5 and _is_streaming_done(page):
             if cur_len >= MIN_CHARS_FOR_DONE:
-                if not best_streamed_text:
-                    try:
-                        captured = page.evaluate(_JS_CAPTURE_STREAMING)
-                        if captured and "===제목===" in captured:
-                            best_streamed_text = captured
-                    except Exception:
-                        pass
+                try:
+                    captured = page.evaluate(_JS_CAPTURE_STREAMING)
+                    if captured and "===제목===" in captured and len(captured) > len(best_streamed_text):
+                        best_streamed_text = captured
+                except Exception:
+                    pass
                 log(f"[Playwright] 응답 완료 (스트리밍 종료 확인, {cur_len}자)")
                 return cur_len, best_streamed_text
             else:
