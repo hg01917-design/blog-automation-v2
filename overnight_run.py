@@ -392,6 +392,8 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     body = re.sub(r'\n*===검수===.*?(?:===검수끝===|$)', '', body, flags=re.DOTALL).strip()
     # ✅/❌ 로 시작하는 체크리스트 줄 제거
     body = re.sub(r'\n[✅❌☑️].{0,60}(?:\n[✅❌☑️].{0,60}){2,}', '', body).strip()
+    # [검증 필요], [출처 필요], [사실 확인] 등 내부 마커 제거
+    body = re.sub(r'\[검증\s*필요\]|\[출처\s*필요\]|\[사실\s*확인\]|\[확인\s*필요\]', '', body).strip()
 
     # 태그: 첫 줄만 (여러 줄이면 첫 줄의 쉼표 구분)
     if tag_m:
