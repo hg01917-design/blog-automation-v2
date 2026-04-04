@@ -395,9 +395,33 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
             update_keyword_status(page_id, "실패", memo=f"유사문서: {matched[:30]}")
         return False
 
+    # 1. triplog: MRT 제휴 링크 조회 후 프롬프트에 포함
+    keyword_with_mrt = keyword
+    if blog_id == "triplog":
+        try:
+            from mrt_affiliate import get_affiliate_links
+            log(f"[파이프라인] triplog — MRT 제휴 링크 조회 중: '{keyword}'")
+            mrt_links = get_affiliate_links(keyword, top_n=3, on_log=log)
+            if mrt_links:
+                mrt_ctx = (
+                    "\n\n[마이리얼트립 제휴 상품 — 글 하단 '추천 투어' 섹션에 필수 포함]\n"
+                    "아래 상품들을 글 하단에 자연스럽게 소개하고 링크를 그대로 삽입해.\n"
+                    "글 최상단(제목 바로 아래)에 반드시 이 문구를 삽입해:\n"
+                    "「이 글에는 마이리얼트립 파트너스 프로그램을 통해 소정의 수수료를 받을 수 있는 제휴 링크가 포함되어 있습니다.」\n\n"
+                )
+                for i, p in enumerate(mrt_links, 1):
+                    name = p["title"][:60]
+                    mrt_ctx += f"{i}. {name}\n   링크: {p['affiliate_url']}\n"
+                keyword_with_mrt = keyword + mrt_ctx
+                log(f"[파이프라인] MRT {len(mrt_links)}개 제휴 링크 주입 완료")
+            else:
+                log(f"[파이프라인] MRT 제품 없음 — MRT 섹션 없이 진행")
+        except Exception as e:
+            log(f"[파이프라인] MRT 조회 실패 (무시): {e}")
+
     # 1. Claude.ai 글 생성
     log(f"[파이프라인] {blog_id} / '{keyword}' — Claude.ai 글 생성 시작")
-    raw = generate_text("", blog_id=blog_id, keyword=keyword, on_log=log)
+    raw = generate_text("", blog_id=blog_id, keyword=keyword_with_mrt, on_log=log)
 
     if not raw or "추출 실패" in raw:
         log(f"[파이프라인] 글 생성 실패")
