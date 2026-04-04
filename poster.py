@@ -322,7 +322,7 @@ def _markdown_table_to_html(lines: list) -> str:
 # 티스토리 글 작성 (TinyMCE 기반)
 # ─────────────────────────────────────────────
 def _post_tistory(account, title, body_html, tags=None,
-                  image_paths=None, image_infos=None, on_log=None):
+                  image_paths=None, image_infos=None, keyword="", on_log=None):
     """티스토리 에디터에서 글 작성 + 임시저장
 
     Args:
@@ -498,6 +498,24 @@ def _post_tistory(account, title, body_html, tags=None,
                     ok = _tistory_upload_image(page, image_paths[idx], alt, on_log=log)
                     if ok:
                         log(f"[포스팅] 이미지 {idx} 업로드 완료")
+                        # 이미지 업로드 후 TinyMCE 포커스가 캡션으로 이동할 수 있음 → 본문으로 복구
+                        page.evaluate("""() => {
+                            const ed = tinymce && tinymce.activeEditor;
+                            if (!ed) return;
+                            const body = ed.getBody();
+                            const doc = ed.getDoc();
+                            // 본문 끝에 새 단락 추가 후 커서 이동
+                            const p = doc.createElement('p');
+                            p.setAttribute('data-ke-size', 'size16');
+                            p.innerHTML = '<br data-mce-bogus="1">';
+                            body.appendChild(p);
+                            const range = doc.createRange();
+                            range.setStart(p, 0);
+                            range.collapse(true);
+                            ed.selection.setRng(range);
+                            ed.focus();
+                        }""")
+                        time.sleep(0.3)
                     else:
                         log(f"[포스팅] 이미지 {idx} 업로드 실패 — 스킵")
                 else:
@@ -593,6 +611,38 @@ def _post_tistory(account, title, body_html, tags=None,
                 log("[포스팅] 태그 입력 실패 — 스킵")
             else:
                 log(f"[포스팅] 태그 {tag_ok}개 입력 완료")
+
+        # ── 카테고리 선택 (goodisak) ──
+        blog_id_local = account.get("blog", "")
+        if blog_id_local == "goodisak":
+            cat_name = _get_goodisak_category(keyword or title)
+            log(f"[포스팅] 카테고리 선택 (goodisak): {cat_name}")
+            try:
+                # TinyMCE 카테고리 드롭다운 열기
+                cat_result = page.evaluate("""(catName) => {
+                    const selectTxts = [...document.querySelectorAll('i.mce-txt')];
+                    const catTxt = selectTxts.find(i => i.textContent.trim() === '카테고리');
+                    if (catTxt) {
+                        const btn = catTxt.closest('button');
+                        if (btn) { btn.click(); return '__dropdown__'; }
+                    }
+                    return null;
+                }""", cat_name)
+                if cat_result == '__dropdown__':
+                    import time as _t
+                    _t.sleep(0.5)
+                    selected = page.evaluate("""(catName) => {
+                        const items = [...document.querySelectorAll('[role="menuitem"]')];
+                        const item = items.find(el => el.textContent.trim() === catName);
+                        if (item) { item.click(); return '카테고리:' + catName; }
+                        return null;
+                    }""", cat_name)
+                    if selected:
+                        log(f"[포스팅] 카테고리 선택 완료: {selected}")
+                    else:
+                        log(f"[포스팅] 카테고리 '{cat_name}' 항목 없음 — 스킵")
+            except Exception as e:
+                log(f"[포스팅] 카테고리 선택 오류: {e}")
 
         # ── 대표이미지 설정 (첫 번째 이미지) ──
         if image_paths:
@@ -945,6 +995,40 @@ def _redistribute_images_if_top(sections):
 
 
 # ─────────────────────────────────────────────
+# goodisak 블로그 카테고리 판단
+# ─────────────────────────────────────────────
+_GOODISAK_FINANCE_KEYWORDS = [
+    "카카오페이", "토스", "네이버페이", "삼성페이", "페이코",
+    "이체", "송금", "수수료", "금융", "대출", "신용카드", "체크카드",
+    "적금", "예금", "청약", "금리", "이자", "환율", "주식", "펀드",
+    "연금", "보험", "세금", "절세", "소득공제", "환급", "환전",
+    "포인트현금", "포인트전환", "마일리지",
+]
+_GOODISAK_IT_KEYWORDS = [
+    "갤럭시", "아이폰", "아이패드", "애플", "삼성", "스마트폰",
+    "노트북", "맥북", "윈도우", "맥os", "안드로이드", "ios",
+    "유튜브", "넷플릭스", "디즈니플러스", "왓챠",
+    "노션", "구글", "카카오", "네이버", "쿠팡", "배달의민족",
+    "앱", "어플", "소프트웨어", "프로그램", "설정", "배터리",
+    "저장공간", "화질", "광고차단", "vpn", "보안", "wifi",
+    "블루투스", "이어폰", "에어팟", "애플워치", "갤럭시워치",
+    "폴드", "플립", "태블릿", "pc", "컴퓨터",
+]
+
+def _get_goodisak_category(keyword: str) -> str:
+    """키워드 기반 goodisak 블로그 카테고리 반환.
+    금융 관련 → '금융', IT 관련 → 'IT 정보', 나머지 → 'IT 정보' (기본)
+    """
+    kw_flat = keyword.replace(" ", "").lower()
+    for w in _GOODISAK_FINANCE_KEYWORDS:
+        if w.replace(" ", "").lower() in kw_flat:
+            return "금융"
+    for w in _GOODISAK_IT_KEYWORDS:
+        if w.replace(" ", "").lower() in kw_flat:
+            return "IT 정보"
+    return "IT 정보"  # 기본값
+
+
 # 살림1수 블로그 카테고리 판단
 # ─────────────────────────────────────────────
 _SALIM_FIXED_COST_KEYWORDS = [
@@ -1864,7 +1948,7 @@ def post_single(blog_id: str, title: str, content: str,
     if account["platform"] == "tistory":
         ok = _post_tistory(account, title, content, tags,
                            image_paths=image_paths, image_infos=image_infos,
-                           on_log=on_log)
+                           keyword=keyword, on_log=on_log)
     elif account["platform"] == "naver":
         ok = _post_naver(account, title, content, tags,
                          image_paths=image_paths, image_infos=image_infos,
