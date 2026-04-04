@@ -454,6 +454,11 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     body = re.sub(r'\n[✅❌☑️].{0,60}(?:\n[✅❌☑️].{0,60}){2,}', '', body).strip()
     # [검증 필요], [출처 필요], [사실 확인] 등 내부 마커 제거
     body = re.sub(r'\[검증\s*필요\]|\[출처\s*필요\]|\[사실\s*확인\]|\[확인\s*필요\]', '', body).strip()
+    # JSON-LD 스키마 / <script> 태그 전체 제거 (SEO 스키마가 본문에 섞이는 경우)
+    body = re.sub(r'<script\b[^>]*>.*?</script>', '', body, flags=re.DOTALL | re.IGNORECASE).strip()
+    # 노출된 HTML 블록 태그 제거 (<div>, <section>, <article> 등 — 인라인 태그는 유지)
+    body = re.sub(r'</?(?:div|section|article|aside|header|footer|nav|main|figure|figcaption)(\s[^>]*)?>',
+                  '', body, flags=re.IGNORECASE).strip()
 
     # 태그: 첫 줄만 (여러 줄이면 첫 줄의 쉼표 구분)
     if tag_m:
