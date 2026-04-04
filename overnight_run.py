@@ -36,6 +36,24 @@ def save_log():
     log(f"로그 저장: {LOG_FILE}")
 
 
+def _send_telegram(msg: str):
+    """Telegram 메시지 전송 (.env의 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID 사용)"""
+    try:
+        bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+        if not bot_token or not chat_id:
+            return
+        payload = json.dumps({"chat_id": chat_id, "text": msg}).encode()
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=10)
+    except Exception as e:
+        log(f"[Telegram] 전송 실패: {e}")
+
+
 # ─── Notion 키워드 큐에서 대기 키워드 가져오기 ───
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
 NOTION_API = "https://api.notion.com/v1"
@@ -509,8 +527,15 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
         on_log=log,
     )
 
-    status = "성공" if ok else "실패"
-    log(f"[파이프라인] {blog_id} / '{keyword}' 포스팅 {status}")
+    if ok:
+        log(f"[파이프라인] {blog_id} / '{keyword}' 임시저장완료 ✅")
+        _send_telegram(
+            f"[{blog_id}] 임시저장완료했습니다 ✅\n"
+            f"키워드: {keyword}\n"
+            f"클로드코드는 검수후 발행해주세요."
+        )
+    else:
+        log(f"[파이프라인] {blog_id} / '{keyword}' 포스팅 실패 ⚠")
     return ok
 
 
@@ -524,7 +549,7 @@ def _hours_since_last_post(blog_id: str) -> float:
     with _conn() as db:
         row = db.execute(
             """SELECT updated_at FROM keyword_blog_status
-               WHERE blog_id = ? AND status = 'published'
+               WHERE blog_id = ? AND status IN ('published', 'draft_saved')
                ORDER BY updated_at DESC LIMIT 1""",
             (blog_id,),
         ).fetchone()
@@ -561,7 +586,7 @@ def post_one_blog(blog_id):
     try:
         ok = run_posting_pipeline(blog_id, kw, page_id=None)
         if ok:
-            _db_set(kw, "published", blog_id=blog_id)
+            _db_set(kw, "draft_saved", blog_id=blog_id)
         else:
             _db_set(kw, "failed", blog_id=blog_id)
         return ok
