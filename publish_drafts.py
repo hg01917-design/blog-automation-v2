@@ -256,6 +256,78 @@ def _get_published_titles(blog_id: str, blog_type: str = 'tistory') -> set:
 # ══════════════════════════════════════════════
 # Tistory (goodisak / nolja100)
 # ══════════════════════════════════════════════
+def _tistory_ensure_login(page, blog_id: str) -> bool:
+    """기존 page에서 티스토리 로그인 상태 확인·로그인. 탭을 새로 열지 않음."""
+    import random as _rnd
+    config = ACCOUNT_MAP.get(blog_id, {})
+    kakao_id = config.get("kakao_id", "")
+    blog_url = f"https://{blog_id}.tistory.com/manage"
+    TISTORY_LOGIN_URL = "https://www.tistory.com/auth/login"
+
+    try:
+        page.evaluate("window.onbeforeunload = null")
+    except Exception:
+        pass
+
+    page.goto(blog_url, wait_until="domcontentloaded", timeout=30000)
+    page.wait_for_timeout(_rnd.randint(2000, 3000))
+
+    # 이미 manage 접근 성공
+    if "/manage" in page.url and "tistory.com" in page.url:
+        _log(f"[{blog_id}] 로그인 상태 확인됨")
+        return True
+
+    # 다른 계정 세션 → 로그아웃 후 재시도
+    if "tistory.com" in page.url and "auth/login" not in page.url:
+        page.goto("https://www.tistory.com/auth/logout", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_timeout(2000)
+
+    # 로그인 페이지로 이동
+    page.goto(TISTORY_LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
+    page.wait_for_timeout(_rnd.randint(2000, 3000))
+
+    if "auth/login" in page.url:
+        try:
+            kakao_btn = page.locator('a.btn_login.link_kakao_id, a[class*="kakao"]').first
+            kakao_btn.click(timeout=10000)
+            page.wait_for_timeout(_rnd.randint(3000, 5000))
+        except Exception as e:
+            _log(f"[{blog_id}] 카카오 버튼 클릭 실패: {e}")
+            return False
+
+    # 카카오 계정 선택
+    if kakao_id:
+        try:
+            acc = page.locator(f'a.wrap_profile:has-text("{kakao_id}")').first
+            acc.wait_for(state="visible", timeout=8000)
+            acc.click()
+            page.wait_for_timeout(_rnd.randint(3000, 5000))
+        except Exception:
+            pass
+
+    # 동의 화면
+    try:
+        agree = page.locator('button:has-text("동의하고 계속하기"), button:has-text("확인")').first
+        if agree.is_visible(timeout=3000):
+            agree.click()
+            page.wait_for_timeout(2000)
+    except Exception:
+        pass
+
+    # 로그인 완료 대기
+    for _ in range(30):
+        url = page.url
+        if "tistory.com" in url and "auth/login" not in url and "kakao" not in url:
+            _log(f"[{blog_id}] 티스토리 로그인 성공")
+            page.goto(blog_url, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(2000)
+            return "/manage" in page.url
+        page.wait_for_timeout(_rnd.randint(800, 1200))
+
+    _log(f"[{blog_id}] 로그인 실패 — URL: {page.url}")
+    return False
+
+
 def _tistory_get_draft_id(page, blog_id: str) -> str | None:
     """에디터 임시저장 목록에서 첫 번째 유효한 드래프트를 에디터에 로드.
     성공 시 'loaded' 반환 (이후 page.goto 불필요).
@@ -623,16 +695,15 @@ def publish_tistory_draft(blog_id: str) -> bool:
         _log(f"[{blog_id}] ACCOUNT_MAP에 없음")
         return False
 
-    # 로그인
-    ok = login_blog(blog_id, on_log=_log)
-    if not ok:
-        _log(f"[{blog_id}] 로그인 실패")
-        return False
-    time.sleep(2)
-
+    # 단일 세션: 로그인 + 발행을 같은 탭에서 처리
     pw, browser = connect_cdp(on_log=_log)
     try:
         page = get_or_create_page(browser)
+
+        # 로그인 확인 & 처리 (새 탭 열지 않음)
+        if not _tistory_ensure_login(page, blog_id):
+            _log(f"[{blog_id}] 로그인 실패 — 중단")
+            return False
 
         # 임시저장 게시물 로드 (에디터 드래프트 목록에서 직접 로드)
         draft_id = _tistory_get_draft_id(page, blog_id)
@@ -640,9 +711,9 @@ def publish_tistory_draft(blog_id: str) -> bool:
             _log(f"[{blog_id}] 임시저장 글 없음 — 스킵")
             return False
 
-        # 로그인 상태 확인
+        # 로그인 상태 재확인
         if "accounts.kakao.com" in page.url or "auth/login" in page.url:
-            _log(f"[{blog_id}] 로그인 필요 — 중단")
+            _log(f"[{blog_id}] 로그인 세션 만료 — 중단")
             return False
 
         # TinyMCE 로드 대기
