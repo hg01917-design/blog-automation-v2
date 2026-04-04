@@ -37,18 +37,32 @@ BLOGS = {
     "goodisak": {
         "rss": "https://goodisak.tistory.com/rss",
         "fb_page_id": "981891965017107",   # 이거알아요
+        "domain": "welfare.baremi542.com",
+        "rss_domain": "goodisak.tistory.com",
     },
     "nolja100": {
         "rss": "https://nolja100.tistory.com/rss",
         "fb_page_id": "981891965017107",   # 이거알아요
+        "domain": "issue.baremi542.com",
+        "rss_domain": "nolja100.tistory.com",
     },
     "salim1su": {
         "rss": "https://rss.blog.naver.com/salim1su.xml",
         "fb_page_id": "955279141010789",   # 퇴근후살림
+        "domain": None,                    # 네이버 링크 그대로 사용
+        "rss_domain": None,
     },
     "triplog": {
         "rss": "https://app.baremi542.com/feed",
-        "fb_page_id": "981891965017107",   # 이거알아요 (임시, 전용 페이지 생기면 변경)
+        "fb_page_id": "981891965017107",   # 이거알아요
+        "domain": "app.baremi542.com",
+        "rss_domain": None,
+    },
+    "baremi542": {
+        "rss": "https://baremi542.com/feed",
+        "fb_page_id": "981891965017107",   # 이거알아요
+        "domain": "baremi542.com",
+        "rss_domain": None,
     },
 }
 
@@ -56,8 +70,15 @@ BLOGS = {
 POST_INTERVAL_BETWEEN_BLOGS = 1800   # 30분 간격
 # 같은 블로그 재포스팅 최소 간격 (초)
 POST_INTERVAL_SAME_BLOG = 14400      # 4시간
-# 링크 없는 정보성 포스팅 비율 (0~1, 0.3 = 30% 확률로 링크 없이)
-INFO_ONLY_RATIO = 0.3
+
+
+def _rewrite_link(link: str, cfg: dict) -> str:
+    """RSS 링크의 tistory 도메인을 실제 서비스 도메인으로 교체."""
+    rss_domain = cfg.get("rss_domain")
+    real_domain = cfg.get("domain")
+    if rss_domain and real_domain and rss_domain in link:
+        return link.replace(rss_domain, real_domain)
+    return link
 
 # ── 상태 파일 ────────────────────────────────────────────────────────────────
 
@@ -117,26 +138,42 @@ def _strip_html(html: str) -> str:
     return text
 
 
-def _extract_image(item_elem) -> str | None:
-    """RSS 항목에서 이미지 URL 추출."""
-    # 1. media:content
+def _extract_images(item_elem, max_images: int = 2) -> list[str]:
+    """RSS 항목에서 이미지 URL 최대 max_images개 추출."""
+    urls: list[str] = []
+
+    # 1. media:content (여러 개)
     ns_media = "http://search.yahoo.com/mrss/"
-    mc = item_elem.find(f"{{{ns_media}}}content")
-    if mc is not None and mc.get("url"):
-        return mc.get("url")
+    for mc in item_elem.findall(f"{{{ns_media}}}content"):
+        url = mc.get("url", "")
+        if url and url not in urls:
+            urls.append(url)
+        if len(urls) >= max_images:
+            return urls
 
     # 2. enclosure
     enc = item_elem.find("enclosure")
     if enc is not None and "image" in enc.get("type", ""):
-        return enc.get("url")
+        url = enc.get("url", "")
+        if url and url not in urls:
+            urls.append(url)
+    if len(urls) >= max_images:
+        return urls
 
-    # 3. description 내 첫 번째 <img>
-    desc = item_elem.findtext("description", "") or item_elem.findtext("content:encoded", "")
-    m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', desc, re.IGNORECASE)
-    if m:
-        return m.group(1)
+    # 3. description/content:encoded 내 <img> 태그 전체 추출
+    desc = (
+        item_elem.findtext("description", "")
+        or item_elem.findtext("{http://purl.org/rss/1.0/modules/content/}encoded", "")
+        or item_elem.findtext("content:encoded", "")
+    )
+    for m in re.finditer(r'<img[^>]+src=["\']([^"\']+)["\']', desc, re.IGNORECASE):
+        url = m.group(1)
+        if url and url not in urls:
+            urls.append(url)
+        if len(urls) >= max_images:
+            break
 
-    return None
+    return urls
 
 
 def _extract_hook(item_elem) -> str:
@@ -198,14 +235,14 @@ def _fetch_rss(url: str) -> list[dict]:
             title = item.findtext("title", "").strip()
             link = item.findtext("link", "").strip()
             guid = item.findtext("guid", link).strip()
-            image_url = _extract_image(item)
+            image_urls = _extract_images(item, max_images=2)
             hook = _extract_hook(item)
             if title:
                 items.append({
                     "title": title,
                     "link": link,
                     "guid": guid,
-                    "image_url": image_url,
+                    "image_urls": image_urls,
                     "hook": hook,
                 })
         return items
@@ -214,9 +251,9 @@ def _fetch_rss(url: str) -> list[dict]:
         return []
 
 
-# ── Facebook 포스팅 (이미지 + 댓글 링크) ────────────────────────────────────
+# ── Facebook 포스팅 (멀티 이미지 + 댓글 링크) ───────────────────────────────
 
-def _post_facebook(page_id: str, title: str, hook: str, image_url: str | None, link: str, blog_id: str = "") -> str | None:
+def _post_facebook(page_id: str, title: str, hook: str, image_urls: list[str], link: str, blog_id: str = "") -> str | None:
     token = _get_page_token(page_id)
     if not token:
         print(f"  [FB] 페이지 토큰 없음: {page_id}")
@@ -225,15 +262,39 @@ def _post_facebook(page_id: str, title: str, hook: str, image_url: str | None, l
     message = _build_post_text(title, hook, blog_id) if hook else title
     post_id = None
 
-    # 이미지 있으면 사진 포스트
-    if image_url:
+    if len(image_urls) >= 2:
+        # 멀티 이미지: 각 사진을 비공개 업로드 후 feed에 묶음
+        media_ids = []
+        for img_url in image_urls[:2]:
+            r = _api(
+                f"https://graph.facebook.com/v19.0/{page_id}/photos",
+                {"url": img_url, "published": "false", "access_token": token},
+            )
+            mid = r.get("id")
+            if mid:
+                media_ids.append({"media_fbid": mid})
+            time.sleep(1)
+
+        if media_ids:
+            resp = _api(
+                f"https://graph.facebook.com/v19.0/{page_id}/feed",
+                {
+                    "message": message,
+                    "attached_media": json.dumps(media_ids),
+                    "access_token": token,
+                },
+            )
+            post_id = resp.get("id")
+            if not post_id:
+                print(f"  [FB] 멀티이미지 포스트 실패: {resp.get('error','')}")
+
+    elif len(image_urls) == 1:
+        # 단일 이미지
         resp = _api(
             f"https://graph.facebook.com/v19.0/{page_id}/photos",
-            {"url": image_url, "message": message, "access_token": token},
+            {"url": image_urls[0], "message": message, "access_token": token},
         )
         post_id = resp.get("post_id") or resp.get("id")
-        if not post_id:
-            print(f"  [FB] 사진 포스트 실패, 텍스트로 대체: {resp.get('error','')}")
 
     # 이미지 없거나 실패 시 텍스트 포스트
     if not post_id:
@@ -262,35 +323,59 @@ def _post_facebook(page_id: str, title: str, hook: str, image_url: str | None, l
     return post_id
 
 
-# ── Threads 포스팅 (이미지 + 댓글 링크) ─────────────────────────────────────
+# ── Threads 포스팅 (멀티 이미지 + 댓글 링크) ────────────────────────────────
 
-def _post_threads(title: str, hook: str, image_url: str | None, link: str, blog_id: str = "") -> str | None:
+def _post_threads(title: str, hook: str, image_urls: list[str], link: str, blog_id: str = "") -> str | None:
     text = _build_post_text(title, hook, blog_id) if hook else title
+    creation_id = None
 
-    # Step 1: 컨테이너 생성
-    params: dict = {"access_token": THREADS_TOKEN}
-    if image_url:
-        params.update({"media_type": "IMAGE", "image_url": image_url, "text": text})
-    else:
-        params.update({"media_type": "TEXT", "text": text})
-
-    create_resp = _api(
-        f"https://graph.threads.net/v1.0/{THREADS_USER_ID}/threads",
-        params,
-    )
-    creation_id = create_resp.get("id")
-    if not creation_id:
-        # 이미지 실패 시 텍스트로 재시도
-        if image_url:
-            print(f"  [Threads] 이미지 컨테이너 실패, 텍스트로 재시도...")
-            create_resp = _api(
+    if len(image_urls) >= 2:
+        # 캐러셀: 각 이미지 아이템 컨테이너 생성 후 묶음
+        item_ids = []
+        for img_url in image_urls[:2]:
+            r = _api(
                 f"https://graph.threads.net/v1.0/{THREADS_USER_ID}/threads",
-                {"media_type": "TEXT", "text": text, "access_token": THREADS_TOKEN},
+                {"media_type": "IMAGE", "image_url": img_url,
+                 "is_carousel_item": "true", "access_token": THREADS_TOKEN},
             )
-            creation_id = create_resp.get("id")
-        if not creation_id:
-            print(f"  [Threads] 컨테이너 생성 실패: {create_resp}")
-            return None
+            if r.get("id"):
+                item_ids.append(r["id"])
+            time.sleep(1)
+
+        if len(item_ids) >= 2:
+            resp = _api(
+                f"https://graph.threads.net/v1.0/{THREADS_USER_ID}/threads",
+                {
+                    "media_type": "CAROUSEL",
+                    "children": ",".join(item_ids),
+                    "text": text,
+                    "access_token": THREADS_TOKEN,
+                },
+            )
+            creation_id = resp.get("id")
+            if not creation_id:
+                print(f"  [Threads] 캐러셀 컨테이너 실패: {resp.get('error','')}")
+
+    if not creation_id and image_urls:
+        # 단일 이미지 또는 캐러셀 실패 폴백
+        resp = _api(
+            f"https://graph.threads.net/v1.0/{THREADS_USER_ID}/threads",
+            {"media_type": "IMAGE", "image_url": image_urls[0],
+             "text": text, "access_token": THREADS_TOKEN},
+        )
+        creation_id = resp.get("id")
+
+    if not creation_id:
+        # 텍스트 폴백
+        resp = _api(
+            f"https://graph.threads.net/v1.0/{THREADS_USER_ID}/threads",
+            {"media_type": "TEXT", "text": text, "access_token": THREADS_TOKEN},
+        )
+        creation_id = resp.get("id")
+
+    if not creation_id:
+        print(f"  [Threads] 컨테이너 생성 실패: {resp}")
+        return None
 
     time.sleep(3)
 
@@ -364,7 +449,7 @@ def run(on_log=None):
 
         item = new_items[0]
         log(f"  새 글: {item['title']}")
-        log(f"  이미지: {'있음' if item['image_url'] else '없음'}")
+        log(f"  이미지: {len(item['image_urls'])}개")
         log(f"  후킹글: {item['hook'][:80]}...")
 
         # 블로그 간 간격 (30분) 대기
@@ -373,15 +458,16 @@ def run(on_log=None):
             log(f"  블로그 간 간격 대기 {int(gap_needed)}초...")
             time.sleep(gap_needed)
 
-        # 링크는 항상 댓글에 추가 (본문 알고리즘 불이익 방지)
-        link = item["link"]
+        # 링크: tistory 내부 도메인 → 실제 서비스 도메인으로 교체 후 댓글에 추가
+        link = _rewrite_link(item["link"], cfg)
+        log(f"  링크: {link}")
 
         fb_ok = _post_facebook(
-            cfg["fb_page_id"], item["title"], item["hook"], item["image_url"], link, blog_id
+            cfg["fb_page_id"], item["title"], item["hook"], item["image_urls"], link, blog_id
         )
         log(f"  [FB] {'✅ ' + str(fb_ok) if fb_ok else '❌ 실패'}")
 
-        th_ok = _post_threads(item["title"], item["hook"], item["image_url"], link, blog_id)
+        th_ok = _post_threads(item["title"], item["hook"], item["image_urls"], link, blog_id)
         log(f"  [Threads] {'✅ ' + str(th_ok) if th_ok else '❌ 실패'}")
 
         if fb_ok or th_ok:
