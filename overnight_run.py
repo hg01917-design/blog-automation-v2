@@ -42,13 +42,10 @@ def _notify_draft_saved(blog_id: str, keyword: str):
     CLAUDE_BIN = "/Users/hana/.local/bin/claude"
     PROJECT_DIR = str(Path(__file__).parent)
     prompt = (
-        f"{blog_id} 블로그 임시저장 글 검수 후 발행해줘. "
-        f"키워드: {keyword}. "
-        f"발행 전 체크리스트: 마크다운 잔재 없는지, 이미지 3장 이상, "
-        f"[검증 필요] 등 내부마커 없는지, 1700자 이상, "
-        f"마지막 발행 후 3.5시간 이상 경과했는지 확인. "
-        f"nolja100은 댓글 비허용으로 발행. "
-        f"문제 있으면 수정 후 발행. 통과하면 바로 발행."
+        f"봇이 {blog_id} 블로그에 '{keyword}' 글을 임시저장했어. "
+        f"CLAUDE.md의 발행 전 체크리스트와 블로그별 추가 규칙에 따라 "
+        f"지금 바로 검수 후 발행해줘. "
+        f"문제 있으면 수정 후 발행. 간격 미충족이면 충족 후 발행."
     )
     try:
         _sp.Popen(

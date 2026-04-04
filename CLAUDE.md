@@ -34,6 +34,13 @@
 - 1700자 미만: 내용 보완 후 발행
 - 간격 미충족: 충족될 때까지 대기 후 발행
 
+## 블로그별 추가 규칙
+- **nolja100** (Tistory): 여행 주제만 발행. 댓글 비허용으로 발행.
+- **salim1su** (Naver): 이미지는 Gemini만 사용, loremflickr 절대 금지.
+- **goodisak** (Tistory, welfare.baremi542.com): 정부지원/복지 주제. 댓글 비허용.
+- **baremi542** (WordPress): 생활정보/정부지원. 일반 발행.
+- **triplog** (WordPress, app.baremi542.com): 여행 주제. 일반 발행.
+
 # 세션 종료 시 반드시 실행
 - 위 노션 현황판 업데이트 (미완료 작업, 변경 사항 반영)
 - 중요 작업은 git commit + push
