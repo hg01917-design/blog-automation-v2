@@ -198,6 +198,21 @@ def _extract_response(page, prev_response_count, log):
                     else if (t === 'ul' || t === 'ol') r += '\\n' + toMd(n);
                     else if (t === 'code') r += '`' + n.textContent + '`';
                     else if (t === 'pre') r += '\\n```\\n' + n.textContent + '\\n```\\n';
+                    else if (t === 'table') {
+                        const rows = [];
+                        for (const tr of n.querySelectorAll('tr')) {
+                            const cells = [];
+                            for (const td of tr.querySelectorAll('th, td')) {
+                                cells.push((td.innerText || '').trim().replace(/\\|/g, '\\\\|'));
+                            }
+                            if (cells.length) rows.push('| ' + cells.join(' | ') + ' |');
+                        }
+                        if (rows.length >= 2) {
+                            const sep = '| ' + rows[0].split('|').slice(1,-1).map(() => '---').join(' | ') + ' |';
+                            rows.splice(1, 0, sep);
+                        }
+                        r += '\\n' + rows.join('\\n') + '\\n\\n';
+                    }
                     else r += toMd(n);
                 }
             }
