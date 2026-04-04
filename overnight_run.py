@@ -630,6 +630,18 @@ if __name__ == "__main__":
             log(f"[크롤링] {bid} 오류: {e}")
     save_log()
 
+    # ── 경쟁 사이트 모니터링 (월/수/금 실행) ──
+    _today_wd = datetime.now().weekday()  # 0=월, 2=수, 4=금
+    if _today_wd in (0, 2, 4):
+        log("[경쟁모니터] 경쟁 사이트 신규 포스트 감지 시작")
+        try:
+            from keyword_engine.competitor_monitor import monitor_competitors
+            _added = monitor_competitors(on_log=log)
+            log(f"[경쟁모니터] 신규 키워드 {_added}개 추가 완료")
+        except Exception as _e:
+            log(f"[경쟁모니터] 오류: {_e}")
+        save_log()
+
     # ── 라운드 1: 0~30분 랜덤 지연 후 시작 ──
     delay1 = _random.uniform(0, 30 * 60)
     log(f"[라운드 1] {int(delay1/60)}분 후 시작 예정")
