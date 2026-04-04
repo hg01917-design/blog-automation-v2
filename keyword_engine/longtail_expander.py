@@ -105,19 +105,63 @@ def _naver_related_search(keyword: str, on_log=None) -> list[str]:
 
 
 # ── 롱테일 필터 ──────────────────────────────────────────────────────────
+_SKIP = re.compile(r"(쇼핑|광고|구매|구입|가격비교|사이트|앱다운|공식)")
+
 def _is_longtail(keyword: str, base: str) -> bool:
     """롱테일 여부 판단: 기본 키워드보다 길고, 공백 포함 2어절 이상"""
     kw = keyword.strip()
     if len(kw) <= len(base):
         return False
-    words = kw.split()
-    if len(words) < 2:
+    if len(kw.split()) < 2:
         return False
-    # 광고성/무관 패턴 제외
-    _SKIP = re.compile(r"(쇼핑|광고|구매|구입|가격비교|사이트|앱다운|공식)")
     if _SKIP.search(kw):
         return False
     return True
+
+
+def _combine_longtail(base: str, candidates: list[str], max_len: int = 30) -> list[str]:
+    """
+    자동완성/연관검색어를 자연스럽게 조합해 롱테일 키워드 생성.
+
+    전략:
+    - 후보들에서 자주 나타나는 핵심 단어(빈도순)를 추출
+    - base 뒤에 빈도 높은 단어부터 이어붙여 자연스러운 키워드 완성
+    - 예) "속초 여행" → "속초 여행코스 뚜벅이 당일치기 추천"
+    """
+    from collections import Counter
+
+    # 모든 후보에서 단어 추출 (2글자 이상, base 단어 제외)
+    base_words = set(base.split())
+    word_freq: Counter = Counter()
+    for cand in candidates:
+        for word in cand.strip().split():
+            if (len(word) >= 2
+                    and word not in base_words
+                    and not _SKIP.search(word)):
+                word_freq[word] += 1
+
+    if not word_freq:
+        return []
+
+    # 빈도 높은 단어순으로 base에 이어붙임 (중복/포함 관계 단어 제외)
+    sorted_words = [w for w, _ in word_freq.most_common(12)]
+    result = base
+    results = []
+    for word in sorted_words:
+        # 이미 result에 포함된 단어이거나, result 안의 단어가 word에 포함되면 스킵
+        if word in result:
+            continue
+        if any(w in word or word in w for w in result.split()):
+            continue
+        next_kw = result + " " + word
+        if len(next_kw) > max_len:
+            break
+        result = next_kw
+        if len(result.split()) >= 3:
+            results.append(result.strip())
+
+    # 가장 긴 것 1개만 반환 (자연스러운 긴 제목 1개)
+    return [results[-1]] if results else []
 
 
 # ── 메인 함수 ─────────────────────────────────────────────────────────────
@@ -181,7 +225,14 @@ def expand_longtail(
                 seen.add(kw)
                 longtails.append(kw)
 
-        log(f"[롱테일] '{base}' → 롱테일 {len(longtails)}개 추출")
+        # 3-1. 조합 롱테일: 꼬리 단어들을 base에 붙여 더 긴 키워드 생성
+        combined = _combine_longtail(base, candidates, max_len=25)
+        for kw in combined:
+            if kw not in seen:
+                seen.add(kw)
+                longtails.append(kw)
+
+        log(f"[롱테일] '{base}' → 롱테일 {len(longtails)}개 추출 (조합 {len(combined)}개 포함)")
 
         # 4. DB 저장 (기존 키워드 덮어쓰기 X, 신규만)
         for kw in longtails:
