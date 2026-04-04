@@ -423,9 +423,14 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
     # 프로젝트 미설정 blog_id면 기존대로 Notion에서 전체 프롬프트 가져오기
     if blog_id and keyword:
         if blog_id in BLOG_PROJECT_URLS:
-            # 프로젝트 모드: 키워드만 전송 — 프로젝트 지침이 형식/이미지/길이 모두 담당
-            prompt = keyword
-            log(f"[Playwright] 프로젝트 모드 — 키워드만 전송: '{keyword}'")
+            # 프로젝트 모드: 키워드 + 모바일 문단 규칙 추가
+            _MOBILE_PARA_RULE = (
+                "\n\n[모바일 가독성 규칙 — 필수]\n"
+                "각 문단은 1~2문장으로 짧게 작성해. 문장이 끝나면 반드시 빈 줄(엔터 두 번)로 구분해.\n"
+                "긴 문단(3문장 이상 연속) 절대 금지. 모바일에서 스크롤하기 편하게 짧은 덩어리로 나눠줘.\n"
+            )
+            prompt = keyword + _MOBILE_PARA_RULE
+            log(f"[Playwright] 프로젝트 모드 — 키워드+모바일규칙 전송: '{keyword}'")
         else:
             try:
                 prompt = fetch_prompt(blog_id, keyword, on_log)

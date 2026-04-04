@@ -1163,6 +1163,9 @@ def _post_naver(account, title, content, tags=None,
                         else:
                             _chunked_type(page, stripped, chunk_size=50)
                         if li < len(lines) - 1:
+                            # 모바일 가독성: 줄 사이 Enter 두 번 (독립 문단으로 분리)
+                            page.keyboard.press("Enter")
+                            time.sleep(0.1)
                             page.keyboard.press("Enter")
                             time.sleep(0.1)
                     # 문단 사이 Enter 두 번
