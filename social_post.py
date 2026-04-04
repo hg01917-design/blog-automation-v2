@@ -139,13 +139,51 @@ def _extract_image(item_elem) -> str | None:
     return None
 
 
-def _extract_hook(item_elem, max_chars: int = 120) -> str:
-    """RSS description에서 후킹글 추출."""
-    desc = item_elem.findtext("description", "") or item_elem.findtext("{http://purl.org/rss/1.0/modules/content/}encoded", "")
+def _extract_hook(item_elem) -> str:
+    """RSS 본문에서 SNS 후킹글 생성 (외부유입 최적화).
+
+    형식:
+    - 첫 줄: 궁금증 유발 질문 또는 핵심 한 문장
+    - 중간: 핵심 내용 2~3줄 (독자가 얻을 것)
+    - 마지막: 댓글 링크 유도 CTA
+    """
+    desc = (
+        item_elem.findtext("description", "")
+        or item_elem.findtext("{http://purl.org/rss/1.0/modules/content/}encoded", "")
+    )
     text = _strip_html(desc)
-    if len(text) > max_chars:
-        text = text[:max_chars].rsplit(" ", 1)[0] + "..."
-    return text
+
+    # 의미 있는 문장만 추출 (15자 이상)
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?。])\s+", text) if len(s.strip()) >= 15]
+
+    if not sentences:
+        body = text[:200].rsplit(" ", 1)[0] + "..." if len(text) > 200 else text
+    else:
+        # 첫 3문장으로 티저 구성
+        body = "\n".join(sentences[:3])
+        if len(body) > 250:
+            body = body[:250].rsplit(" ", 1)[0] + "..."
+
+    return body
+
+
+def _build_post_text(title: str, hook: str, blog_id: str = "") -> str:
+    """SNS 포스트 본문 구성 (제목 + 후킹 요약 + CTA)."""
+    # 블로그별 대표 이모지
+    emoji_map = {
+        "nolja100": "✈️",
+        "triplog": "🗺️",
+        "salim1su": "🏠",
+        "goodisak": "💡",
+        "baremi542": "📋",
+    }
+    emoji = emoji_map.get(blog_id, "📌")
+
+    return (
+        f"{emoji} {title}\n\n"
+        f"{hook}\n\n"
+        f"👇 전체 내용은 댓글 링크에서 확인하세요"
+    )
 
 
 def _fetch_rss(url: str) -> list[dict]:
@@ -178,13 +216,13 @@ def _fetch_rss(url: str) -> list[dict]:
 
 # ── Facebook 포스팅 (이미지 + 댓글 링크) ────────────────────────────────────
 
-def _post_facebook(page_id: str, title: str, hook: str, image_url: str | None, link: str) -> str | None:
+def _post_facebook(page_id: str, title: str, hook: str, image_url: str | None, link: str, blog_id: str = "") -> str | None:
     token = _get_page_token(page_id)
     if not token:
         print(f"  [FB] 페이지 토큰 없음: {page_id}")
         return None
 
-    message = f"{title}\n\n{hook}" if hook else title
+    message = _build_post_text(title, hook, blog_id) if hook else title
     post_id = None
 
     # 이미지 있으면 사진 포스트
@@ -226,8 +264,8 @@ def _post_facebook(page_id: str, title: str, hook: str, image_url: str | None, l
 
 # ── Threads 포스팅 (이미지 + 댓글 링크) ─────────────────────────────────────
 
-def _post_threads(title: str, hook: str, image_url: str | None, link: str) -> str | None:
-    text = f"{title}\n\n{hook}" if hook else title
+def _post_threads(title: str, hook: str, image_url: str | None, link: str, blog_id: str = "") -> str | None:
+    text = _build_post_text(title, hook, blog_id) if hook else title
 
     # Step 1: 컨테이너 생성
     params: dict = {"access_token": THREADS_TOKEN}
@@ -288,8 +326,6 @@ def _post_threads(title: str, hook: str, image_url: str | None, link: str) -> st
 # ── 메인 ─────────────────────────────────────────────────────────────────────
 
 def run(on_log=None):
-    import random
-
     def log(msg):
         print(msg, flush=True)
         if on_log:
@@ -329,7 +365,7 @@ def run(on_log=None):
         item = new_items[0]
         log(f"  새 글: {item['title']}")
         log(f"  이미지: {'있음' if item['image_url'] else '없음'}")
-        log(f"  후킹글: {item['hook'][:60]}...")
+        log(f"  후킹글: {item['hook'][:80]}...")
 
         # 블로그 간 간격 (30분) 대기
         gap_needed = POST_INTERVAL_BETWEEN_BLOGS - (time.time() - last_blog_post_ts)
@@ -337,18 +373,15 @@ def run(on_log=None):
             log(f"  블로그 간 간격 대기 {int(gap_needed)}초...")
             time.sleep(gap_needed)
 
-        # 링크 포함 여부 결정 (INFO_ONLY_RATIO 확률로 링크 없음)
-        include_link = random.random() > INFO_ONLY_RATIO
-        link = item["link"] if include_link else ""
-        if not include_link:
-            log("  → 정보성 포스팅 (링크 없음)")
+        # 링크는 항상 댓글에 추가 (본문 알고리즘 불이익 방지)
+        link = item["link"]
 
         fb_ok = _post_facebook(
-            cfg["fb_page_id"], item["title"], item["hook"], item["image_url"], link
+            cfg["fb_page_id"], item["title"], item["hook"], item["image_url"], link, blog_id
         )
         log(f"  [FB] {'✅ ' + str(fb_ok) if fb_ok else '❌ 실패'}")
 
-        th_ok = _post_threads(item["title"], item["hook"], item["image_url"], link)
+        th_ok = _post_threads(item["title"], item["hook"], item["image_url"], link, blog_id)
         log(f"  [Threads] {'✅ ' + str(th_ok) if th_ok else '❌ 실패'}")
 
         if fb_ok or th_ok:
@@ -363,7 +396,6 @@ def run(on_log=None):
         results.append({
             "blog": blog_id, "title": item["title"],
             "fb": bool(fb_ok), "threads": bool(th_ok),
-            "link_included": include_link,
         })
 
     return results
