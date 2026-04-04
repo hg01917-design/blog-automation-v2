@@ -483,34 +483,59 @@ def _tistory_publish_private(page, blog_id: str) -> bool:
     time.sleep(1)
 
     # 2-1. 댓글 비허용 설정
-    page.evaluate("""() => {
-        // 댓글 허용 체크박스/라디오 해제
-        const ids = ['commentStatus', 'comment-allow', 'commentAllow'];
+    comment_result = page.evaluate("""() => {
+        // 1. name 속성으로 찾기
+        const byName = document.querySelector(
+            'input[name="commentAccepting"], input[name="comment_accepting"], ' +
+            'input[name="commentStatus"], input[name="comment-allow"]'
+        );
+        if (byName) {
+            if (byName.type === 'checkbox' && byName.checked) { byName.click(); return 'checkbox-name'; }
+        }
+        // 2. ID로 찾기
+        const ids = ['commentStatus', 'comment-allow', 'commentAllow', 'comment_accepting'];
         for (const id of ids) {
             const el = document.getElementById(id);
-            if (el && el.type === 'checkbox' && el.checked) {
-                el.click(); return;
-            }
-            if (el && el.type === 'radio') {
-                // 댓글 비허용 라디오 찾기
-            }
+            if (el && el.type === 'checkbox' && el.checked) { el.click(); return 'checkbox-id-' + id; }
         }
-        // 라벨 텍스트로 댓글 비허용 찾기
+        // 3. "비허용" / "허용 안함" 라벨
         const labels = [...document.querySelectorAll('label')];
-        const noComment = labels.find(l => l.textContent.includes('댓글') && l.textContent.includes('비허용'));
-        if (noComment) { noComment.click(); return; }
-        // 댓글 토글 스위치 (ON 상태면 OFF로)
-        const toggle = [...document.querySelectorAll('button[role=\\"switch\\"], input[type=checkbox]')]
-            .find(el => {
-                const lbl = el.closest('label') || document.querySelector(`label[for="${el.id}"]`);
-                return lbl && lbl.textContent.includes('댓글');
-            });
-        if (toggle && (toggle.checked || toggle.getAttribute('aria-checked') === 'true')) {
-            toggle.click();
+        const noComment = labels.find(l => l.textContent.includes('댓글') &&
+            (l.textContent.includes('비허용') || l.textContent.includes('허용 안함')));
+        if (noComment) { noComment.click(); return 'label-nocomment'; }
+        // 4. "댓글" 포함 토글 버튼 (role=switch)
+        const toggles = [...document.querySelectorAll('button[role="switch"]')];
+        for (const btn of toggles) {
+            const parent = btn.closest('div, li, tr, section');
+            if (parent && parent.textContent.includes('댓글') &&
+                btn.getAttribute('aria-checked') === 'true') {
+                btn.click(); return 'switch-toggle';
+            }
         }
+        // 5. "댓글" 관련 체크박스 (현재 ON 상태)
+        const checkboxes = [...document.querySelectorAll('input[type=checkbox]')];
+        for (const cb of checkboxes) {
+            const lbl = cb.closest('label') || document.querySelector(`label[for="${cb.id}"]`);
+            if (lbl && lbl.textContent.includes('댓글') && cb.checked) {
+                cb.click(); return 'checkbox-댓글';
+            }
+        }
+        // 6. "댓글 허용" 라벨 옆 input
+        const commentLabel = labels.find(l => l.textContent.trim().startsWith('댓글'));
+        if (commentLabel) {
+            const inp = commentLabel.querySelector('input') ||
+                        document.getElementById(commentLabel.htmlFor);
+            if (inp && (inp.checked || inp.getAttribute('aria-checked') === 'true')) {
+                inp.click(); return 'label-input';
+            }
+        }
+        return null;
     }""")
     time.sleep(0.5)
-    _log(f"[{blog_id}] 댓글 비허용 설정")
+    if comment_result:
+        _log(f"[{blog_id}] 댓글 비허용 설정 완료 ({comment_result})")
+    else:
+        _log(f"[{blog_id}] ⚠️ 댓글 비허용 요소 못 찾음 — 기본값 유지")
 
     # 3. 공개 발행 버튼 클릭
     confirmed = page.evaluate("""() => {
