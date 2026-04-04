@@ -153,7 +153,8 @@ def _wait_for_response(page, prev_response_count, log):
         prev_len = cur_len
 
         # 스트리밍 중 ===제목=== 포함 텍스트 포착 (나중에 collapse되기 전에 저장)
-        if cur_len >= 2000 and not best_streamed_text:
+        # 매 5초마다 + cur_len > 100 이면 확인 (threshold 낮춤 — tool result collapse 대응)
+        if not best_streamed_text and (cur_len >= 100 or i % 5 == 0):
             try:
                 captured = page.evaluate(_JS_CAPTURE_STREAMING)
                 if captured and "===제목===" in captured:
