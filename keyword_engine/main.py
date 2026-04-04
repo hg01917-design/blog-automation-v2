@@ -91,22 +91,38 @@ def run(
     adsense_urls = set(pub_map.keys())
     remaining_urls = tistory_urls - adsense_urls
 
-    # ── 4단계: RSS 글 제목 수집 — pub코드 사이트 우선 ────
+    # ── 3.5단계: 10개 이상 사이트 운영자(파워 운영자) 우선 추출 ──
+    MULTI_SITE_MIN = 10
+    multi_site_urls = set()
+    multi_op_count = 0
+    for pub, sites in pub_groups.items():
+        if len(sites) >= MULTI_SITE_MIN:
+            multi_site_urls |= set(sites)
+            multi_op_count += 1
+    _log(f"[3.5단계] 파워 운영자({MULTI_SITE_MIN}+ 사이트): {multi_op_count}명, {len(multi_site_urls)}개 사이트", on_log)
+
+    # ── 4단계: RSS 글 제목 수집 — 파워 운영자 우선 ──────
     _log("\n[4단계] RSS 피드에서 글 제목 수집 중...", on_log)
-    _log(f"  - pub코드 검증 사이트: {len(adsense_urls)}개 (우선)", on_log)
-    _log(f"  - 나머지 사이트: {len(remaining_urls)}개 (보충)", on_log)
+    priority_urls = multi_site_urls if multi_site_urls else adsense_urls
+    _log(f"  - 파워 운영자 사이트: {len(priority_urls)}개 (최우선)", on_log)
+    _log(f"  - 일반 pub코드 사이트: {len(adsense_urls - priority_urls)}개 (보충)", on_log)
 
-    pub_titles = title_collector.collect_from_all(adsense_urls, on_log=on_log)
-    _log(f"[4단계] pub코드 사이트 {len(pub_titles)}개 제목 수집", on_log)
+    pub_titles = title_collector.collect_from_all(priority_urls, on_log=on_log)
+    _log(f"[4단계] 파워 운영자 {len(pub_titles)}개 제목 수집", on_log)
 
-    # pub코드 사이트 제목이 적으면 나머지 사이트로 보충
     if len(pub_titles) < 200:
-        extra_titles = title_collector.collect_from_all(remaining_urls, on_log=on_log)
+        extra_titles = title_collector.collect_from_all(adsense_urls - priority_urls, on_log=on_log)
         all_titles = pub_titles + extra_titles
-        _log(f"[4단계] 보충 후 총 {len(all_titles)}개 제목", on_log)
+        _log(f"[4단계] pub코드 보충 후 {len(all_titles)}개", on_log)
     else:
         all_titles = pub_titles
-        _log(f"[4단계] 총 {len(all_titles)}개 제목 수집 (pub코드 사이트만)", on_log)
+
+    if len(all_titles) < 200:
+        extra_titles2 = title_collector.collect_from_all(remaining_urls, on_log=on_log)
+        all_titles = all_titles + extra_titles2
+        _log(f"[4단계] 전체 보충 후 총 {len(all_titles)}개 제목", on_log)
+    else:
+        _log(f"[4단계] 총 {len(all_titles)}개 제목 수집", on_log)
 
     if not all_titles:
         _log("[엔진] 제목 수집 실패 — 종료", on_log)
@@ -131,10 +147,14 @@ def run(
                 cat_str = ", ".join(f"{c}({n})" for c, n in top_cats)
                 _log(f"  {pub} ({len(sites)}개 사이트, {len(op_titles)}개 글): {cat_str}", on_log)
 
-    # ── 5단계: 키워드 추출 ────────────────────────────────
-    _log("\n[5단계] 키워드 추출 중...", on_log)
+    # ── 5단계: 키워드 추출 + 자동완성 확장 ──────────────
+    _log("\n[5단계] 키워드 추출 + 네이버 자동완성 확장 중...", on_log)
     candidates = title_collector.extract_keywords_from_titles(all_titles)
-    _log(f"[5단계] 후보 키워드 {len(candidates)}개", on_log)
+    _log(f"[5단계] 1차 후보 {len(candidates)}개", on_log)
+
+    # 네이버 자동완성으로 키워드 확장
+    candidates = naver_api.expand_keywords_with_autocomplete(candidates, on_log=on_log)
+    _log(f"[5단계] 자동완성 확장 후 {len(candidates)}개", on_log)
 
     if not candidates:
         _log("[엔진] 키워드 추출 실패 — 종료", on_log)
@@ -169,10 +189,11 @@ def run(
         rest = [k for k in filtered if k["keyword"] not in gsc_boost]
         filtered = boosted + rest
 
-    # DB 저장
+    # DB 저장 (blog_id 전달 → 주제 포화 체크 적용)
     for item in filtered:
         db_handler.upsert_keyword(
-            item["keyword"], item["score"], item["volume"], item["pub_count"]
+            item["keyword"], item["score"], item["volume"], item["pub_count"],
+            blog_id=blog_id,
         )
 
     top = filtered[:top_n]

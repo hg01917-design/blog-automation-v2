@@ -189,3 +189,70 @@ def get_blog_count(keyword: str) -> int:
         return int(data.get("total", 0))
     except Exception:
         return 0
+
+
+def get_autocomplete(keyword: str, max_results: int = 10) -> list:
+    """네이버 자동완성 API로 연관 키워드 확장.
+    Returns: list of suggestion strings
+    """
+    try:
+        params = urllib.parse.urlencode({
+            "q": keyword, "q_enc": "UTF-8", "st": 100,
+            "frm": "nv", "r_format": "json", "r_enc": "UTF-8",
+        })
+        req = urllib.request.Request(
+            f"https://ac.search.naver.com/nx/ac?{params}",
+            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.naver.com"},
+        )
+        resp = urllib.request.urlopen(req, timeout=5)
+        data = json.loads(resp.read().decode("utf-8"))
+        items = data.get("items", [[]])[0]
+        return [item[0] for item in items[:max_results] if item]
+    except Exception:
+        return []
+
+
+def get_related_searches(keyword: str, max_results: int = 10) -> list:
+    """네이버 블로그 검색 연관검색어 수집.
+    Returns: list of related keyword strings
+    """
+    suggestions = []
+    try:
+        # 네이버 검색 페이지에서 연관검색어 파싱
+        params = urllib.parse.urlencode({"query": keyword, "where": "nexearch"})
+        req = urllib.request.Request(
+            f"https://search.naver.com/search.naver?{params}",
+            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"},
+        )
+        resp = urllib.request.urlopen(req, timeout=8)
+        html = resp.read().decode("utf-8")
+        # 연관검색어 패턴
+        matches = re.findall(r'"query":"([^"]+)"', html)
+        seen = set()
+        for m in matches:
+            if m not in seen and m != keyword and len(m) > 3:
+                suggestions.append(m)
+                seen.add(m)
+            if len(suggestions) >= max_results:
+                break
+    except Exception:
+        pass
+    return suggestions
+
+
+def expand_keywords_with_autocomplete(base_keywords: list, on_log=None) -> list:
+    """기본 키워드 목록에서 자동완성 조합으로 키워드 확장.
+    Returns: 기존 + 확장된 키워드 합친 list (중복 제거)
+    """
+    expanded = list(base_keywords)
+    seen = set(base_keywords)
+    for kw in base_keywords[:20]:  # 상위 20개 기본 키워드만 확장
+        suggestions = get_autocomplete(kw)
+        for s in suggestions:
+            if s not in seen and len(s) > 4:
+                expanded.append(s)
+                seen.add(s)
+        time.sleep(0.1)
+    if on_log:
+        on_log(f"[자동완성] {len(base_keywords)}개 → {len(expanded)}개로 확장")
+    return expanded

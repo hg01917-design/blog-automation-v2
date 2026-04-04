@@ -61,8 +61,41 @@ def init_db():
             pass
 
 
+# 블로그별 주제 포화 임계값 (같은 지역/주제 이미 N개 이상이면 스킵)
+_TOPIC_SATURATION = 3
+
+# 여행 블로그 지역 키워드 목록 (nolja100/triplog)
+_TRAVEL_LOCATIONS = [
+    "제주", "부산", "서울", "강릉", "속초", "여수", "통영", "경주", "전주",
+    "남해", "거제", "강화", "춘천", "안동", "포항", "울릉", "태안", "담양",
+    "인천", "대전", "광주", "수원", "제천", "양양", "가평", "남이섬", "평창",
+]
+
+
+def _is_topic_saturated(keyword: str, blog_id: str) -> bool:
+    """이미 같은 주제(지역명)로 _TOPIC_SATURATION개 이상 발행했으면 True."""
+    if blog_id not in ("nolja100", "triplog"):
+        return False
+    kw_lower = keyword.replace(" ", "")
+    for loc in _TRAVEL_LOCATIONS:
+        if loc in kw_lower:
+            with _conn() as db:
+                count = db.execute(
+                    """SELECT COUNT(*) FROM keyword_blog_status
+                       WHERE blog_id = ? AND status = 'published'
+                       AND REPLACE(keyword, ' ', '') LIKE ?""",
+                    (blog_id, f"%{loc}%"),
+                ).fetchone()[0]
+            if count >= _TOPIC_SATURATION:
+                return True
+    return False
+
+
 def upsert_keyword(keyword: str, score: float, volume: int, pub_count: int,
-                   category: str = ""):
+                   category: str = "", blog_id: str = None):
+    # 주제 포화 체크 — 이미 많이 발행된 지역이면 낮은 우선순위로 저장
+    if blog_id and _is_topic_saturated(keyword, blog_id):
+        score = score * 0.1  # 점수 대폭 낮춰서 큐 후순위로 밀기
     with _conn() as db:
         db.execute(
             """
