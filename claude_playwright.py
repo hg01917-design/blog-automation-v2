@@ -289,14 +289,16 @@ def _extract_response(page, prev_response_count, log):
     }"""
 
     for sel in RESPONSE_SEL_FALLBACKS:
-        if response_text.strip():
-            break
         try:
             candidate = page.evaluate(_JS_TO_MD, sel)
             if candidate and len(candidate.strip()) > 50:
-                response_text = candidate
-                if sel != RESPONSE_SEL:
-                    log(f"[Playwright] 응답 셀렉터 폴백 사용: {sel}")
+                # ===본문=== 포함하는 더 긴 응답을 우선 사용 (제목만 있는 50자짜리보다 본문 있는 응답 선호)
+                prefer = "===본문===" in candidate and "===본문===" not in response_text
+                longer = len(candidate.strip()) > len(response_text.strip())
+                if prefer or (longer and "===본문===" not in response_text):
+                    response_text = candidate
+                    if sel != RESPONSE_SEL:
+                        log(f"[Playwright] 응답 셀렉터 폴백 사용: {sel}")
         except Exception:
             pass
 
