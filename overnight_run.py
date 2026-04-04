@@ -182,7 +182,8 @@ _BLOG_THEMES = {
                   "정부", "공공", "보험", "연금", "청년", "취업", "바우처", "감면"],
     "triplog": ["호텔", "항공", "맛집", "국내여행", "해외여행", "여행", "숙소", "리조트",
                 "투어", "관광", "비행기", "티켓", "패키지", "배낭여행", "자유여행",
-                "가볼만한", "여행지", "추천", "코스", "일정", "경비", "항공권", "렌터카"],
+                "가볼만한", "여행지", "추천", "코스", "일정", "경비", "항공권", "렌터카", "렌트카",
+                "당일치기", "트레킹", "등산", "바다", "계곡", "축제", "글램핑", "캠핑", "펜션"],
 }
 
 
@@ -586,11 +587,17 @@ def post_one_blog(blog_id):
         log(f"[{blog_id}] 마지막 포스팅 {elapsed:.1f}시간 전 — 최소 {MIN_POST_GAP_HOURS}시간 필요, 스킵")
         return False
 
-    kw = fetch_next_pending(blog_id)
-    if kw and not is_keyword_suitable(blog_id, kw):
-        log(f"[{blog_id}] ⚠ 테마 부적합 '{kw}' → 스킵")
-        _db_set(kw, "failed", blog_id=blog_id)
-        kw = None
+    # 테마 부적합 키워드는 스킵하고 다음 키워드 재시도 (최대 5회)
+    kw = None
+    for _ in range(5):
+        candidate = fetch_next_pending(blog_id)
+        if not candidate:
+            break
+        if is_keyword_suitable(blog_id, candidate):
+            kw = candidate
+            break
+        log(f"[{blog_id}] ⚠ 테마 부적합 '{candidate}' → 스킵")
+        _db_set(candidate, "failed", blog_id=blog_id)
     if not kw:
         log(f"[{blog_id}] 대기 키워드 없음 — 스킵")
         return False
