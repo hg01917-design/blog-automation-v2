@@ -10,7 +10,8 @@ CLAUDE_URL = "https://claude.ai"
 
 # blog_id별 Claude Project URL (없으면 일반 /new로 이동)
 BLOG_PROJECT_URLS = {
-    "goodisak":  "https://claude.ai/project/019ca495-0520-7706-8188-bcd875c96b68",
+    # goodisak 제거 — 프로젝트 모드에서 제목/본문이 별도 요소로 분리되어 추출 불가 → /new 모드로 전환
+    # "goodisak":  "https://claude.ai/project/019ca495-0520-7706-8188-bcd875c96b68",
     "nolja100":  "https://claude.ai/project/019b689e-1dbb-706d-93f3-6174de3a4835",
     "salim1su":  "https://claude.ai/project/019c8917-8337-74e8-989b-edf14e462901",
     "baremi542": "https://claude.ai/project/019d2882-7cfb-72e0-a40f-9669bc6408d6",
@@ -98,6 +99,7 @@ def _wait_for_response(page, prev_response_count, log):
             '[class*="message-content"]',
             '[class*="response"] p',
         ];
+        // 1단계: 단일 요소에 ===제목=== + 본문 모두 있으면 그것을 사용
         let best = '';
         for (const sel of sels) {
             const els = document.querySelectorAll(sel);
@@ -108,7 +110,20 @@ def _wait_for_response(page, prev_response_count, log):
                 }
             }
         }
-        return best;
+        if (best.includes('===본문===') || best.includes('===태그===') || best.length > 500) return best;
+        // 2단계: 제목 요소와 본문 요소가 분리된 경우 합치기 (tool result collapse 대응)
+        let bodyPart = '';
+        for (const sel of sels) {
+            const els = document.querySelectorAll(sel);
+            for (const el of els) {
+                const t = el.innerText || '';
+                if (!t.includes('===제목===') && (t.includes('===본문===') || t.includes('===태그===') || t.includes('===이미지===')) && t.length > bodyPart.length) {
+                    bodyPart = t;
+                }
+            }
+        }
+        if (best && bodyPart) return best + '\n' + bodyPart;
+        return best || bodyPart;
     }"""
 
     for i in range(MAX_WAIT_SECS):
