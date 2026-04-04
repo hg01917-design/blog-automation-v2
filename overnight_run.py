@@ -36,22 +36,44 @@ def save_log():
     log(f"로그 저장: {LOG_FILE}")
 
 
-def _send_telegram(msg: str):
-    """Telegram 메시지 전송 (.env의 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID 사용)"""
+def _notify_draft_saved(blog_id: str, keyword: str):
+    """임시저장 완료 시 Notion 현황판에 기록 — 다음 세션에서 Claude Code가 읽고 발행"""
     try:
-        bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-        chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
-        if not bot_token or not chat_id:
+        notion_token = os.environ.get("NOTION_TOKEN", "")
+        if not notion_token:
             return
-        payload = json.dumps({"chat_id": chat_id, "text": msg}).encode()
+        # 오케스트레이터 현황판 페이지에 댓글/블록 추가
+        ORCHESTRATOR_PAGE = "3356d296-d9c1-81f0-992d-c8c15693085d"
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        text = f"[임시저장완료] {blog_id} / {keyword} ({ts}) — 검수 후 발행 필요"
+        payload = json.dumps({
+            "parent": {"page_id": ORCHESTRATOR_PAGE},
+            "properties": {},
+            "children": [{
+                "object": "block",
+                "type": "callout",
+                "callout": {
+                    "rich_text": [{"type": "text", "text": {"content": text}}],
+                    "icon": {"type": "emoji", "emoji": "📝"},
+                    "color": "yellow_background"
+                }
+            }]
+        }).encode()
+        # Notion append block children API
         req = urllib.request.Request(
-            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            f"https://api.notion.com/v1/blocks/{ORCHESTRATOR_PAGE}/children",
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Authorization": f"Bearer {notion_token}",
+                "Content-Type": "application/json",
+                "Notion-Version": "2022-06-28",
+            },
+            method="PATCH",
         )
         urllib.request.urlopen(req, timeout=10)
+        log(f"[Notion] 임시저장 알림 기록 완료: {blog_id}/{keyword}")
     except Exception as e:
-        log(f"[Telegram] 전송 실패: {e}")
+        log(f"[Notion] 알림 기록 실패: {e}")
 
 
 # ─── Notion 키워드 큐에서 대기 키워드 가져오기 ───
@@ -529,11 +551,7 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
 
     if ok:
         log(f"[파이프라인] {blog_id} / '{keyword}' 임시저장완료 ✅")
-        _send_telegram(
-            f"[{blog_id}] 임시저장완료했습니다 ✅\n"
-            f"키워드: {keyword}\n"
-            f"클로드코드는 검수후 발행해주세요."
-        )
+        _notify_draft_saved(blog_id, keyword)
     else:
         log(f"[파이프라인] {blog_id} / '{keyword}' 포스팅 실패 ⚠")
     return ok
