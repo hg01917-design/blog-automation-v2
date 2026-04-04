@@ -436,7 +436,7 @@ def _post_tistory(account, title, body_html, tags=None,
             if h3_match:
                 heading = h3_match.group(1).strip()
                 heading = re.sub(r'<[^>]+>', '', heading).strip()
-                h3_html = f'<h3>{heading}</h3>'
+                h3_html = f'<h3 data-ke-size="size23">{heading}</h3>'
                 page.evaluate(
                     "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.execCommand('mceInsertContent', false, html); }",
                     h3_html,
@@ -451,7 +451,7 @@ def _post_tistory(account, title, body_html, tags=None,
             if h2_match:
                 heading = h2_match.group(1).strip()
                 heading = re.sub(r'<[^>]+>', '', heading).strip()
-                h2_html = f'<h2>{heading}</h2>'
+                h2_html = f'<h2 data-ke-size="size26">{heading}</h2>'
                 page.evaluate(
                     "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.execCommand('mceInsertContent', false, html); }",
                     h2_html,
@@ -506,7 +506,7 @@ def _post_tistory(account, title, body_html, tags=None,
                             const doc = ed.getDoc();
                             // 본문 끝에 새 단락 추가 후 커서 이동
                             const p = doc.createElement('p');
-                            p.setAttribute('data-ke-size', 'size16');
+                            p.setAttribute('data-ke-size', 'size19');
                             p.innerHTML = '<br data-mce-bogus="1">';
                             body.appendChild(p);
                             const range = doc.createRange();
@@ -558,7 +558,7 @@ def _post_tistory(account, title, body_html, tags=None,
                 html_line = stripped
                 html_line = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html_line)
                 html_line = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', html_line)
-                html_line = f'<p>{html_line}</p>'
+                html_line = f'<p data-ke-size="size19">{html_line}</p>'
                 page.evaluate(
                     "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.insertContent(html); }",
                     html_line,
@@ -573,15 +573,23 @@ def _post_tistory(account, title, body_html, tags=None,
             time.sleep(random.uniform(0.1, 0.3))
             i += 1
 
-        # TinyMCE 변경 반영
+        # 본문 단락 글자크기 size19 일괄 적용 (모바일 가독성)
         page.evaluate("""() => {
-            if (window.tinymce && tinymce.activeEditor) {
-                tinymce.activeEditor.fire('change');
-                tinymce.activeEditor.save();
-            }
+            const ed = window.tinymce && tinymce.activeEditor;
+            if (!ed) return;
+            const body = ed.getBody();
+            body.querySelectorAll('p[data-ke-size="size16"]').forEach(p => {
+                p.setAttribute('data-ke-size', 'size19');
+            });
+            // data-ke-size 없는 p 태그도 size19로 설정
+            body.querySelectorAll('p:not([data-ke-size])').forEach(p => {
+                p.setAttribute('data-ke-size', 'size19');
+            });
+            ed.fire('change');
+            ed.save();
         }""")
         _rand_delay(page, 1000, 2000)
-        log("[포스팅] 본문 입력 완료")
+        log("[포스팅] 본문 입력 완료 (글자크기 size19 적용)")
 
         # ── 태그 입력 ──
         if tags:
@@ -844,23 +852,30 @@ def _naver_set_font_size(page, size: int = 19):
             'input[class*="fontSize"]',
             '.se-toolbar input[type="text"]',
             'input.se-input-text',
+            # SmartEditor One 추가 셀렉터
+            'button[data-name="fontSize"] + * input',
+            '[class*="size"] input[type="number"]',
+            '[class*="size"] input[type="text"]',
         ]
         size_input = None
         for sel in selectors:
-            el = page.query_selector(sel)
-            if el:
-                try:
-                    if el.is_visible(timeout=500):
-                        size_input = el
-                        break
-                except Exception:
-                    pass
+            try:
+                el = page.query_selector(sel)
+                if el and el.is_visible(timeout=300):
+                    size_input = el
+                    break
+            except Exception:
+                pass
+
         if size_input:
             size_input.triple_click()
-            time.sleep(0.1)
-            size_input.type(str(size), delay=50)
+            time.sleep(0.15)
+            size_input.fill(str(size))
             page.keyboard.press("Enter")
             time.sleep(0.3)
+        else:
+            # 폴백: Ctrl+A로 전체 선택 후 글자 크기 단축키 없으므로 무시
+            pass
     except Exception:
         pass
 
