@@ -488,4 +488,13 @@ def run(on_log=None):
 
 
 if __name__ == "__main__":
-    run()
+    import sys
+    CHECK_INTERVAL = 1800  # 30분마다 RSS 재확인
+    log = print
+    log("[소셜] 데몬 시작 — 30분 간격으로 새 글 확인")
+    while True:
+        try:
+            run()
+        except Exception as e:
+            log(f"[소셜] 오류: {e}")
+        time.sleep(CHECK_INTERVAL)
