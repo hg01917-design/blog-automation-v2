@@ -82,9 +82,33 @@ def _wait_for_response(page, prev_response_count, log):
     1. 텍스트 길이가 20초 이상 변화 없음
     2. 글자수가 1000자 이상
     예외: 스트리밍이 확실히 끝났으면 (전송 버튼 재출현) 글자수 무관하게 완료
+
+    반환: (final_len, streamed_text) — 스트리밍 중 포착된 ===제목=== 포함 텍스트
     """
     prev_len = 0
     stable_count = 0
+    best_streamed_text = ""  # 스트리밍 중 ===제목=== 포함 최선의 텍스트
+
+    _JS_CAPTURE_STREAMING = """() => {
+        const sels = [
+            'div.standard-markdown',
+            '[data-testid="assistant-message-content"]',
+            '[class*="assistant-message"] [class*="prose"]',
+            '[class*="message-content"]',
+            '[class*="response"] p',
+        ];
+        let best = '';
+        for (const sel of sels) {
+            const els = document.querySelectorAll(sel);
+            for (const el of els) {
+                const t = el.innerText || '';
+                if (t.includes('===제목===') && t.length > best.length) {
+                    best = t;
+                }
+            }
+        }
+        return best;
+    }"""
 
     for i in range(MAX_WAIT_SECS):
         page.wait_for_timeout(1000)
@@ -128,18 +152,43 @@ def _wait_for_response(page, prev_response_count, log):
             stable_count = 0
         prev_len = cur_len
 
+        # 스트리밍 중 ===제목=== 포함 텍스트 포착 (나중에 collapse되기 전에 저장)
+        if cur_len >= 2000 and not best_streamed_text:
+            try:
+                captured = page.evaluate(_JS_CAPTURE_STREAMING)
+                if captured and "===제목===" in captured:
+                    best_streamed_text = captured
+                    log(f"[Playwright] 스트리밍 중 응답 포착 ({len(best_streamed_text)}자)")
+            except Exception:
+                pass
+
         # ── 완료 판정 ──
 
         # 조건A: 충분한 글자수 + 20초 변화 없음
         if cur_len >= MIN_CHARS_FOR_DONE and stable_count >= STABLE_SECS_REQUIRED:
+            # 완료 직전 마지막 포착 시도
+            if not best_streamed_text:
+                try:
+                    captured = page.evaluate(_JS_CAPTURE_STREAMING)
+                    if captured and "===제목===" in captured:
+                        best_streamed_text = captured
+                except Exception:
+                    pass
             log(f"[Playwright] 응답 완료 ({cur_len}자, {stable_count}초 변화 없음)")
-            return cur_len
+            return cur_len, best_streamed_text
 
         # 조건B: 스트리밍이 확실히 끝남 (전송 버튼 재출현) + 최소 대기 20초
         if i >= 20 and stable_count >= 5 and _is_streaming_done(page):
             if cur_len >= MIN_CHARS_FOR_DONE:
+                if not best_streamed_text:
+                    try:
+                        captured = page.evaluate(_JS_CAPTURE_STREAMING)
+                        if captured and "===제목===" in captured:
+                            best_streamed_text = captured
+                    except Exception:
+                        pass
                 log(f"[Playwright] 응답 완료 (스트리밍 종료 확인, {cur_len}자)")
-                return cur_len
+                return cur_len, best_streamed_text
             else:
                 # 글자수 부족하지만 스트리밍은 끝남
                 log(f"[Playwright] ⚠ 스트리밍 종료됐지만 글자수 부족 ({cur_len}자 < {MIN_CHARS_FOR_DONE}자)")
@@ -167,10 +216,10 @@ def _wait_for_response(page, prev_response_count, log):
                     continue
                 if stable_count >= STABLE_SECS_REQUIRED:
                     log(f"[Playwright] 응답 정지 확정 ({cur_len}자)")
-                    return cur_len
+                    return cur_len, best_streamed_text
 
     log(f"[Playwright] 최대 대기 시간 초과 (5분) — {prev_len}자")
-    return prev_len
+    return prev_len, best_streamed_text
 
 
 def _extract_response(page, prev_response_count, log):
@@ -521,6 +570,7 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         log(f"[Playwright] 일반 모드: /new")
 
     try:
+        response_text = ""
         for attempt in range(1, MAX_RETRIES + 2):
             if attempt > 1:
                 log(f"[Playwright] === 재시도 {attempt - 1}/{MAX_RETRIES} ===")
@@ -607,19 +657,24 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
 
             # 응답 대기
             log("[Playwright] 응답 대기 중...")
-            final_len = _wait_for_response(page, prev_response_count, log)
+            final_len, streamed_text = _wait_for_response(page, prev_response_count, log)
 
-            # 응답 추출
-            log("[Playwright] 응답 추출 중...")
-            # 현재 페이지에 있는 응답 블록 수 확인 (디버그용)
-            try:
-                cur_sel_counts = {}
-                for _sel in RESPONSE_SEL_FALLBACKS[:3]:
-                    cur_sel_counts[_sel] = page.locator(_sel).count()
-                log(f"[Playwright] 셀렉터별 응답 블록 수: {cur_sel_counts}")
-            except Exception:
-                pass
-            response_text = _extract_response(page, prev_response_count, log)
+            # 스트리밍 중 포착된 텍스트가 있으면 우선 사용 (tool result collapse 대응)
+            if streamed_text and "===제목===" in streamed_text:
+                response_text = streamed_text
+                log(f"[Playwright] 스트리밍 포착 텍스트 사용 ({len(response_text)}자)")
+            else:
+                # 응답 추출
+                log("[Playwright] 응답 추출 중...")
+                # 현재 페이지에 있는 응답 블록 수 확인 (디버그용)
+                try:
+                    cur_sel_counts = {}
+                    for _sel in RESPONSE_SEL_FALLBACKS[:3]:
+                        cur_sel_counts[_sel] = page.locator(_sel).count()
+                    log(f"[Playwright] 셀렉터별 응답 블록 수: {cur_sel_counts}")
+                except Exception:
+                    pass
+                response_text = _extract_response(page, prev_response_count, log)
 
             # 글자수 확인
             body_chars = _count_body_chars(response_text)
