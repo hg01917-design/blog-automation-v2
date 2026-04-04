@@ -38,8 +38,15 @@
 - **nolja100** (Tistory): 여행 주제만 발행. 댓글 비허용으로 발행.
 - **salim1su** (Naver): 이미지는 Gemini만 사용, loremflickr 절대 금지.
 - **goodisak** (Tistory, welfare.baremi542.com): 정부지원/복지 주제. 댓글 비허용.
-- **baremi542** (WordPress): 생활정보/정부지원. 일반 발행.
-- **triplog** (WordPress, app.baremi542.com): 여행 주제. 일반 발행.
+- **baremi542** (WordPress): 생활정보/정부지원. 봇이 API로 즉시 발행 → 발행 후 검수하여 문제 있으면 REST API로 수정.
+- **triplog** (WordPress, app.baremi542.com): 여행 주제. 봇이 API로 즉시 발행 → 발행 후 검수하여 문제 있으면 REST API로 수정.
+
+## WordPress 검수 방법 (baremi542, triplog)
+봇이 이미 발행한 상태. 최신 글 URL을 가져와서 내용 확인 후:
+- 마크다운 잔재/내부마커 → `PATCH /wp-json/wp/v2/posts/{id}` 로 content 수정
+- 이미지 부족 → Gemini로 생성 후 미디어 업로드 → 본문에 삽입
+- 1700자 미만 → 내용 보완 후 수정
+- 정상이면 그대로 유지
 
 # 세션 종료 시 반드시 실행
 - 위 노션 현황판 업데이트 (미완료 작업, 변경 사항 반영)
