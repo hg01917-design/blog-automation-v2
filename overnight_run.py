@@ -37,43 +37,29 @@ def save_log():
 
 
 def _notify_draft_saved(blog_id: str, keyword: str):
-    """임시저장 완료 시 Notion 현황판에 기록 — 다음 세션에서 Claude Code가 읽고 발행"""
+    """임시저장 완료 후 Claude Code를 즉시 실행 — 검수+발행 자동화"""
+    import subprocess as _sp
+    CLAUDE_BIN = "/Users/hana/.local/bin/claude"
+    PROJECT_DIR = str(Path(__file__).parent)
+    prompt = (
+        f"{blog_id} 블로그 임시저장 글 검수 후 발행해줘. "
+        f"키워드: {keyword}. "
+        f"발행 전 체크리스트: 마크다운 잔재 없는지, 이미지 3장 이상, "
+        f"[검증 필요] 등 내부마커 없는지, 1700자 이상, "
+        f"마지막 발행 후 3.5시간 이상 경과했는지 확인. "
+        f"nolja100은 댓글 비허용으로 발행. "
+        f"문제 있으면 수정 후 발행. 통과하면 바로 발행."
+    )
     try:
-        notion_token = os.environ.get("NOTION_TOKEN", "")
-        if not notion_token:
-            return
-        # 오케스트레이터 현황판 페이지에 댓글/블록 추가
-        ORCHESTRATOR_PAGE = "3356d296-d9c1-81f0-992d-c8c15693085d"
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-        text = f"[임시저장완료] {blog_id} / {keyword} ({ts}) — 검수 후 발행 필요"
-        payload = json.dumps({
-            "parent": {"page_id": ORCHESTRATOR_PAGE},
-            "properties": {},
-            "children": [{
-                "object": "block",
-                "type": "callout",
-                "callout": {
-                    "rich_text": [{"type": "text", "text": {"content": text}}],
-                    "icon": {"type": "emoji", "emoji": "📝"},
-                    "color": "yellow_background"
-                }
-            }]
-        }).encode()
-        # Notion append block children API
-        req = urllib.request.Request(
-            f"https://api.notion.com/v1/blocks/{ORCHESTRATOR_PAGE}/children",
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {notion_token}",
-                "Content-Type": "application/json",
-                "Notion-Version": "2022-06-28",
-            },
-            method="PATCH",
+        _sp.Popen(
+            [CLAUDE_BIN, "--print", prompt],
+            cwd=PROJECT_DIR,
+            stdout=open(PROJECT_DIR + f"/logs/claude_publish_{blog_id}.log", "a"),
+            stderr=_sp.STDOUT,
         )
-        urllib.request.urlopen(req, timeout=10)
-        log(f"[Notion] 임시저장 알림 기록 완료: {blog_id}/{keyword}")
+        log(f"[Claude] {blog_id} 검수+발행 세션 시작됨")
     except Exception as e:
-        log(f"[Notion] 알림 기록 실패: {e}")
+        log(f"[Claude] 실행 실패: {e}")
 
 
 # ─── Notion 키워드 큐에서 대기 키워드 가져오기 ───
