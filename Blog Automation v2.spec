@@ -24,6 +24,7 @@ a = Analysis(
         ('blog_stats.py', '.'),
         ('image_parser.py', '.'),
         ('gemini_image.py', '.'),
+        ('login_playwright.py', '.'),
     ],
     hiddenimports=pyqt5_hiddenimports + ['playwright', 'requests', 'anthropic'],
     hookspath=[],
