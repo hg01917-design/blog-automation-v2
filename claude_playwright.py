@@ -675,7 +675,8 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             final_len, streamed_text = _wait_for_response(page, prev_response_count, log)
 
             # 스트리밍 중 포착된 텍스트가 있으면 우선 사용 (tool result collapse 대응)
-            if streamed_text and "===제목===" in streamed_text:
+            # 단, 본문(===본문===)이 포함된 경우에만 사용 — 제목만 있는 50자짜리 캡처는 스킵
+            if streamed_text and "===제목===" in streamed_text and "===본문===" in streamed_text:
                 response_text = streamed_text
                 log(f"[Playwright] 스트리밍 포착 텍스트 사용 ({len(response_text)}자)")
             else:
