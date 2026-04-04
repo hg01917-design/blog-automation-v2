@@ -177,6 +177,7 @@ def set_keyword_status(keyword: str, status: str, blog_id: str = None):
     """키워드 상태 변경.
     blog_id 있으면 keyword_blog_status에 per-blog 기록 (글로벌 상태 유지).
     blog_id 없으면 keywords 테이블의 글로벌 status 변경 (하위 호환).
+    published 상태가 되면 keywords 테이블에서 삭제 (큐 정리).
     """
     with _conn() as db:
         if blog_id:
@@ -190,17 +191,23 @@ def set_keyword_status(keyword: str, status: str, blog_id: str = None):
                 """,
                 (keyword, blog_id, status, datetime.now().isoformat()),
             )
+            # published → keywords 테이블에서 삭제 (큐 정리)
+            if status == "published":
+                db.execute("DELETE FROM keywords WHERE keyword = ?", (keyword,))
             # in_progress는 글로벌에도 반영
-            if status == "in_progress":
+            elif status == "in_progress":
                 db.execute(
                     "UPDATE keywords SET status = 'in_progress' WHERE keyword = ?",
                     (keyword,),
                 )
         else:
-            db.execute(
-                "UPDATE keywords SET status = ? WHERE keyword = ?",
-                (status, keyword),
-            )
+            if status == "published":
+                db.execute("DELETE FROM keywords WHERE keyword = ?", (keyword,))
+            else:
+                db.execute(
+                    "UPDATE keywords SET status = ? WHERE keyword = ?",
+                    (status, keyword),
+                )
 
 
 def get_sites_by_category(category: str) -> list:
