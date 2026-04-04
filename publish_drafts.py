@@ -484,35 +484,27 @@ def _tistory_publish_private(page, blog_id: str) -> bool:
 
     # 2-1. 댓글 비허용 설정
     comment_result = page.evaluate("""() => {
-        // 1. name 속성으로 찾기
+        // 방법A: Tistory TinyMCE 에디터 — "댓글 허용" select-menu 드롭다운 클릭 후 "댓글 비허용" 선택
+        const selectTxts = [...document.querySelectorAll('i.mce-txt')];
+        const commentSelectTxt = selectTxts.find(i => i.textContent === '댓글 허용');
+        if (commentSelectTxt) {
+            const btn = commentSelectTxt.closest('button');
+            if (btn) {
+                btn.click(); // 드롭다운 열기
+                return '__need_dropdown__';
+            }
+        }
+        // 방법B: 이미 드롭다운이 열려있다면 "댓글 비허용" 클릭
+        const menuItems = [...document.querySelectorAll('[role="menuitem"]')];
+        const noCommentItem = menuItems.find(el => el.textContent.trim() === '댓글 비허용');
+        if (noCommentItem) { noCommentItem.click(); return 'mce-dropdown-비허용'; }
+        // 방법C: name 속성
         const byName = document.querySelector(
             'input[name="commentAccepting"], input[name="comment_accepting"], ' +
             'input[name="commentStatus"], input[name="comment-allow"]'
         );
-        if (byName) {
-            if (byName.type === 'checkbox' && byName.checked) { byName.click(); return 'checkbox-name'; }
-        }
-        // 2. ID로 찾기
-        const ids = ['commentStatus', 'comment-allow', 'commentAllow', 'comment_accepting'];
-        for (const id of ids) {
-            const el = document.getElementById(id);
-            if (el && el.type === 'checkbox' && el.checked) { el.click(); return 'checkbox-id-' + id; }
-        }
-        // 3. "비허용" / "허용 안함" 라벨
-        const labels = [...document.querySelectorAll('label')];
-        const noComment = labels.find(l => l.textContent.includes('댓글') &&
-            (l.textContent.includes('비허용') || l.textContent.includes('허용 안함')));
-        if (noComment) { noComment.click(); return 'label-nocomment'; }
-        // 4. "댓글" 포함 토글 버튼 (role=switch)
-        const toggles = [...document.querySelectorAll('button[role="switch"]')];
-        for (const btn of toggles) {
-            const parent = btn.closest('div, li, tr, section');
-            if (parent && parent.textContent.includes('댓글') &&
-                btn.getAttribute('aria-checked') === 'true') {
-                btn.click(); return 'switch-toggle';
-            }
-        }
-        // 5. "댓글" 관련 체크박스 (현재 ON 상태)
+        if (byName && byName.type === 'checkbox' && byName.checked) { byName.click(); return 'checkbox-name'; }
+        // 방법D: 체크박스
         const checkboxes = [...document.querySelectorAll('input[type=checkbox]')];
         for (const cb of checkboxes) {
             const lbl = cb.closest('label') || document.querySelector(`label[for="${cb.id}"]`);
@@ -520,17 +512,18 @@ def _tistory_publish_private(page, blog_id: str) -> bool:
                 cb.click(); return 'checkbox-댓글';
             }
         }
-        // 6. "댓글 허용" 라벨 옆 input
-        const commentLabel = labels.find(l => l.textContent.trim().startsWith('댓글'));
-        if (commentLabel) {
-            const inp = commentLabel.querySelector('input') ||
-                        document.getElementById(commentLabel.htmlFor);
-            if (inp && (inp.checked || inp.getAttribute('aria-checked') === 'true')) {
-                inp.click(); return 'label-input';
-            }
-        }
         return null;
     }""")
+    time.sleep(0.5)
+    # 드롭다운이 열렸으면 "댓글 비허용" 클릭
+    if comment_result == '__need_dropdown__':
+        time.sleep(0.5)
+        comment_result = page.evaluate("""() => {
+            const menuItems = [...document.querySelectorAll('[role="menuitem"]')];
+            const noCommentItem = menuItems.find(el => el.textContent.trim() === '댓글 비허용');
+            if (noCommentItem) { noCommentItem.click(); return 'mce-dropdown-비허용'; }
+            return null;
+        }""")
     time.sleep(0.5)
     if comment_result:
         _log(f"[{blog_id}] 댓글 비허용 설정 완료 ({comment_result})")
