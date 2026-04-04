@@ -662,12 +662,47 @@ if __name__ == "__main__":
     # ── 키워드 크롤링 (1회) ──
     log("[크롤링] salim1su, baremi542 키워드 수집")
     from keyword_crawler import crawl_keywords
+    _crawled_keywords = {}
     for bid in ["salim1su", "baremi542"]:
         try:
             result = crawl_keywords(blog_id=bid, on_log=log)
-            log(f"[크롤링] {bid}: {result.get(bid, 0)}개 저장")
+            cnt = result.get(bid, 0)
+            log(f"[크롤링] {bid}: {cnt}개 저장")
+            if cnt > 0:
+                _crawled_keywords[bid] = result.get("keywords", [])
         except Exception as e:
             log(f"[크롤링] {bid} 오류: {e}")
+    save_log()
+
+    # ── 롱테일 키워드 확장 (크롤링 직후) ──
+    # 경쟁사 제목에서 뽑은 기본 키워드 → 네이버 자동완성 + 연관검색어 → 롱테일 저장
+    _BLOG_LONGTAIL = {
+        "nolja100":  "여행",
+        "triplog":   "여행",
+        "salim1su":  "살림",
+        "goodisak":  "IT",
+        "baremi542": "정부지원금",
+    }
+    log("[롱테일] 키워드 확장 시작")
+    try:
+        from keyword_engine.longtail_expander import expand_longtail
+        from keyword_engine.db_handler import get_top_keywords
+        for bid, cat in _BLOG_LONGTAIL.items():
+            # DB에서 점수 높은 기본 키워드 상위 10개 가져와서 확장
+            base_kws = [r["keyword"] for r in get_top_keywords(n=10, min_score=0)
+                        if r.get("category", "") == cat]
+            if not base_kws:
+                continue
+            added = expand_longtail(
+                base_keywords=base_kws,
+                category=cat,
+                blog_id=bid,
+                top_n=5,   # 블로그당 최대 5개 기본 키워드 확장 (부하 조절)
+                on_log=log,
+            )
+            log(f"[롱테일] {bid}({cat}): +{added}개 롱테일 추가")
+    except Exception as e:
+        log(f"[롱테일] 오류: {e}")
     save_log()
 
     # ── 경쟁 사이트 모니터링 (월/수/금 실행) ──
