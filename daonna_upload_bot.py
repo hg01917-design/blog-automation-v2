@@ -558,19 +558,24 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
 
 
 async def main():
+    import sys
     from playwright.async_api import async_playwright
+
+    # 일일 최대 등록 수 (기본 10개, 인자로 조정 가능)
+    max_today = int(sys.argv[1]) if len(sys.argv) > 1 else 10
 
     # 대상 상품 로드
     data = json.loads(MISSING_FILE.read_text(encoding="utf-8"))
     products = data["missing_in_daonna"]
-    print(f"총 {len(products)}개 등록 대상", flush=True)
+    print(f"총 {len(products)}개 등록 대상 (오늘 최대 {max_today}개)", flush=True)
 
     # 진행 상황 로드
     prog = load_progress()
     done_ids = set(prog["done"])
     failed_ids = set(prog["failed"])
     remaining = [p for p in products if p["id"] not in done_ids and p["id"] not in failed_ids]
-    print(f"  완료: {len(done_ids)}개 | 실패: {len(failed_ids)}개 | 남은: {len(remaining)}개", flush=True)
+    remaining = remaining[:max_today]  # 일일 제한
+    print(f"  완료: {len(done_ids)}개 | 실패: {len(failed_ids)}개 | 오늘 등록: {len(remaining)}개", flush=True)
 
     async with async_playwright() as pw:
         browser = await pw.chromium.connect_over_cdp(CDP_URL)
