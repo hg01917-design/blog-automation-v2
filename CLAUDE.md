@@ -37,7 +37,7 @@
 ## 블로그별 추가 규칙
 - **nolja100** (Tistory): 여행 주제만 발행. 댓글 비허용으로 발행.
 - **salim1su** (Naver): 이미지는 Gemini만 사용, loremflickr 절대 금지.
-- **goodisak** (Tistory, welfare.baremi542.com): 정부지원/복지 주제. 댓글 비허용.
+- **goodisak** (Tistory, welfare.baremi542.com): IT + 금융 주제. 댓글 비허용.
 - **baremi542** (WordPress): 생활정보/정부지원. 봇이 API로 즉시 발행 → 발행 후 검수하여 문제 있으면 REST API로 수정.
 - **triplog** (WordPress, app.baremi542.com): 여행 주제. 봇이 API로 즉시 발행 → 발행 후 검수하여 문제 있으면 REST API로 수정.
 
