@@ -333,11 +333,19 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
     pid = product["id"]
     cat_code = get_category_code(name)
 
+    # alert 인터셉트 — goto() 이전에 등록 (검증 alert 자동 수락)
+    alert_msgs = []
+    def _on_dialog(d):
+        alert_msgs.append(d.message)
+        asyncio.ensure_future(d.accept())
+    page.on("dialog", _on_dialog)
+
     try:
         await page.goto(REGISTER_URL, wait_until="domcontentloaded", timeout=30000)
         await asyncio.sleep(2)
     except Exception as e:
         print(f"  [등록] 폼 이동 실패: {e}", flush=True)
+        page.remove_listener("dialog", _on_dialog)
         return False
 
     # 비밀번호 변경 페이지 리다이렉트 처리
@@ -352,6 +360,7 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
 
     if "sellInfoForm" not in page.url:
         print(f"  [등록] 폼 접근 실패: {page.url}", flush=True)
+        page.remove_listener("dialog", _on_dialog)
         return False
 
     # 상품등록 유의사항 다이얼로그 닫기 (확인 버튼)
@@ -362,10 +371,6 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
             await asyncio.sleep(0.5)
     except Exception:
         pass
-
-    # alert 인터셉트 (검증 오류 캐치)
-    alert_msgs = []
-    page.on("dialog", lambda d: (alert_msgs.append(d.message), asyncio.ensure_future(d.accept())))
 
     try:
         # JS로 모든 필수 필드 한번에 설정
@@ -476,6 +481,7 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
                 return False
 
         await asyncio.sleep(4)
+        page.remove_listener("dialog", _on_dialog)
         if alert_msgs:
             print(f"  [등록] 검증 오류: {alert_msgs}", flush=True)
             return False
@@ -492,6 +498,10 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
 
     except Exception as e:
         print(f"  [등록] 오류: {e}", flush=True)
+        try:
+            page.remove_listener("dialog", _on_dialog)
+        except Exception:
+            pass
         return False
 
 
