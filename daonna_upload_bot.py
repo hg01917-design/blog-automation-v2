@@ -57,29 +57,39 @@ async def get_product_info(page, item_id: str) -> dict:
 
     return await page.evaluate("""
         () => {
-            // 대표 이미지
+            // 대표 이미지 (760px 우선)
             const img = document.querySelector('img[src*="upload/item"][src*="_img_760"]')
                      || document.querySelector('img[src*="upload/item"]')
                      || document.querySelector('#imgMain img, .item_img img, .goods_img img');
             const imgUrl = img ? img.src : null;
 
-            // 상세 내용 HTML (상품상세설명 영역)
-            const detailEl = document.querySelector(
-                '#itemDetail, .item_detail, .goods_detail, '
-                + '[id*="itemDetail"], [class*="item_detail"], '
-                + '.desc_detail, #lItemDetail, .product-detail'
-            );
-            let detailHtml = detailEl ? detailEl.innerHTML : '';
-
-            // 상세 이미지들 (img 태그만 추출)
-            if (!detailHtml) {
-                const detailImgs = [...document.querySelectorAll('img[src*="upload/item"][src*="_dc"]')];
-                if (detailImgs.length) {
-                    detailHtml = detailImgs.map(i => `<img src="${i.src}" style="max-width:100%">`).join('<br>');
+            // 상세 내용 HTML — 여러 선택자 시도
+            const detailSelectors = [
+                '#itemDetail', '#lItemDetail', '.item_detail',
+                '.goods_detail', '.desc_detail', '.product-detail',
+                '[id*="ItemDetail"]', '[class*="item_detail"]',
+                '.item_description', '#itemDescription'
+            ];
+            let detailHtml = '';
+            for (const sel of detailSelectors) {
+                const el = document.querySelector(sel);
+                if (el && el.innerHTML.length > 100) {
+                    detailHtml = el.innerHTML;
+                    break;
                 }
             }
 
-            return { imgUrl, detailHtml: detailHtml.substring(0, 50000) };
+            // 상세 이미지들로 구성 (도매꾹은 보통 _dc 접미사 이미지)
+            if (!detailHtml) {
+                const allImgs = [...document.querySelectorAll('img[src*="upload/item"]')];
+                // 대표이미지(760)가 아닌 나머지 이미지들
+                const detailImgs = allImgs.filter(i => !i.src.includes('_img_760') && !i.src.includes('_img_thumb'));
+                if (detailImgs.length > 0) {
+                    detailHtml = detailImgs.map(i => `<p><img src="${i.src}" style="max-width:100%;display:block;margin:0 auto;"></p>`).join('');
+                }
+            }
+
+            return { imgUrl, detailHtml: detailHtml.substring(0, 80000) };
         }
     """)
 
