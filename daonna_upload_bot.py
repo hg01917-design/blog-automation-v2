@@ -75,8 +75,8 @@ async def get_product_info(page, item_id: str) -> dict:
                 const m = href.match(/[?&]cat=([0-9_]+)/);
                 if (m && m[1]) {
                     const parts = m[1].replace(/_+$/, '').split('_').filter(p => p !== '');
-                    // 패션 카테고리(01_xx)만 허용, 3단계 이상 필요
-                    if (parts.length >= 3 && parts[0] === '01') {
+                    // 패션 카테고리(01_xx)만 허용, 3단계 이상 & 3번째 숫자가 00이 아니어야 함
+                    if (parts.length >= 3 && parts[0] === '01' && parts[2] !== '00') {
                         while (parts.length < 6) parts.push('00');
                         categoryCode = parts.slice(0, 6).join('_');
                         break;
@@ -920,15 +920,22 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
             if "sellOptionForm" in current_url:
                 success = True
                 break
-            # 성공 텍스트 확인
-            body_ok = await page.evaluate("""
-                () => {
-                    const text = document.body.innerText;
-                    return text.includes('등록되었습니다') || text.includes('등록이 완료') || text.includes('저장되었습니다');
-                }
-            """)
-            if body_ok:
-                success = True
+            # 성공 텍스트 확인 — 컨텍스트 파괴(navigate) 예외 처리
+            try:
+                body_ok = await page.evaluate("""
+                    () => {
+                        const text = document.body.innerText;
+                        return text.includes('등록되었습니다') || text.includes('등록이 완료') || text.includes('저장되었습니다');
+                    }
+                """)
+                if body_ok:
+                    success = True
+                    break
+            except Exception:
+                # 페이지 이동 중 컨텍스트 파괴 → URL 재확인
+                await asyncio.sleep(1)
+                if "sellOptionForm" in page.url:
+                    success = True
                 break
             # alert 에러 체크
             real_errors = [m for m in alert_msgs if m and m.strip() not in ('', 'undefined', 'null')]
