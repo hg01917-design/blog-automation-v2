@@ -482,9 +482,12 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
                     tinymce.activeEditor.setContent(`{desc_escaped}`);
                     return 'tinymce';
                 }}
-                // 일반 textarea
-                const ta = document.querySelector('textarea[name="itemDetail"], textarea[name="itemContents"], #itemDetail, #lItemDetail');
-                if (ta) {{ ta.value = `{desc_escaped}`; ta.dispatchEvent(new Event('change')); return 'textarea'; }}
+                // 일반 textarea (domeggook liteEditor 방식)
+                const ta = document.querySelector(
+                    'textarea[name="itemMemo[Item]"], textarea[name="itemDetail"], '
+                    + 'textarea[name="itemContents"], #itemDetail, #lItemDetail, .lItemMemo'
+                );
+                if (ta) {{ ta.value = `{desc_escaped}`; ta.dispatchEvent(new Event('change')); return 'textarea:'+ta.name; }}
                 return false;
             }}
         """)
