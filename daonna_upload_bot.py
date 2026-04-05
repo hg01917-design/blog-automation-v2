@@ -418,6 +418,15 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
                 if (window.module && module.safetyCertController) {{
                     module.safetyCertController.validate = () => true;
                 }}
+                // 상품상세내용 존재 플래그 설정
+                window.itemMemoExist = true;
+                // 대표이미지/상품정보제공고시 validator 우회
+                if (window.module && module.imageUploadController) {{
+                    module.imageUploadController.validate = () => true;
+                }}
+                if (window.infoDutyController) {{
+                    window.infoDutyController.validate = () => true;
+                }}
             }}
         """)
         await asyncio.sleep(0.3)
