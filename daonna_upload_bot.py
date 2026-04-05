@@ -134,9 +134,10 @@ def make_gemini_prompt(product_name: str) -> str:
     else:
         style = "placed in a cozy lifestyle setting with natural lighting, wooden surface or neutral background, product clearly visible"
     return (
-        f"Realistic lifestyle product photo: {product_name[:60]}. "
-        f"{style}. "
-        "The product is the main focus and clearly visible. Square 760x760, no text, no watermark, no logo."
+        f"I'm uploading a product photo. Keep the EXACT same product — do NOT change its shape, color, design, or details at all. "
+        f"Only change the background/setting to: {style}. "
+        f"Product name for reference: {product_name[:60]}. "
+        "The uploaded product must appear IDENTICAL in the output. Square composition, no text, no watermark, no logo."
     )
 
 
