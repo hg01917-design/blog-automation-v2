@@ -548,7 +548,9 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
                     "여러 혜택을 나열하는 글 금지. 1가지의 대상·신청절차·금액·유의사항을 구체적으로 작성해.\n"
                 )
 
-            log(f"[Playwright] 프로젝트 모드 — 키워드+모바일규칙 전송: '{keyword}'")
+            # 프로젝트 모드에도 본문 길이 + 이미지 형식 규칙 명시 (짧은 글 방지)
+            prompt += _FORMAT_RULE
+            log(f"[Playwright] 프로젝트 모드 — 키워드+모바일규칙+형식규칙 전송: '{keyword}'")
         else:
             try:
                 prompt = fetch_prompt(blog_id, keyword, on_log)
