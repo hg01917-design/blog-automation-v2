@@ -451,6 +451,46 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
         print(f"  [키워드] {keywords_str} (입력{'성공' if kw_filled else '실패'})", flush=True)
         await asyncio.sleep(0.3)
 
+        # 상품 상세 내용 입력 (CKEditor / textarea 대응)
+        desc = (
+            f"✅ {name}\n\n"
+            f"유유팩토리에서 직접 공급하는 정품 상품입니다.\n"
+            f"도매가 {product.get('price', '')}에 판매합니다.\n\n"
+            f"▶ 상품 특징\n"
+            f"- 고품질 소재 사용\n"
+            f"- 트렌디한 디자인\n"
+            f"- 다양한 스타일에 활용 가능\n\n"
+            f"▶ 주문 안내\n"
+            f"- 주문 후 빠른 배송\n"
+            f"- 문의사항은 메시지로 연락주세요\n"
+        )
+        desc_escaped = desc.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${").replace("\n", "\\n")
+        detail_filled = await page.evaluate(f"""
+            () => {{
+                // CKEditor 방식
+                if (typeof CKEDITOR !== 'undefined') {{
+                    const names = ['itemDetail', 'itemContents', 'itemBody', 'contents'];
+                    for (const n of names) {{
+                        const ed = CKEDITOR.instances[n];
+                        if (ed) {{ ed.setData(`{desc_escaped}`); return 'ckeditor:'+n; }}
+                    }}
+                    const all = Object.keys(CKEDITOR.instances);
+                    if (all.length) {{ CKEDITOR.instances[all[0]].setData(`{desc_escaped}`); return 'ckeditor:'+all[0]; }}
+                }}
+                // TinyMCE 방식
+                if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {{
+                    tinymce.activeEditor.setContent(`{desc_escaped}`);
+                    return 'tinymce';
+                }}
+                // 일반 textarea
+                const ta = document.querySelector('textarea[name="itemDetail"], textarea[name="itemContents"], #itemDetail, #lItemDetail');
+                if (ta) {{ ta.value = `{desc_escaped}`; ta.dispatchEvent(new Event('change')); return 'textarea'; }}
+                return false;
+            }}
+        """)
+        print(f"  [상세] 입력 방식: {detail_filled}", flush=True)
+        await asyncio.sleep(0.3)
+
         # 판매가 입력 (lAmt1Tmp = 가시 입력 필드)
         if price:
             await page.fill('#lAmt1Tmp', price)
