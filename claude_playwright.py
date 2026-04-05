@@ -565,6 +565,9 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             except Exception as e:
                 log(f"[Notion] 프롬프트 가져오기 실패: {e}")
                 log("[Notion] 기본 프롬프트로 진행합니다.")
+                # Notion 페이지 없을 때 키워드 + 형식 규칙으로 기본 프롬프트 구성
+                if keyword and not prompt.strip():
+                    prompt = keyword + _FORMAT_RULE + _BOLD_RULE
 
     # 팩트 컨텍스트 주입 — 프로젝트 모드 포함 항상 주입 (할루시네이션 방지 핵심)
     # 키워드 뒤에 붙여서 프로젝트 지침이 앞에 오도록 구조 유지
