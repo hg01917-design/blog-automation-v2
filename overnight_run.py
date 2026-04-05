@@ -615,7 +615,12 @@ def post_one_blog(blog_id):
     from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as _db_set
 
     # 최소 포스팅 간격 체크 (같은 블로그 3시간 이상 텀)
-    elapsed = _hours_since_last_post(blog_id)
+    # nolja100/triplog는 여행 블로그 그룹 — 하나가 발행되면 둘 다 대기
+    TRAVEL_GROUP = {"nolja100", "triplog"}
+    if blog_id in TRAVEL_GROUP:
+        elapsed = min(_hours_since_last_post(b) for b in TRAVEL_GROUP)
+    else:
+        elapsed = _hours_since_last_post(blog_id)
     if elapsed < MIN_POST_GAP_HOURS:
         log(f"[{blog_id}] 마지막 포스팅 {elapsed:.1f}시간 전 — 최소 {MIN_POST_GAP_HOURS}시간 필요, 스킵")
         return False

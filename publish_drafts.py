@@ -1238,8 +1238,13 @@ if __name__ == "__main__":
                 continue
 
             # 같은 블로그 재발행 간격 체크
+            # nolja100/triplog는 여행 블로그 그룹 — 하나가 발행되면 둘 다 3.5h 대기
+            TRAVEL_GROUP = {"nolja100", "triplog"}
             now = time.time()
-            last = last_published.get(blog_id, 0)
+            if blog_id in TRAVEL_GROUP:
+                last = max(last_published.get(b, 0) for b in TRAVEL_GROUP)
+            else:
+                last = last_published.get(blog_id, 0)
             elapsed = now - last
             if elapsed < MIN_BLOG_GAP:
                 remain = int(MIN_BLOG_GAP - elapsed)

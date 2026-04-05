@@ -429,7 +429,12 @@ def run(on_log=None):
         posted_guids: set = set(blog_state.get("posted_guids", []))
 
         # 같은 블로그 재포스팅 간격 체크
-        last_ts = blog_state.get("last_posted_ts", 0)
+        # nolja100/triplog는 여행 블로그 그룹 — 둘 중 하나가 포스팅되면 4시간 대기
+        TRAVEL_GROUP = {"nolja100", "triplog"}
+        if blog_id in TRAVEL_GROUP:
+            last_ts = max(state.get(b, {}).get("last_posted_ts", 0) for b in TRAVEL_GROUP)
+        else:
+            last_ts = blog_state.get("last_posted_ts", 0)
         elapsed = time.time() - last_ts
         if elapsed < POST_INTERVAL_SAME_BLOG:
             remaining = int((POST_INTERVAL_SAME_BLOG - elapsed) / 60)
