@@ -419,6 +419,31 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
 
         # 상품명 입력
         await page.fill('input[name="itemTitle"]', name)
+
+        # 키워드 입력 (상품명에서 추출, 최대 5개)
+        kw_tokens = [t for t in re.split(r'[\s/,]+', name) if len(t) >= 2][:5]
+        keywords_str = ','.join(kw_tokens)
+        # 키워드 입력 필드 찾아서 채우기
+        kw_filled = await page.evaluate(f"""
+            () => {{
+                // 키워드 textarea/input 찾기
+                const el = document.getElementById('lKeyword')
+                    || document.querySelector('input[name="keyword"], textarea[name="keyword"], #keyword, .keyword-input');
+                if (el) {{
+                    el.value = '{keywords_str}';
+                    el.dispatchEvent(new Event('change'));
+                    el.dispatchEvent(new Event('input'));
+                    return true;
+                }}
+                // 태그 방식 키워드 컨트롤러 직접 설정
+                if (window.module && module.keywordController && module.keywordController.setTags) {{
+                    module.keywordController.setTags([{', '.join([f'"{t}"' for t in kw_tokens])}]);
+                    return true;
+                }}
+                return false;
+            }}
+        """)
+        print(f"  [키워드] {keywords_str} (입력{'성공' if kw_filled else '실패'})", flush=True)
         await asyncio.sleep(0.3)
 
         # 판매가 입력 (lAmt1Tmp = 가시 입력 필드)
