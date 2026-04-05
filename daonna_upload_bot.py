@@ -465,8 +465,9 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
     pid = product["id"]
     cat_code = get_category_code(orig_name)
     info_duty_type = "40"  # 기타재화 — 전체 상세정보 별도표기 처리
-    # 최소판매금액 5,000원 이상 조건: min_qty = ceil(5000 / price)
-    import math
+    # 재고수량: 210~311 랜덤
+    import math, random
+    stock_qty = str(random.randint(210, 311))
     try:
         price_int = int(price) if price else 0
         min_qty = str(max(2, math.ceil(5000 / price_int))) if price_int > 0 else "2"
@@ -585,7 +586,7 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
 
                 // 재고수량 (lQty / qty)
                 const qtyEl = document.getElementById('lQty') || document.querySelector('input[name="qty"]');
-                if (qtyEl) {{ qtyEl.value = '9999'; qtyEl.dispatchEvent(new Event('change')); }}
+                if (qtyEl) {{ qtyEl.value = '{stock_qty}'; qtyEl.dispatchEvent(new Event('change')); }}
                 // 최소판매수량 (unitQty = 2, 하한선 2개)
                 const unitQtyEl = document.getElementById('lUnitQty') || document.querySelector('input[name="unitQty"]');
                 if (unitQtyEl) {{ unitQtyEl.value = '{min_qty}'; unitQtyEl.dispatchEvent(new Event('change')); }}
