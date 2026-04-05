@@ -567,7 +567,19 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
                 log("[Notion] 기본 프롬프트로 진행합니다.")
                 # Notion 페이지 없을 때 키워드 + 형식 규칙으로 기본 프롬프트 구성
                 if keyword and not prompt.strip():
-                    prompt = keyword + _FORMAT_RULE + _BOLD_RULE
+                    _SECTION_FORMAT = (
+                        "\n\n아래 형식으로만 출력해줘 (다른 형식 절대 금지):\n"
+                        "===제목===\n"
+                        "(SEO 최적화된 제목 — 명사형/명사구, 30자 이내)\n"
+                        "===제목끝===\n\n"
+                        "===본문===\n"
+                        "(블로그 본문 전체)\n"
+                        "===본문끝===\n\n"
+                        "===태그===\n"
+                        "태그1, 태그2, 태그3 (10~20개)\n"
+                        "===태그끝===\n"
+                    )
+                    prompt = keyword + _SECTION_FORMAT + _FORMAT_RULE + _BOLD_RULE
 
     # 팩트 컨텍스트 주입 — 프로젝트 모드 포함 항상 주입 (할루시네이션 방지 핵심)
     # 키워드 뒤에 붙여서 프로젝트 지침이 앞에 오도록 구조 유지
