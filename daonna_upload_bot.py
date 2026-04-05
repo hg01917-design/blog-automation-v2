@@ -45,26 +45,49 @@ def parse_price(price_str: str) -> str:
     return nums if nums else ""
 
 
-async def get_product_image_url(page, item_id: str) -> str | None:
-    """도매꾹 상품 페이지에서 760px 메인 이미지 URL 추출"""
+async def get_product_info(page, item_id: str) -> dict:
+    """도매꾹 상품 페이지에서 이미지 URL + 상세내용 HTML 추출"""
     url = f"https://domeggook.com/main/item/itemView.php?no={item_id}"
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=20000)
         await asyncio.sleep(2)
     except Exception as e:
-        print(f"  [이미지URL] 페이지 로드 실패: {e}", flush=True)
-        return None
+        print(f"  [상품정보] 페이지 로드 실패: {e}", flush=True)
+        return {}
 
-    # 760px 이미지 우선, 없으면 일반 상품 이미지
-    img_url = await page.evaluate("""
+    return await page.evaluate("""
         () => {
+            // 대표 이미지
             const img = document.querySelector('img[src*="upload/item"][src*="_img_760"]')
                      || document.querySelector('img[src*="upload/item"]')
                      || document.querySelector('#imgMain img, .item_img img, .goods_img img');
-            return img ? img.src : null;
+            const imgUrl = img ? img.src : null;
+
+            // 상세 내용 HTML (상품상세설명 영역)
+            const detailEl = document.querySelector(
+                '#itemDetail, .item_detail, .goods_detail, '
+                + '[id*="itemDetail"], [class*="item_detail"], '
+                + '.desc_detail, #lItemDetail, .product-detail'
+            );
+            let detailHtml = detailEl ? detailEl.innerHTML : '';
+
+            // 상세 이미지들 (img 태그만 추출)
+            if (!detailHtml) {
+                const detailImgs = [...document.querySelectorAll('img[src*="upload/item"][src*="_dc"]')];
+                if (detailImgs.length) {
+                    detailHtml = detailImgs.map(i => `<img src="${i.src}" style="max-width:100%">`).join('<br>');
+                }
+            }
+
+            return { imgUrl, detailHtml: detailHtml.substring(0, 50000) };
         }
     """)
-    return img_url
+
+
+async def get_product_image_url(page, item_id: str) -> str | None:
+    """하위 호환 래퍼"""
+    info = await get_product_info(page, item_id)
+    return info.get("imgUrl")
 
 
 def download_image(url: str, save_path: Path) -> bool:
@@ -460,20 +483,18 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
         print(f"  [키워드] {keywords_str} (입력{'성공' if kw_filled else '실패'})", flush=True)
         await asyncio.sleep(0.3)
 
-        # 상품 상세 내용 입력 (CKEditor / textarea 대응)
-        desc = (
-            f"✅ {name}\n\n"
-            f"유유팩토리에서 직접 공급하는 정품 상품입니다.\n"
-            f"도매가 {product.get('price', '')}에 판매합니다.\n\n"
-            f"▶ 상품 특징\n"
-            f"- 고품질 소재 사용\n"
-            f"- 트렌디한 디자인\n"
-            f"- 다양한 스타일에 활용 가능\n\n"
-            f"▶ 주문 안내\n"
-            f"- 주문 후 빠른 배송\n"
-            f"- 문의사항은 메시지로 연락주세요\n"
-        )
-        desc_escaped = desc.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${").replace("\n", "\\n")
+        # 상품 상세 내용 — 원본 도매꾹 상세HTML 우선, 없으면 기본 텍스트
+        raw_detail = product.get("_detail_html", "")
+        if raw_detail and len(raw_detail) > 50:
+            desc = raw_detail  # 원본 HTML 사용
+        else:
+            desc = (
+                f"<p><b>{name}</b></p>"
+                f"<p>유유팩토리에서 직접 공급하는 정품 상품입니다.</p>"
+                f"<p>도매가 {product.get('price', '')}에 판매합니다.</p>"
+                f"<ul><li>고품질 소재 사용</li><li>트렌디한 디자인</li><li>다양한 스타일에 활용 가능</li></ul>"
+            )
+        desc_escaped = desc.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
         detail_filled = await page.evaluate(f"""
             () => {{
                 // CKEditor 방식
@@ -532,21 +553,37 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
                 print("  [등록] 제출 버튼 없음", flush=True)
                 return False
 
-        await asyncio.sleep(4)
+        await asyncio.sleep(5)
         page.remove_listener("dialog", _on_dialog)
         if alert_msgs:
             print(f"  [등록] 검증 오류: {alert_msgs}", flush=True)
             return False
-        print(f"  [등록] 제출 후 URL: {page.url}", flush=True)
 
-        # 성공 여부 판단
-        success = await page.evaluate("""
+        current_url = page.url
+        print(f"  [등록] 제출 후 URL: {current_url}", flush=True)
+
+        # 성공 여부 판단 — URL 변경 OR 성공 메시지
+        # 성공 시 보통 itemView 또는 mySell 목록 페이지로 이동
+        if "itemView" in current_url or "mySellList" in current_url:
+            return True
+
+        success_text = await page.evaluate("""
             () => {
                 const text = document.body.innerText;
-                return text.includes('등록') || text.includes('완료') || text.includes('success');
+                return (text.includes('등록되었습니다') || text.includes('등록이 완료')
+                    || text.includes('저장되었습니다') || text.includes('success'));
             }
         """)
-        return success
+        if success_text:
+            return True
+
+        # URL이 그대로인 경우 alert_msgs가 비어있으면 일단 성공으로 간주
+        # (폼이 리셋되어 같은 페이지에 머무르는 경우)
+        if "sellInfoForm" in current_url and not alert_msgs:
+            print(f"  [등록] URL 그대로지만 alert 없음 → 등록된 것으로 간주", flush=True)
+            return True
+
+        return False
 
     except Exception as e:
         print(f"  [등록] 오류: {e}", flush=True)
@@ -610,8 +647,10 @@ async def main():
             price_str = product.get("price", "")
             print(f"\n[{idx+1}/{len(remaining)}] {pid} {name[:50]} | {price_str}", flush=True)
 
-            # 1. 도매꾹 상품 페이지에서 이미지 URL 추출
-            img_url = await get_product_image_url(domeggook_page, pid)
+            # 1. 도매꾹 상품 페이지에서 이미지 URL + 상세내용 추출
+            info = await get_product_info(domeggook_page, pid)
+            img_url = info.get("imgUrl")
+            detail_html = info.get("detailHtml", "")
             if not img_url:
                 print(f"  ❌ 이미지 URL 추출 실패 → 건너뜀", flush=True)
                 prog["failed"].append(pid)
@@ -619,6 +658,8 @@ async def main():
                 continue
 
             print(f"  이미지 URL: {img_url[:80]}", flush=True)
+            print(f"  상세HTML: {len(detail_html)}자", flush=True)
+            product["_detail_html"] = detail_html  # 등록 함수에 전달
 
             # 2. 이미지 다운로드
             orig_path = THUMB_DIR / f"{pid}_orig.jpg"
