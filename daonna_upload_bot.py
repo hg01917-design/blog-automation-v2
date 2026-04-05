@@ -85,19 +85,19 @@ def make_gemini_prompt(product_name: str) -> str:
     # 이미지는 원본 상품 사진 업로드 방식이므로, 배경 합성 프롬프트
     name_lower = product_name.lower()
     if any(k in name_lower for k in ["머리", "헤어", "핀", "클립", "바렛", "리본", "크로샤"]):
-        style = "place this hair accessory on a mannequin head or a real person's hair, in a warm cozy interior with wooden furniture and natural sunlight"
+        style = "a real Korean woman wearing this hair accessory in her styled updo hair, sitting at a wooden vanity table with natural sunlight and a mirror in background"
     elif any(k in name_lower for k in ["귀걸이", "목걸이", "반지", "팔찌", "주얼리", "악세"]):
-        style = "display this jewelry item on a mannequin or a model's body in a clean bright lifestyle setting with soft lighting"
+        style = "a real Korean woman wearing this jewelry item, close-up lifestyle photo, soft lighting, clean elegant background"
     elif any(k in name_lower for k in ["가방", "파우치", "지갑", "백"]):
-        style = "show this bag or pouch on a clean wooden surface or held by hands in a bright lifestyle setting"
+        style = "a real person holding or using this bag in a bright lifestyle setting, natural light, wooden background"
     elif any(k in name_lower for k in ["옷", "상의", "하의", "원피스", "티셔츠", "니트", "재킷"]):
-        style = "display this clothing item on a mannequin or flat lay on a clean surface with natural lighting"
+        style = "a real person wearing this clothing item in a bright natural indoor setting, lifestyle photo"
     else:
-        style = "show this product in a realistic lifestyle setting with natural lighting, wooden surface background, the product clearly visible and not obscured"
+        style = "a real person using this product in a realistic lifestyle setting with natural lighting and wooden background"
     return (
-        f"Realistic product photo: {product_name[:60]}. "
+        f"Realistic lifestyle product photo: {product_name[:60]}. "
         f"{style}. "
-        "760x760 square crop, no text, no watermark, product clearly visible."
+        "The product is the main focus and clearly visible. Square 760x760, no text, no watermark, no logo."
     )
 
 
@@ -129,22 +129,17 @@ async def generate_gemini_thumb(page, src_path: Path, product_name: str, out_pat
     except Exception:
         pass
 
-    # 파일 업로드
+    # 파일 업로드 — 메뉴 열기 → "파일 업로드. 문서, 데이터, 코드 파일" 버튼 클릭
     try:
-        async def click_upload():
-            upload_menu = page.locator('button[aria-label="파일 업로드 메뉴 열기"]').first
-            if await upload_menu.is_visible(timeout=3000):
-                await upload_menu.click()
-                await asyncio.sleep(0.5)
-                file_item = page.locator('span:text("파일 업로드"), span:text("Upload file")').first
-                if await file_item.is_visible(timeout=2000):
-                    await file_item.click()
-            else:
-                # 직접 파일 입력 찾기
-                await page.locator('input[type="file"]').first.click()
+        open_menu = page.locator('button[aria-label="파일 업로드 메뉴 열기"]').first
+        if await open_menu.is_visible(timeout=2000):
+            await open_menu.click()
+            await asyncio.sleep(0.8)
 
-        async with page.expect_file_chooser(timeout=8000) as fc_info:
-            await click_upload()
+        upload_btn = page.locator('button[aria-label="파일 업로드. 문서, 데이터, 코드 파일"]').first
+
+        async with page.expect_file_chooser(timeout=10000) as fc_info:
+            await upload_btn.click()
         fc = await fc_info.value
         await fc.set_files(str(src_path))
         await asyncio.sleep(2)
@@ -289,8 +284,8 @@ async def generate_gemini_thumb(page, src_path: Path, product_name: str, out_pat
         img = Image.open(io.BytesIO(raw))
         w, h = img.size
         print(f"  [Gemini] 원본 크기: {w}x{h}", flush=True)
-        # 하단 4% 워터마크 제거
-        cropped = img.crop((0, 0, w, int(h * 0.96)))
+        # 하단 10% 워터마크 제거 (Gemini 스파클 아이콘)
+        cropped = img.crop((0, 0, w, int(h * 0.90)))
         # 760×760 정방형 리사이즈
         final = cropped.resize((760, 760), Image.LANCZOS).convert("RGB")
         final.save(str(out_path), "JPEG", quality=92)
