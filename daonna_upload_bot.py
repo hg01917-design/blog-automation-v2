@@ -66,7 +66,8 @@ async def get_product_info(page, item_id: str) -> dict:
                           || document.querySelector('img[src*="_img_760"]');
             const imgUrl = thumbImg ? thumbImg.src : null;
 
-            // 카테고리 코드 — 브레드크럼 cat= 파라미터에서 추출 (가장 구체적인 것)
+            // 카테고리 코드 — 브레드크럼 cat= 파라미터에서 추출
+            // cat 코드가 01_ 로 시작하는 패션 카테고리만 허용 (10_ 이상은 네비게이션 오염)
             let categoryCode = '';
             const catLinks = [...document.querySelectorAll('a[href*="cat="]')];
             for (let i = catLinks.length - 1; i >= 0; i--) {
@@ -74,7 +75,8 @@ async def get_product_info(page, item_id: str) -> dict:
                 const m = href.match(/[?&]cat=([0-9_]+)/);
                 if (m && m[1]) {
                     const parts = m[1].replace(/_+$/, '').split('_').filter(p => p !== '');
-                    if (parts.length >= 2) {
+                    // 패션 카테고리(01_xx)만 허용, 3단계 이상 필요
+                    if (parts.length >= 3 && parts[0] === '01') {
                         while (parts.length < 6) parts.push('00');
                         categoryCode = parts.slice(0, 6).join('_');
                         break;
@@ -350,28 +352,90 @@ async def generate_gemini_thumb(page, src_path: Path, product_name: str, out_pat
         return False
 
 
-def rewrite_title(original: str) -> str:
-    """유유팩토리 원본 제목과 다른 새 제목 생성.
-    중복 단어 제거 + 순서 재배치로 고유 제목 만들기."""
-    tokens = re.split(r'[\s/,·]+', original.strip())
-    seen = set()
-    unique = []
-    for t in tokens:
-        key = re.sub(r'[^\w]', '', t)
-        if key and key not in seen and len(t) >= 2:
-            seen.add(key)
-            unique.append(t)
-    # 제거할 일반적 접미어 (너무 짧거나 중복 의미)
-    generic = {"소품", "악세사리", "악세서리", "아이템", "잡화", "제품", "상품"}
-    filtered = [t for t in unique if t not in generic]
-    if not filtered:
-        filtered = unique
-    # 재배열: 마지막 토큰을 앞으로, 첫 토큰을 뒤로 (원본과 다른 순서)
-    if len(filtered) >= 3:
-        reordered = filtered[2:] + filtered[:2]
+def seo_title(original: str) -> str:
+    """검색량 높은 SEO 상품명 생성.
+    원본 제목을 토대로 사람들이 실제 검색하는 키워드 조합으로 재작성."""
+    n = original.lower()
+    tokens = [t for t in re.split(r'[\s/,·]+', original.strip()) if len(t) >= 2]
+    # 숫자/영문 컬러/수량 토큰 보존, 의미없는 단어 제거
+    skip = {"소품", "악세사리", "악세서리", "아이템", "잡화", "제품", "상품", "국내", "해외"}
+    core = [t for t in tokens if t not in skip]
+
+    # 카테고리별 SEO 접미어 추가
+    suffix = ""
+    if any(k in n for k in ["타투", "문신", "스티커"]):
+        suffix = "방수 임시문신 패션"
+    elif any(k in n for k in ["헤어핀", "집게핀", "머리핀", "바렛"]):
+        suffix = "여성 헤어 악세사리"
+    elif any(k in n for k in ["헤어밴드", "머리띠"]):
+        suffix = "여성 헤어 악세사리"
+    elif any(k in n for k in ["귀걸이", "이어링"]):
+        suffix = "여성 패션 주얼리"
+    elif any(k in n for k in ["목걸이", "네클리스"]):
+        suffix = "여성 패션 주얼리"
+    elif any(k in n for k in ["반지", "팔찌", "발찌"]):
+        suffix = "여성 패션 주얼리"
+    elif any(k in n for k in ["바퀴커버", "바퀴", "캐리어커버"]):
+        suffix = "실리콘 소음 방지"
+    elif any(k in n for k in ["캐리어", "여행용가방", "트롤리"]):
+        suffix = "여행 가방 대용량"
+    elif any(k in n for k in ["파우치", "화장품파우치"]):
+        suffix = "여성 패션 가방"
+    elif any(k in n for k in ["백팩", "크로스백", "숄더백"]):
+        suffix = "여성 패션 가방"
+    elif any(k in n for k in ["키링", "열쇠고리"]):
+        suffix = "가방 꾸미기 선물"
+    elif any(k in n for k in ["모자", "야구모자", "버킷햇"]):
+        suffix = "패션 소품 여름"
+    elif any(k in n for k in ["양말"]):
+        suffix = "여성 패션 양말"
+    elif any(k in n for k in ["스카프", "머플러"]):
+        suffix = "여성 패션 소품"
+
+    # core 토큰 최대 5개 + suffix
+    base = ' '.join(core[:5])
+    result = f"{base} {suffix}".strip() if suffix else base
+    return result[:50]  # 도매꾹 상품명 최대 50자
+
+
+def make_seo_keywords(original: str) -> list:
+    """검색량 높은 키워드 리스트 반환 (최대 5개)"""
+    n = original.lower()
+    tokens = [t for t in re.split(r'[\s/,·]+', original.strip()) if len(t) >= 2][:3]
+
+    if any(k in n for k in ["타투", "문신", "스티커"]):
+        extra = ["임시문신", "타투스티커"]
+    elif any(k in n for k in ["헤어핀", "집게핀", "머리핀"]):
+        extra = ["헤어핀", "올림머리"]
+    elif any(k in n for k in ["귀걸이", "이어링"]):
+        extra = ["귀걸이", "패션주얼리"]
+    elif any(k in n for k in ["목걸이"]):
+        extra = ["목걸이", "패션주얼리"]
+    elif any(k in n for k in ["반지", "팔찌"]):
+        extra = ["패션주얼리", "악세사리"]
+    elif any(k in n for k in ["바퀴", "캐리어커버"]):
+        extra = ["캐리어바퀴", "여행용품"]
+    elif any(k in n for k in ["캐리어", "트롤리"]):
+        extra = ["여행가방", "캐리어"]
+    elif any(k in n for k in ["파우치", "가방", "백"]):
+        extra = ["여성가방", "패션가방"]
+    elif any(k in n for k in ["키링", "열쇠고리"]):
+        extra = ["키링", "가방소품"]
+    elif any(k in n for k in ["양말"]):
+        extra = ["여성양말", "패션양말"]
+    elif any(k in n for k in ["모자"]):
+        extra = ["패션모자", "여름모자"]
     else:
-        reordered = filtered
-    return ' '.join(reordered[:6])  # 최대 6개 토큰
+        extra = ["패션소품", "여성악세사리"]
+
+    seen = set()
+    result = []
+    for t in tokens + extra:
+        key = re.sub(r'\s+', '', t)
+        if key and key not in seen:
+            seen.add(key)
+            result.append(t)
+    return result[:5]
 
 
 def get_category_code(product_name: str) -> str:
@@ -464,7 +528,7 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
     """도매꾹 상품 등록 폼에 모든 필수 항목 입력 후 제출"""
     price = parse_price(product.get("price", ""))
     orig_name = product["name"][:100]
-    name = rewrite_title(orig_name)  # 유유팩토리와 다른 제목 생성
+    name = seo_title(orig_name)  # 검색량 높은 SEO 제목 생성
     pid = product["id"]
     # 카테고리: 원본 상품 페이지 브레드크럼에서 긁어온 코드 우선, 없으면 키워드 매핑 폴백
     cat_code = product.get("_category_code") or get_category_code(orig_name)
@@ -533,6 +597,15 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
             () => {{
                 const f = document.getElementById('frmRegItem') || document.querySelector('form[name="reg"]');
                 if (!f) return;
+
+                // 판매방식: 직접판매(SELL) 선택 — EDIT 폼에서 미선택 시 '판매방식을 선택해주세요' 오류
+                const sellRadio = [...document.querySelectorAll('input[name="itemSection"]')]
+                    .find(r => r.value === 'SELL');
+                if (sellRadio) sellRadio.click();
+
+                // 도매매 채널 체크 (먼저 설정)
+                const domemeChk2 = document.getElementById('lChannelDomeme');
+                if (domemeChk2 && !domemeChk2.checked) domemeChk2.click();
 
                 // 카테고리
                 if (f.itemCategory) f.itemCategory.value = '{cat_code}';
@@ -665,9 +738,8 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
         # 상품명 입력
         await page.fill('input[name="itemTitle"]', name)
 
-        # 키워드 입력 (원본 상품명 기반, 최대 5개)
-        # 원본 이름에서 추출 — rewrite된 name이 아닌 orig_name 사용
-        kw_tokens = [t for t in re.split(r'[\s/,·]+', orig_name) if len(t) >= 2][:5]
+        # 키워드 입력 (SEO 검색어 기반, 최대 5개)
+        kw_tokens = make_seo_keywords(orig_name)
         # 1차 시도: module.keywordController 직접 설정
         kw_set = await page.evaluate(f"""
             () => {{
