@@ -46,7 +46,8 @@ def parse_price(price_str: str) -> str:
 
 
 async def get_product_info(page, item_id: str) -> dict:
-    """도매꾹 상품 페이지에서 대표 이미지 URL + 상세설명 HTML(lInfoViewItemContents) 추출"""
+    """도매꾹 상품 페이지에서 대표 이미지 URL + 상세설명 HTML + 카테고리 코드 추출.
+    ※ 스크롤 금지 — imageHook()이 사이드바 이미지를 lInfoViewItemContents에 오염시키기 때문."""
     url = f"https://domeggook.com/main/item/itemView.php?no={item_id}"
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=20000)
@@ -55,52 +56,54 @@ async def get_product_info(page, item_id: str) -> dict:
         print(f"  [상품정보] 페이지 로드 실패: {e}", flush=True)
         return {}
 
-    # 스크롤로 imageHook lazy load 트리거
-    try:
-        await page.evaluate("window.scrollTo(0, 1500)")
-        await asyncio.sleep(1.5)
-        await page.evaluate("window.scrollTo(0, 3000)")
-        await asyncio.sleep(1.5)
-    except Exception:
-        pass
+    # 스크롤 안 함 — imageHook 실행 방지 (사이드바 이미지 오염 차단)
 
     return await page.evaluate("""
         () => {
-            // 대표 이미지 (lThumbImg 우선)
+            // 대표 이미지 — 스크롤 전 lThumbImg (imageHook 실행 전 상태)
             const thumbImg = document.getElementById('lThumbImg')
-                          || document.querySelector('#lThumbImgWrap img[src*="upload/item"]')
+                          || document.querySelector('#lThumbImgWrap img')
                           || document.querySelector('img[src*="_img_760"]');
             const imgUrl = thumbImg ? thumbImg.src : null;
 
-            // 상세설명 — lInfoViewItemContents (판매자 상품 상세페이지 HTML)
-            const detailEl = document.getElementById('lInfoViewItemContents');
-            let detailImgHtml = '';
-            if (detailEl) {
-                // imageHook이 preloadArea에 추가한 이미지들도 포함
-                const clone = detailEl.cloneNode(true);
-                // script 태그 제거
-                for (const s of clone.querySelectorAll('script, style')) s.remove();
-                // img 태그만 추출하여 HTML 재구성
-                const imgs = [...detailEl.querySelectorAll('img')];
-                if (imgs.length > 0) {
-                    const seen = new Set();
-                    const imgTags = imgs
-                        .filter(i => {
-                            const src = i.src || i.getAttribute('src') || '';
-                            if (!src || src.includes('data:') || seen.has(src)) return false;
-                            seen.add(src);
-                            return true;
-                        })
-                        .map(i => `<p><img src="${i.src || i.getAttribute('src')}" style="max-width:100%;display:block;margin:10px auto;"></p>`);
-                    detailImgHtml = imgTags.join('');
-                } else {
-                    // 이미지 없으면 전체 HTML에서 스크립트 제거 후 사용
-                    detailImgHtml = clone.innerHTML.replace(/<!--SEP-->/g, '').trim();
-                    detailImgHtml = detailImgHtml.substring(0, 30000);
+            // 카테고리 코드 — 브레드크럼 cat= 파라미터에서 추출 (가장 구체적인 것)
+            let categoryCode = '';
+            const catLinks = [...document.querySelectorAll('a[href*="cat="]')];
+            for (let i = catLinks.length - 1; i >= 0; i--) {
+                const href = catLinks[i].href || '';
+                const m = href.match(/[?&]cat=([0-9_]+)/);
+                if (m && m[1]) {
+                    const parts = m[1].replace(/_+$/, '').split('_').filter(p => p !== '');
+                    if (parts.length >= 2) {
+                        while (parts.length < 6) parts.push('00');
+                        categoryCode = parts.slice(0, 6).join('_');
+                        break;
+                    }
                 }
             }
 
-            return { imgUrl, detailImgHtml };
+            // 상세 이미지 — data-src 우선 (imageHook 실행 전 lazy-load 원본 URL)
+            // lInfoViewItemContents 안 img 태그만. 스크롤 안 했으므로 사이드바 오염 없음.
+            const detailEl = document.getElementById('lInfoViewItemContents');
+            let detailImgHtml = '';
+            if (detailEl) {
+                const imgs = [...detailEl.querySelectorAll('img')];
+                const seen = new Set();
+                const imgTags = imgs
+                    .map(img => {
+                        // data-src 우선 (lazy-load 원본), 없으면 src
+                        return img.getAttribute('data-src') || img.getAttribute('src') || '';
+                    })
+                    .filter(src => {
+                        if (!src || src.startsWith('data:') || src === '#' || src === '' || seen.has(src)) return false;
+                        seen.add(src);
+                        return true;
+                    })
+                    .map(src => `<p><img src="${src}" style="max-width:100%;display:block;margin:10px auto;"></p>`);
+                detailImgHtml = imgTags.join('');
+            }
+
+            return { imgUrl, detailImgHtml, categoryCode };
         }
     """)
 
@@ -463,7 +466,9 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
     orig_name = product["name"][:100]
     name = rewrite_title(orig_name)  # 유유팩토리와 다른 제목 생성
     pid = product["id"]
-    cat_code = get_category_code(orig_name)
+    # 카테고리: 원본 상품 페이지 브레드크럼에서 긁어온 코드 우선, 없으면 키워드 매핑 폴백
+    cat_code = product.get("_category_code") or get_category_code(orig_name)
+    print(f"  [카테고리] {cat_code} {'(원본 스크랩)' if product.get('_category_code') else '(키워드 매핑)'}", flush=True)
     info_duty_type = "40"  # 기타재화 — 전체 상세정보 별도표기 처리
     # 재고수량: 210~311 랜덤
     import math, random
@@ -660,30 +665,60 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
         # 상품명 입력
         await page.fill('input[name="itemTitle"]', name)
 
-        # 키워드 입력 (상품명에서 추출, 최대 5개)
-        kw_tokens = [t for t in re.split(r'[\s/,]+', name) if len(t) >= 2][:5]
-        keywords_str = ','.join(kw_tokens)
-        # 키워드 입력 필드 찾아서 채우기
-        kw_filled = await page.evaluate(f"""
+        # 키워드 입력 (원본 상품명 기반, 최대 5개)
+        # 원본 이름에서 추출 — rewrite된 name이 아닌 orig_name 사용
+        kw_tokens = [t for t in re.split(r'[\s/,·]+', orig_name) if len(t) >= 2][:5]
+        # 1차 시도: module.keywordController 직접 설정
+        kw_set = await page.evaluate(f"""
             () => {{
-                // 키워드 textarea/input 찾기
-                const el = document.getElementById('lKeyword')
-                    || document.querySelector('input[name="keyword"], textarea[name="keyword"], #keyword, .keyword-input');
-                if (el) {{
-                    el.value = '{keywords_str}';
-                    el.dispatchEvent(new Event('change'));
-                    el.dispatchEvent(new Event('input'));
-                    return true;
-                }}
-                // 태그 방식 키워드 컨트롤러 직접 설정
-                if (window.module && module.keywordController && module.keywordController.setTags) {{
-                    module.keywordController.setTags([{', '.join([f'"{t}"' for t in kw_tokens])}]);
-                    return true;
-                }}
+                try {{
+                    if (window.module && module.keywordController) {{
+                        const kc = module.keywordController;
+                        if (kc.setKeywords) {{ kc.setKeywords({json.dumps(kw_tokens)}); return 'setKeywords'; }}
+                        if (kc.setTags) {{ kc.setTags({json.dumps(kw_tokens)}); return 'setTags'; }}
+                        if (kc.addTag) {{
+                            for (const t of {json.dumps(kw_tokens)}) kc.addTag(t);
+                            return 'addTag';
+                        }}
+                    }}
+                }} catch(e) {{}}
                 return false;
             }}
         """)
-        print(f"  [키워드] {keywords_str} (입력{'성공' if kw_filled else '실패'})", flush=True)
+        if not kw_set:
+            # 2차 시도: input 찾아서 한 단어씩 Enter로 추가 (tag-input 방식)
+            kw_input_sel = (
+                '#lKeyword input, '
+                '.keyword-wrap input, .tag-input input, '
+                'input[name="keyword"], input[placeholder*="키워드"], input[placeholder*="태그"]'
+            )
+            try:
+                kw_el = page.locator(kw_input_sel).first
+                if await kw_el.is_visible(timeout=2000):
+                    for kw in kw_tokens:
+                        await kw_el.click()
+                        await kw_el.fill(kw)
+                        await page.keyboard.press("Enter")
+                        await asyncio.sleep(0.3)
+                    kw_set = 'enter-key'
+            except Exception:
+                pass
+        if not kw_set:
+            # 3차 폴백: hidden/textarea에 쉼표 구분 직접 set
+            kw_set = await page.evaluate(f"""
+                () => {{
+                    const el = document.getElementById('lKeyword')
+                        || document.querySelector('textarea[name="keyword"], input[name="keyword"]');
+                    if (el) {{
+                        el.value = {json.dumps(','.join(kw_tokens))};
+                        el.dispatchEvent(new Event('input'));
+                        el.dispatchEvent(new Event('change'));
+                        return 'direct';
+                    }}
+                    return false;
+                }}
+            """)
+        print(f"  [키워드] {kw_tokens} → {kw_set or '실패'}", flush=True)
         await asyncio.sleep(0.3)
 
         # 상품 상세 내용 — 깨끗한 자체 템플릿 사용 (원본 긁어오기 금지)
@@ -944,10 +979,14 @@ async def main():
             price_str = product.get("price", "")
             print(f"\n[{idx+1}/{len(remaining)}] {pid} {name[:50]} | {price_str}", flush=True)
 
-            # 1. 도매꾹 상품 페이지에서 이미지 URL + 상세 이미지 추출
+            # 1. 도매꾹 상품 페이지에서 이미지 URL + 상세 이미지 + 카테고리 추출
             info = await get_product_info(domeggook_page, pid)
             img_url = info.get("imgUrl")
             detail_img_html = info.get("detailImgHtml", "")
+            cat_from_page = info.get("categoryCode", "")
+            if cat_from_page:
+                product["_category_code"] = cat_from_page
+                print(f"  카테고리 스크랩: {cat_from_page}", flush=True)
             if not img_url:
                 print(f"  ❌ 이미지 URL 추출 실패 → 건너뜀", flush=True)
                 prog["failed"].append(pid)
