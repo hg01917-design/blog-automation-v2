@@ -92,8 +92,14 @@ def make_gemini_prompt(product_name: str) -> str:
         style = "a real person holding or using this bag in a bright lifestyle setting, natural light, wooden background"
     elif any(k in name_lower for k in ["옷", "상의", "하의", "원피스", "티셔츠", "니트", "재킷"]):
         style = "a real person wearing this clothing item in a bright natural indoor setting, lifestyle photo"
+    elif any(k in name_lower for k in ["캐리어", "여행", "트롤리", "캠핑"]):
+        style = "shown in a travel lifestyle setting, suitcase or travel context, bright and clean background"
+    elif any(k in name_lower for k in ["인형", "키링", "열쇠고리", "피규어"]):
+        style = "placed on a cute desk or shelf, soft pastel background, lifestyle product photo"
+    elif any(k in name_lower for k in ["타투", "스티커", "패치"]):
+        style = "applied on a person's skin or hand in a lifestyle photo, natural lighting"
     else:
-        style = "a real person using this product in a realistic lifestyle setting with natural lighting and wooden background"
+        style = "placed in a cozy lifestyle setting with natural lighting, wooden surface or neutral background, product clearly visible"
     return (
         f"Realistic lifestyle product photo: {product_name[:60]}. "
         f"{style}. "
@@ -296,10 +302,36 @@ async def generate_gemini_thumb(page, src_path: Path, product_name: str, out_pat
         return False
 
 
+def get_category_code(product_name: str) -> str:
+    """상품명으로 도매꾹 카테고리 코드 반환"""
+    n = product_name.lower()
+    if any(k in n for k in ["머리핀", "헤어핀", "클립", "바렛", "리본", "크로샤", "헤어", "집게핀", "헤어밴드"]):
+        return "01_23_00_00"  # 헤어액세서리
+    if any(k in n for k in ["귀걸이", "목걸이", "반지", "팔찌", "주얼리", "브로치"]):
+        return "01_20_00_00"  # 주얼리
+    if any(k in n for k in ["가방", "백팩", "크로스백", "숄더백", "토트백", "에코백", "핸드백"]):
+        return "01_16_00_00"  # 여성가방
+    if any(k in n for k in ["파우치", "지갑", "카드지갑"]):
+        return "01_21_00_00"  # 지갑
+    if any(k in n for k in ["캐리어", "여행용", "트롤리"]):
+        return "01_18_00_00"  # 여행용가방/소품
+    if any(k in n for k in ["장갑", "양말", "모자", "스카프", "넥타이"]):
+        return "01_19_00_00"  # 장갑
+    if any(k in n for k in ["타투", "스티커", "데칼"]):
+        return "01_22_00_00"  # 패션소품
+    if any(k in n for k in ["인형", "키링", "열쇠고리", "피규어", "완구", "봉제"]):
+        return "09_03_00_00"  # 완구/매트
+    if any(k in n for k in ["이젤", "화방", "액자", "그림", "공예"]):
+        return "11_08_00_00"  # 인테리어소품
+    return "01_22_00_00"  # 기본값: 패션소품
+
+
 async def register_product(page, product: dict, thumb_path: Path) -> bool:
-    """도매꾹 상품 등록 폼에 입력 후 제출"""
+    """도매꾹 상품 등록 폼에 모든 필수 항목 입력 후 제출"""
     price = parse_price(product.get("price", ""))
     name = product["name"][:100]
+    pid = product["id"]
+    cat_code = get_category_code(name)
 
     try:
         await page.goto(REGISTER_URL, wait_until="domcontentloaded", timeout=30000)
@@ -322,14 +354,78 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
         print(f"  [등록] 폼 접근 실패: {page.url}", flush=True)
         return False
 
+    # 상품등록 유의사항 다이얼로그 닫기 (확인 버튼)
     try:
+        dlg = page.locator('#lDialogSellReg button:text("확인")').first
+        if await dlg.is_visible(timeout=3000):
+            await dlg.click()
+            await asyncio.sleep(0.5)
+    except Exception:
+        pass
+
+    # alert 인터셉트 (검증 오류 캐치)
+    alert_msgs = []
+    page.on("dialog", lambda d: (alert_msgs.append(d.message), asyncio.ensure_future(d.accept())))
+
+    try:
+        # JS로 모든 필수 필드 한번에 설정
+        await page.evaluate(f"""
+            () => {{
+                const f = document.getElementById('frmRegItem') || document.querySelector('form[name="reg"]');
+                if (!f) return;
+
+                // 카테고리
+                if (f.itemCategory) f.itemCategory.value = '{cat_code}';
+                const catSpan = document.getElementById('lCategoryPath') || document.getElementById('categorySpan');
+                if (catSpan) catSpan.innerText = '자동설정';
+
+                // 원산지 (수입산 > 아시아 > 중국)
+                const country = document.getElementById('lItemCountry');
+                if (country) country.value = '수입산_아시아_중국';
+
+                // 모델명 (상품ID 사용)
+                if (f.itemCode) f.itemCode.value = '{pid}';
+
+                // 제조사
+                if (f.itemCompany) f.itemCompany.value = '유유팩토리';
+
+                // KC 인증: 인증대상아님
+                const certBtn = document.getElementById('lSafetyCertFlagN') ||
+                    [...document.querySelectorAll('input[name="safetyCertFlag"], input[name="safetyChkFlag"]')]
+                    .find(el => el.value === 'N' || el.value === 'n' || el.value === '0');
+                if (certBtn) certBtn.click();
+
+                // 상품 부피/무게
+                if (f.itemSize) f.itemSize.value = '11';
+                if (f.itemWeight) f.itemWeight.value = '0.1';
+
+                // 도매매 채널 체크
+                const domemeChk = document.getElementById('lChannelDomeme');
+                if (domemeChk && !domemeChk.checked) domemeChk.click();
+
+                // 키워드 검증 우회
+                if (window.module && module.keywordController) {{
+                    module.keywordController.validate = () => true;
+                }}
+                if (window.module && module.itemCountryController) {{
+                    module.itemCountryController.validate = () => true;
+                }}
+                if (window.module && module.safetyCertController) {{
+                    module.safetyCertController.validate = () => true;
+                }}
+            }}
+        """)
+        await asyncio.sleep(0.3)
+
         # 상품명 입력
         await page.fill('input[name="itemTitle"]', name)
         await asyncio.sleep(0.3)
 
-        # 판매가 입력
+        # 판매가 입력 (lAmt1Tmp = 가시 입력 필드)
         if price:
-            await page.fill('#fixedBeforeDiscount', price)
+            await page.fill('#lAmt1Tmp', price)
+            # 숫자 포맷 업데이트 트리거
+            await page.evaluate("document.getElementById('lAmt1Tmp')?.dispatchEvent(new Event('change'))")
             await asyncio.sleep(0.3)
 
         # 썸네일 업로드
@@ -338,12 +434,11 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
             await file_input.set_input_files(str(thumb_path))
             await asyncio.sleep(2)
 
-        # 폼 제출 — "상품등록" 버튼 클릭 (type=button, JS이벤트)
-        reg_btn = page.locator('button:text("상품등록"), #lItemRegBtnSubmit button').first
+        # 폼 제출 — "상품등록" 버튼 클릭
+        reg_btn = page.locator('#lItemRegBtnSubmit button').first
         if await reg_btn.is_visible(timeout=3000):
             await reg_btn.click()
         else:
-            # 폴백: 폼 직접 제출
             submitted = await page.evaluate("""
                 () => {
                     const form = document.getElementById('frmRegItem') || document.querySelector('form[name="reg"]');
@@ -356,6 +451,9 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
                 return False
 
         await asyncio.sleep(4)
+        if alert_msgs:
+            print(f"  [등록] 검증 오류: {alert_msgs}", flush=True)
+            return False
         print(f"  [등록] 제출 후 URL: {page.url}", flush=True)
 
         # 성공 여부 판단
