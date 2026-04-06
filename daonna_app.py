@@ -54,9 +54,10 @@ class DaonnaWorker(QThread):
     log_signal = pyqtSignal(str)
     finished   = pyqtSignal(bool)   # True=성공
 
-    def __init__(self, mode: str, max_count: int = 10, skip_gemini: bool = False):
+    def __init__(self, mode: str, max_count: int = 10, skip_gemini: bool = False, fix_pid: str = None):
         super().__init__()
-        self.mode        = mode       # "collect" | "upload" | "all"
+        self.mode        = mode       # "collect" | "upload" | "all" | "fix"
+        self.fix_pid     = fix_pid    # "fix" 모드: 특정 ID (None=전체)
         self.max_count   = max_count
         self.skip_gemini = skip_gemini
         self._proc     = None
@@ -105,6 +106,17 @@ class DaonnaWorker(QThread):
                 else:
                     self.log_signal.emit("⚠️ 등록 중 오류 발생")
                 self.finished.emit(ok)
+
+            elif self.mode == "fix":
+                self.log_signal.emit("\n[수정] 기존 등록 상품 썸네일+상세내용 수정 중...")
+                args = [self.fix_pid] if self.fix_pid else []
+                ok = self._run_script("daonna_fix_bot.py", args)
+                if ok:
+                    self.log_signal.emit("✅ 수정 완료")
+                else:
+                    self.log_signal.emit("⚠️ 수정 중 오류")
+                self.finished.emit(ok)
+
         except Exception as e:
             self.log_signal.emit(f"❌ 오류: {e}")
             self.finished.emit(False)
@@ -190,11 +202,21 @@ class DaonnaApp(QMainWindow):
             "border-radius:6px;font-size:14px;min-height:32px;")
         self._btn_stop.clicked.connect(self._stop)
 
+        self._btn_fix = QPushButton("🔧 기존 수정")
+        self._btn_fix.setStyleSheet(
+            "background:#1a1d2e;color:#f5a623;border:1px solid #2d2410;"
+            "border-radius:6px;font-size:12px;min-height:32px;")
+        self._btn_fix.clicked.connect(lambda: self._start("fix"))
+
         btn_row.addWidget(self._btn_all, 3)
         btn_row.addWidget(self._btn_collect, 2)
         btn_row.addWidget(self._btn_upload, 2)
         btn_row.addWidget(self._btn_stop, 1)
         root.addLayout(btn_row)
+
+        fix_row = QHBoxLayout()
+        fix_row.addWidget(self._btn_fix)
+        root.addLayout(fix_row)
 
         # 로그 박스
         self._log = QTextEdit()
@@ -269,6 +291,7 @@ class DaonnaApp(QMainWindow):
         self._btn_all.setEnabled(not busy)
         self._btn_collect.setEnabled(not busy)
         self._btn_upload.setEnabled(not busy)
+        self._btn_fix.setEnabled(not busy)
         self._btn_stop.setEnabled(busy)
 
     def _append_log(self, msg: str):
