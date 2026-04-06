@@ -1365,6 +1365,29 @@ async def main():
             if ok:
                 print(f"  ✅ 등록 성공: {name[:40]}", flush=True)
                 prog["done"].append(pid)
+                # 5. 진열하기 — 전체상품 목록에서 해당 상품 진열 버튼 클릭
+                try:
+                    await domeggook_page.goto(
+                        "https://domeggook.com/main/mySell/register/my_sellList.php",
+                        wait_until="domcontentloaded", timeout=20000
+                    )
+                    await asyncio.sleep(2)
+                    shown = await domeggook_page.evaluate(f"""
+                        () => {{
+                            const rows = [...document.querySelectorAll('tr')];
+                            const row = rows.find(r => r.innerHTML.includes('{pid}') || r.innerHTML.includes('{name[:20]}'));
+                            if (!row) return 'ROW_NOT_FOUND';
+                            const btn = [...row.querySelectorAll('a')].find(a => a.textContent.includes('진열'));
+                            if (!btn) return 'BTN_NOT_FOUND';
+                            window.confirm = () => true;
+                            btn.click();
+                            return 'OK';
+                        }}
+                    """)
+                    print(f"  [진열하기] {shown}", flush=True)
+                    await asyncio.sleep(2)
+                except Exception as e:
+                    print(f"  [진열하기] 실패: {e}", flush=True)
             else:
                 print(f"  ❌ 등록 실패: {name[:40]}", flush=True)
                 prog["failed"].append(pid)
