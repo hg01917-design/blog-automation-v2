@@ -650,8 +650,8 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
                     module.itemCountryController.validate = () => true;
                 }}
 
-                // 모델명 (상품ID 사용)
-                if (f.itemCode) f.itemCode.value = '{pid}';
+                // 공급사상품코드
+                if (f.itemCode) f.itemCode.value = 'uu';
 
                 // 제조사
                 if (f.itemCompany) f.itemCompany.value = '다온나상점';
@@ -671,9 +671,18 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
                 const byUnitQty = document.getElementById('lByUnitQty');
                 if (byUnitQty) {{ byUnitQty.value = '{min_qty}'; byUnitQty.dispatchEvent(new Event('change')); }}
 
-                // 상품 부피/무게
-                if (f.itemSize) f.itemSize.value = '11';
-                if (f.itemWeight) f.itemWeight.value = '0.1';
+                // 상품 부피/무게 (가로/세로/높이 각 1cm, 무게 1kg)
+                ['itemSizeWidth','itemSizeLength','itemSizeHeight','itemSizeX','itemSizeY','itemSizeZ'].forEach(n => { if(f[n]) { f[n].value='1'; f[n].dispatchEvent(new Event('change')); } });
+                if (f.itemSize) f.itemSize.value = '1';
+                if (f.itemWeight) f.itemWeight.value = '1';
+
+                // 배송준비기간: 당일출고
+                const deliReadyDay = [...document.querySelectorAll('input[name="deliReadyDay"], input[name="deliDay"]')].find(r => r.value === '0' || r.value === 'D');
+                if (deliReadyDay) deliReadyDay.click();
+
+                // 묶음배송: 불가능
+                const bundleN = [...document.querySelectorAll('input[name="deliMultiFlag"], input[name="bundleDelivery"]')].find(r => r.value === 'N' || r.value === '0');
+                if (bundleN) bundleN.click();
 
                 // 과세유형 선택 (과세 = 1)
                 const taxRadio = [...document.querySelectorAll('input[name="taxAdded"]')].find(r => r.value === '1');
@@ -699,7 +708,7 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
                 const deliBuyerFix = [...document.querySelectorAll('input[name="deliBuyerOpt"]')].find(r => r.value === 'fix');
                 if (deliBuyerFix) deliBuyerFix.click();
                 const deliAmtEl = document.querySelector('input[name="deliveryAmount"]');
-                if (deliAmtEl && !deliAmtEl.value) {{ deliAmtEl.value = '3500'; deliAmtEl.dispatchEvent(new Event('change')); }}
+                if (deliAmtEl && !deliAmtEl.value) {{ deliAmtEl.value = '3000'; deliAmtEl.dispatchEvent(new Event('change')); }}
                 // 반품 배송비
                 const retAmtEl = document.getElementById('lReturnAmtReal') || document.querySelector('input[name="returnDeliAmt"]');
                 if (retAmtEl) {{ retAmtEl.value = '3500'; retAmtEl.dispatchEvent(new Event('change')); }}
