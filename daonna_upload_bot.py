@@ -690,10 +690,8 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
                 // 제조사
                 if (f.itemCompany) f.itemCompany.value = '다온나 상점';
 
-                // KC 인증: 인증대상아님
-                const certBtn = document.getElementById('lSafetyCertFlagN') ||
-                    [...document.querySelectorAll('input[name="safetyCertFlag"], input[name="safetyChkFlag"]')]
-                    .find(el => el.value === 'N' || el.value === 'n' || el.value === '0');
+                // KC 인증: 인증대상아님 (itemSafetyCert value=0)
+                const certBtn = [...document.querySelectorAll('input[name="itemSafetyCert"]')].find(r => r.value === '0');
                 if (certBtn) certBtn.click();
 
                 // 재고수량 (lQty / qty)
