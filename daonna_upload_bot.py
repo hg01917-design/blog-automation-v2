@@ -671,7 +671,7 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
         # 5000원 미만이면 5000원 채우는 수량, 이상이면 1개
         min_qty = str(math.ceil(5000 / price_int)) if price_int < 5000 else "1"
     except Exception:
-        min_qty = "1"
+        min_qty = "2"
 
     # alert 인터셉트 — goto() 이전에 등록 (검증 alert 자동 수락)
     alert_msgs = []
