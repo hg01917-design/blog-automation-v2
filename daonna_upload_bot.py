@@ -544,59 +544,105 @@ def seo_title(original: str) -> str:
 
 
 def make_seo_keywords(original: str) -> list:
-    """검색량 높은 키워드 리스트 반환 (최대 10개, 공백 없음)"""
+    """실제 검색량 높은 확장 키워드 10개 반환.
+    원칙: 상품명 토큰(규격/수량 등) 제거, 사람들이 실제로 검색하는 연관 확장어로만 구성."""
     n = original.lower()
-    tokens = [t for t in re.split(r'[\s/,·]+', original.strip()) if len(t) >= 2][:5]
 
-    # 취급주의/파손주의/깨짐주의 스티커 전용 (고검색량 키워드)
     if any(k in n for k in ["취급주의", "파손주의", "깨짐주의"]):
-        extra = ["취급주의스티커", "파손주의스티커", "깨짐주의스티커", "택배스티커",
-                 "배송라벨", "택배라벨", "포장스티커", "경고라벨", "쇼핑몰스티커", "택배경고스티커"]
-        return extra[:10]
-    # 포장/생활용품 먼저 체크
-    if any(k in n for k in ["택배", "포장", "노루지", "유산지", "에어캡"]):
-        extra = ["포장재", "업소용포장", "택배용품", "포장용품", "대량포장"]
-    elif any(k in n for k in ["박스", "비닐봉투", "봉투"]):
-        extra = ["포장용품", "업소용", "포장재", "대량구매", "박스포장"]
-    elif any(k in n for k in ["오링", "o링", "d고리", "버클", "구슬체인", "군번줄"]):
-        extra = ["DIY부자재", "키링재료", "액세서리부자재", "핸드메이드재료", "DIY소품"]
-    elif any(k in n for k in ["노트", "수첩", "줄노트", "플래너", "체크보드", "메모"]):
-        extra = ["문구용품", "사무용품", "다이어리", "메모장", "학용품"]
-    elif any(k in n for k in ["자석", "마그넷"]):
-        extra = ["냉장고자석", "인테리어소품", "마그넷", "냉장고꾸미기", "소품선물"]
-    elif any(k in n for k in ["타투", "문신"]) or ("스티커" in n and "택배" not in n and "취급" not in n):
-        extra = ["임시문신", "타투스티커", "방수타투", "패션타투", "바디스티커"]
-    elif any(k in n for k in ["헤어핀", "집게핀", "머리핀"]):
-        extra = ["헤어핀", "올림머리", "헤어악세사리", "여성헤어", "머리핀"]
-    elif any(k in n for k in ["귀걸이", "이어링"]):
-        extra = ["귀걸이", "패션주얼리", "여성귀걸이", "이어링", "주얼리"]
-    elif any(k in n for k in ["목걸이"]):
-        extra = ["목걸이", "패션주얼리", "여성목걸이", "네클리스", "주얼리"]
-    elif any(k in n for k in ["반지", "팔찌"]):
-        extra = ["패션주얼리", "악세사리", "여성팔찌", "패션팔찌", "주얼리"]
-    elif any(k in n for k in ["바퀴", "캐리어커버"]):
-        extra = ["캐리어바퀴", "여행용품", "캐리어소음", "바퀴커버", "여행악세사리"]
-    elif any(k in n for k in ["캐리어", "트롤리"]):
-        extra = ["여행가방", "캐리어", "여행용캐리어", "대용량캐리어", "여행용품"]
-    elif any(k in n for k in ["파우치", "가방", "백"]):
-        extra = ["여성가방", "패션가방", "파우치", "미니백", "크로스백"]
-    elif any(k in n for k in ["키링", "열쇠고리"]):
-        extra = ["키링", "가방소품", "열쇠고리", "키홀더", "가방꾸미기"]
-    elif any(k in n for k in ["양말"]):
-        extra = ["여성양말", "패션양말", "덧신", "발목양말", "면양말"]
-    elif any(k in n for k in ["모자"]):
-        extra = ["패션모자", "여름모자", "버킷햇", "야구모자", "모자"]
-    else:
-        extra = ["패션소품", "여성악세사리", "소품", "악세사리", "선물용"]
+        return ["취급주의스티커", "파손주의스티커", "깨짐주의스티커", "배송라벨",
+                "택배스티커", "택배라벨", "경고라벨", "포장스티커", "쇼핑몰스티커", "택배경고스티커"]
 
-    seen = set()
-    result = []
-    for t in tokens + extra:
-        key = re.sub(r'\s+', '', t)
-        if key and key not in seen:
-            seen.add(key)
-            result.append(key)  # 공백 없는 키워드만 등록
-    return result[:10]
+    if any(k in n for k in ["노루지", "유산지"]):
+        return ["베이킹유산지", "오븐유산지", "쿠키유산지", "베이킹페이퍼",
+                "오일페이퍼", "쿠킹페이퍼", "유산지종이", "제빵유산지", "노루지", "오븐시트지"]
+
+    if any(k in n for k in ["에어캡", "뽁뽁이"]):
+        return ["에어캡", "뽁뽁이", "포장완충재", "택배포장재", "완충포장재",
+                "기포완충재", "포장용에어캡", "에어완충재", "택배완충재", "포장재"]
+
+    if any(k in n for k in ["택배박스", "포장박스"]) or ("박스" in n and "택배" in n):
+        return ["택배박스", "포장박스", "이사박스", "소형택배박스", "중형택배박스",
+                "대형택배박스", "골판지박스", "쇼핑몰박스", "배송박스", "포장용박스"]
+
+    if any(k in n for k in ["비닐봉투", "봉투"]):
+        return ["비닐봉투", "택배봉투", "포장봉투", "쇼핑백", "OPP봉투",
+                "접착봉투", "PE봉투", "투명봉투", "포장용비닐", "배송봉투"]
+
+    if any(k in n for k in ["오링", "o링"]):
+        return ["오링", "O링", "키링부자재", "DIY키링재료", "열쇠고리부자재",
+                "핸드메이드부자재", "키링만들기", "DIY부자재", "액세서리부자재", "키링재료"]
+
+    if any(k in n for k in ["d고리", "디고리", "버클"]):
+        return ["D고리", "버클고리", "키링부자재", "가방고리", "카라비너",
+                "스냅훅", "열쇠고리부자재", "DIY부자재", "핸드메이드재료", "가방부자재"]
+
+    if any(k in n for k in ["구슬체인", "군번줄"]):
+        return ["군번줄체인", "구슬체인", "키링DIY", "목걸이체인", "체인부자재",
+                "핸드메이드체인", "DIY체인", "액세서리체인", "볼체인", "키링재료"]
+
+    if any(k in n for k in ["줄노트", "스프링노트"]) or ("노트" in n and "a7" in n):
+        return ["미니노트", "포켓노트", "스프링노트", "A7노트", "소형수첩",
+                "휴대용노트", "메모수첩", "학생용노트", "줄노트", "휴대용수첩"]
+
+    if any(k in n for k in ["투두", "to do", "체크보드", "플래너"]):
+        return ["투두리스트", "데일리플래너", "체크리스트", "할일메모", "플래너노트",
+                "일정관리", "스케줄러", "메모보드", "업무플래너", "공부플래너"]
+
+    if any(k in n for k in ["자석", "마그넷"]):
+        return ["냉장고자석", "마그넷스티커", "인테리어자석", "냉장고꾸미기", "자석스티커",
+                "냉장고메모", "마그넷장식", "주방인테리어", "냉장고인테리어", "자석소품"]
+
+    if any(k in n for k in ["귀걸이", "이어링"]):
+        return ["귀걸이", "패션귀걸이", "여성귀걸이", "이어링", "데일리귀걸이",
+                "원터치귀걸이", "링귀걸이", "드롭귀걸이", "골드귀걸이", "미니귀걸이"]
+
+    if any(k in n for k in ["목걸이", "네클리스"]):
+        return ["목걸이", "패션목걸이", "여성목걸이", "체인목걸이", "데일리목걸이",
+                "골드목걸이", "레이어드목걸이", "네클리스", "펜던트목걸이", "써클목걸이"]
+
+    if any(k in n for k in ["팔찌"]):
+        return ["팔찌", "여성팔찌", "패션팔찌", "행운팔찌", "천연석팔찌",
+                "데일리팔찌", "비즈팔찌", "레이어드팔찌", "구슬팔찌", "실버팔찌"]
+
+    if any(k in n for k in ["반지"]):
+        return ["반지", "여성반지", "패션반지", "데일리반지", "실버반지",
+                "골드반지", "레이어드반지", "커플반지", "뱀프반지", "관절반지"]
+
+    if any(k in n for k in ["키링", "열쇠고리"]) and any(k in n for k in ["털", "폼폼", "인형"]):
+        return ["털키링", "폼폼키링", "인형키링", "가방키링", "캐릭터키링",
+                "가방참", "가방꾸미기", "귀여운키링", "포인트키링", "액세서리키링"]
+
+    if any(k in n for k in ["키링", "열쇠고리"]):
+        return ["키링", "열쇠고리", "가방키링", "자동차키링", "가방꾸미기",
+                "커플키링", "캐릭터키링", "미니키링", "키홀더", "가방소품"]
+
+    if any(k in n for k in ["파우치", "화장품파우치"]):
+        return ["파우치", "화장품파우치", "여행파우치", "메이크업파우치", "멀티파우치",
+                "여성파우치", "수납파우치", "지퍼파우치", "대용량파우치", "파우치백"]
+
+    if any(k in n for k in ["크로스백", "숄더백", "미니백", "핸드백"]):
+        return ["크로스백", "미니크로스백", "여성가방", "숄더백", "미니백",
+                "데일리백", "캐주얼백", "체인백", "슬링백", "패션가방"]
+
+    if any(k in n for k in ["캐리어"]):
+        return ["여행캐리어", "캐리어가방", "소형캐리어", "기내용캐리어", "대형캐리어",
+                "여행가방", "캐리어추천", "경량캐리어", "확장형캐리어", "4륜캐리어"]
+
+    if any(k in n for k in ["타투", "문신"]):
+        return ["타투스티커", "임시문신", "방수타투", "패션타투", "바디타투",
+                "핸드타투", "글리터타투", "페이크타투", "반영구타투", "바디스티커"]
+
+    if any(k in n for k in ["헤어핀", "집게핀", "머리핀"]):
+        return ["헤어핀", "머리핀", "집게핀", "헤어클립", "올림머리핀",
+                "헤어악세사리", "여성헤어핀", "뱅크핀", "샤무핀", "데일리헤어핀"]
+
+    if any(k in n for k in ["양말"]):
+        return ["양말", "여성양말", "패션양말", "면양말", "발목양말",
+                "덧신양말", "무지양말", "캐릭터양말", "반양말", "스포츠양말"]
+
+    # 기본 — 일상소품/선물
+    return ["소품", "생활소품", "인테리어소품", "선물용품", "데일리소품",
+            "귀여운소품", "여성소품", "홈데코", "선물세트", "미니소품"]
 
 
 def get_category_code(product_name: str) -> str:
@@ -828,9 +874,7 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
                     module.itemCountryController.validate = () => true;
                 }}
 
-                // 모델명 없음 체크 + 공급사상품코드
-                const noModelChk = document.getElementById('lItemCodeChk') || document.querySelector('input[name="itemModelNone"]');
-                if (noModelChk && !noModelChk.checked) noModelChk.click();
+                // 공급사상품코드
                 if (f.itemCode) f.itemCode.value = '';
                 if (f.itemCustomCode) {{ f.itemCustomCode.value = '{supplier_code}'; f.itemCustomCode.dispatchEvent(new Event('change')); }}
 
@@ -919,6 +963,15 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
             }}
         """)
         await asyncio.sleep(1.0)
+        # 모델명 없음 체크박스 — Playwright 네이티브로 안정적으로 체크
+        try:
+            no_model_chk = page.locator('#lItemCodeChk')
+            if not await no_model_chk.is_checked():
+                await no_model_chk.check()
+            print("  [모델명없음] 체크 완료", flush=True)
+        except Exception as e:
+            print(f"  [모델명없음] 체크 실패: {e}", flush=True)
+        await asyncio.sleep(0.3)
         # 전체 상세정보 별도표기 체크 (infoDutyType 변경 후 DOM 렌더링 대기)
         await page.evaluate("""
             () => {
@@ -1343,13 +1396,29 @@ async def main():
                 gemini_ok = await generate_gemini_thumb(gemini_page, orig_path, name, thumb_path)
 
             if not gemini_ok:
-                # Gemini 실패 시 원본 이미지를 760×760으로 리사이즈해서 사용
-                print(f"  ⚠️ Gemini 실패 → 원본 760×760 리사이즈 사용", flush=True)
-                try:
-                    img = Image.open(orig_path).convert("RGB")
-                    img.resize((760, 760), Image.LANCZOS).save(str(thumb_path), "JPEG", quality=92)
-                except Exception as e:
-                    print(f"  ❌ 원본 리사이즈도 실패: {e} → 건너뜀", flush=True)
+                # Gemini 실패 시 → 상세페이지 이미지 중 텍스트 없는 것(정방형에 가까운 것) 선택
+                print(f"  ⚠️ Gemini 실패 → 상세이미지에서 썸네일 대체 시도", flush=True)
+                detail_html = product.get("_detail_imgs", "")
+                detail_urls = re.findall(r'src="([^"]+)"', detail_html)
+                fallback_ok = False
+                for durl in detail_urls:
+                    try:
+                        fallback_path = THUMB_DIR / f"{pid}_fallback.jpg"
+                        if not download_image(durl, fallback_path):
+                            continue
+                        img = Image.open(fallback_path).convert("RGB")
+                        w, h = img.size
+                        ratio = w / h if h else 0
+                        # 정방형에 가까운 이미지(0.7~1.5 비율)만 사용 — 텍스트배너(가로로 긴)는 제외
+                        if 0.7 <= ratio <= 1.5:
+                            img.resize((760, 760), Image.LANCZOS).save(str(thumb_path), "JPEG", quality=92)
+                            print(f"  ✅ 상세이미지 썸네일 대체 성공: {durl[:60]}", flush=True)
+                            fallback_ok = True
+                            break
+                    except Exception:
+                        continue
+                if not fallback_ok:
+                    print(f"  ❌ 썸네일 대체 실패 → 건너뜀 (나중에 재시도)", flush=True)
                     prog["failed"].append(pid)
                     save_progress(prog)
                     continue
