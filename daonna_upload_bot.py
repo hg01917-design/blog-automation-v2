@@ -797,9 +797,11 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
                 if (deliBuyerFix) deliBuyerFix.click();
                 const deliAmtEl = document.querySelector('input[name="deliveryAmount"]');
                 if (deliAmtEl && !deliAmtEl.value) {{ deliAmtEl.value = '3000'; deliAmtEl.dispatchEvent(new Event('change')); }}
-                // 반품 배송비
+                // 반품 배송비 (편도 3500원)
                 const retAmtEl = document.getElementById('lReturnAmtReal') || document.querySelector('input[name="returnDeliAmt"]');
                 if (retAmtEl) {{ retAmtEl.value = '3500'; retAmtEl.dispatchEvent(new Event('change')); }}
+                const retAmtInput = document.getElementById('lReturnAmtInput');
+                if (retAmtInput) {{ retAmtInput.value = '3,500'; retAmtInput.dispatchEvent(new Event('change')); }}
 
                 // 도매매 채널 체크
                 const domemeChk = document.getElementById('lChannelDomeme');
