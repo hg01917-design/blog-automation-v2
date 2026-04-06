@@ -6,6 +6,7 @@
         {'index': 1, 'prompt': '세탁기에 이불 넣는 모습', 'filename': 'laundry1.jpg'},
     ], skip_webp=True)
 """
+import json
 import re
 import time
 import urllib.request
@@ -17,6 +18,27 @@ from browser import connect_cdp, get_or_create_page
 IMAGES_DIR = Path(__file__).parent / "images"
 IMAGES_DIR.mkdir(exist_ok=True)
 BING_URL = "https://www.bing.com/images/create"
+
+# 세션 간 사용된 OIG URL 추적 (중복 방지)
+_USED_OIG_FILE = IMAGES_DIR / ".bing_used_oig.json"
+
+def _load_used_oig() -> set:
+    try:
+        return set(json.loads(_USED_OIG_FILE.read_text()))
+    except Exception:
+        return set()
+
+def _save_used_oig(oig_id: str):
+    used = _load_used_oig()
+    used.add(oig_id)
+    # 최대 500개 유지 (오래된 것부터 제거)
+    used_list = list(used)[-500:]
+    _USED_OIG_FILE.write_text(json.dumps(used_list))
+
+def _extract_oig_id(url: str) -> str:
+    """URL에서 OIG ID 부분 추출. 예: OIG2.abc123"""
+    m = re.search(r'(OIG[\w.]+)', url)
+    return m.group(1) if m else url
 
 
 def _download_image(url: str, filepath: str, on_log=None) -> bool:
@@ -102,8 +124,13 @@ def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_
             return None
 
     # ★ 제출 전에 현재 OIG 이미지 목록 캡처 (이전 결과 제외용)
-    prev_urls = _safe_get_oig()
-    log(f"[Bing] 이전 캐시 OIG 수: {len(prev_urls)}")
+    # 페이지 현재 OIG + 이전 세션에서 사용한 OIG 모두 제외
+    page_oig = _safe_get_oig()
+    used_oig_ids = _load_used_oig()
+    prev_urls = page_oig | {u for u in page_oig if _extract_oig_id(u) in used_oig_ids}
+    # used_oig_ids를 URL 형태로도 포함 (전체 URL 저장된 경우)
+    prev_urls |= used_oig_ids
+    log(f"[Bing] 이전 캐시 OIG 수: {len(page_oig)} (누적 제외: {len(used_oig_ids)})")
 
     # Image Creator 전용 입력창: #gi_form_q (TEXTAREA, class="b_searchbox gi_sb")
     inp = page.query_selector('#gi_form_q')
@@ -169,7 +196,11 @@ def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_
     for i in range(30):
         page.wait_for_timeout(1000)
         urls = _safe_get_oig()
-        new_urls = [u for u in urls if u not in prev_urls]
+        # prev_urls(전체 URL) + used_oig_ids(OIG ID 문자열) 모두 제외
+        new_urls = [
+            u for u in urls
+            if u not in prev_urls and _extract_oig_id(u) not in used_oig_ids
+        ]
         result = new_urls[0] if new_urls else None
 
         if result:
@@ -189,6 +220,11 @@ def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_
     if not img_url:
         log("[Bing] 이미지 URL 감지 실패 (60초 초과)")
         return None
+
+    # 사용된 OIG ID 기록 (다음 호출 시 중복 방지)
+    oig_id = _extract_oig_id(img_url)
+    _save_used_oig(oig_id)
+    log(f"[Bing] OIG ID 기록: {oig_id}")
 
     # 고해상도 URL로 변환: ?w=100&h= 같은 크기 제한 파라미터 제거
     if 'th.bing.com' in img_url:

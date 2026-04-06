@@ -387,7 +387,7 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     page_id가 주어지면 유사문서 발견 시 Notion 상태를 '실패'로 변경.
     """
     from claude_playwright import generate_text
-    from gemini_image import generate_images
+    from image_router import generate_images_for_blog
     from poster import post_single
 
     # 0-2. 유사문서 체크 (블로그 내 기존 글)
@@ -540,23 +540,31 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
         return False
     log(f"[검수] ✅ 글 품질 통과 — 본문 {char_count}자, 태그 {len(tags)}개")
 
-    # 4. Gemini 이미지 생성 (검수 통과 후에만 실행)
+    # 4. 이미지 생성 (블로그별 라우팅: salim1su=Gemini→Bing→Pollinations, 그 외=Bing→Pollinations)
     image_paths = {}
     if images:
-        log(f"[파이프라인] Gemini 이미지 생성 시작")
-        image_paths = generate_images(images, on_log=log)
+        is_naver = (blog_id == "salim1su")
+        log(f"[파이프라인] 이미지 생성 시작 (blog={blog_id}, skip_webp={is_naver})")
+        image_paths = generate_images_for_blog(
+            blog_id=blog_id,
+            image_infos=images,
+            skip_webp=is_naver,
+            on_log=log,
+        )
         log(f"[파이프라인] 이미지 {len(image_paths)}개 생성 완료")
 
-    # 4-1. 이미지 최소 3장 보장 — 부족하면 loremflickr 폴백 보충
+    # 4-1. 이미지 최소 3장 보장 — 부족하면 Pollinations 폴백 보충
     if len(image_paths) < MIN_IMAGES:
-        log(f"[파이프라인] ⚠ 이미지 {len(image_paths)}개 < 최소 {MIN_IMAGES}개 — loremflickr 폴백 보충")
-        from gemini_image import _generate_via_fallback
+        log(f"[파이프라인] ⚠ 이미지 {len(image_paths)}개 < 최소 {MIN_IMAGES}개 — Pollinations 폴백 보충")
+        from image_router import _pollinations_image, _enhance_prompt, IMAGES_DIR as _IMG_DIR
         extra_prompts = [keyword, f"{keyword} 관련 정보", f"{keyword} 생활 팁"]
         for i in range(len(image_paths), MIN_IMAGES):
             kw_fb = extra_prompts[i % len(extra_prompts)]
             fname = f"fallback_{blog_id}_{i+1}.jpg"
-            fp = _generate_via_fallback(kw_fb, fname, on_log=log)
-            if fp:
+            enh = _enhance_prompt(blog_id, kw_fb)
+            fp = str(_IMG_DIR / fname)
+            ok = _pollinations_image(enh, fp, on_log=log)
+            if ok:
                 images.append({"index": len(images)+1, "prompt": kw_fb, "filename": fname, "alt": kw_fb})
                 image_paths[fname] = fp
         log(f"[파이프라인] 이미지 보충 후 총 {len(image_paths)}개")

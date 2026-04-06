@@ -1,0 +1,270 @@
+"""블로그별 이미지 생성 라우터
+
+블로그 타입에 따라 이미지 생성 소스를 분기합니다.
+
+  salim1su (Naver):  Gemini → Bing(Copilot) → Pollinations
+  그 외 블로그:      Bing(Copilot) → Pollinations  (Gemini 사용 안 함)
+
+사용법:
+    from image_router import generate_images_for_blog
+    result = generate_images_for_blog(
+        blog_id="salim1su",
+        image_infos=[{'index': 1, 'prompt': '이불 세탁', 'filename': 'img1.jpg'}],
+        skip_webp=True,
+        on_log=print,
+    )
+    # → {1: '/path/to/img1.jpg'}
+"""
+import re
+import ssl
+import time
+import urllib.request
+import urllib.parse
+from pathlib import Path
+
+IMAGES_DIR = Path(__file__).parent / "images"
+IMAGES_DIR.mkdir(exist_ok=True)
+
+# ─── 블로그별 프롬프트 스타일 가이드 ────────────────────────────────────
+_PROMPT_STYLE = {
+    "salim1su": (
+        "Korean home interior style, kitchen, living room, household items, food, "
+        "daily life objects, clean bright lighting. No people, no faces."
+    ),
+    "nolja100": (
+        "Korean travel scenery, tourist attractions, landscapes, architecture, "
+        "nature, beautiful views. No people, no faces."
+    ),
+    "goodisak_IT": (
+        "laptop, smartphone, tablet, digital device, technology, screen interface, "
+        "modern office setup, clean background."
+    ),
+    "goodisak_finance": (
+        "money, credit card, bankbook, coins, financial documents, wallet, "
+        "piggy bank, clean white background."
+    ),
+    "baremi542": (
+        "official documents, papers, pen, stamp, government forms, desk with paperwork, "
+        "clean professional setting."
+    ),
+    "triplog": (
+        "Korean travel destination, scenic landscape, pension, hotel exterior, "
+        "beautiful architecture, nature view. No people, no faces."
+    ),
+}
+
+# IT/금융 키워드 분류 (goodisak용)
+_GOODISAK_FINANCE_KW = {
+    "포인트", "페이", "카드", "통장", "환급", "지원금", "대출", "금융",
+    "현금", "계좌", "적금", "수익", "주식", "펀드", "보험", "세금",
+    "신용", "체크카드", "캐시백", "환전",
+}
+
+
+def _get_prompt_suffix(blog_id: str, prompt: str) -> str:
+    """블로그 + 프롬프트 내용에 따라 이미지 스타일 suffix 반환."""
+    if blog_id == "goodisak":
+        # 프롬프트에 금융 키워드 있으면 금융 스타일
+        if any(kw in prompt for kw in _GOODISAK_FINANCE_KW):
+            return _PROMPT_STYLE["goodisak_finance"]
+        return _PROMPT_STYLE["goodisak_IT"]
+    return _PROMPT_STYLE.get(blog_id, "")
+
+
+def _enhance_prompt(blog_id: str, prompt: str) -> str:
+    """원본 프롬프트에 블로그별 스타일 가이드를 덧붙인 영문 프롬프트 반환."""
+    suffix = _get_prompt_suffix(blog_id, prompt)
+    if suffix:
+        return f"{prompt}, {suffix}"
+    return prompt
+
+
+# ─── Pollinations API ────────────────────────────────────────────────────
+def _pollinations_image(prompt: str, filepath: str, on_log=None) -> bool:
+    """Pollinations.ai API로 이미지 1장 생성 후 저장.
+
+    URL: https://image.pollinations.ai/prompt/{encoded}?width=800&height=600&nologo=true
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    encoded = urllib.parse.quote(prompt, safe="")
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=800&height=600&nologo=true&seed={abs(hash(prompt)) % 99999}"
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        resp = urllib.request.urlopen(req, timeout=60, context=ctx)
+        data = resp.read()
+        if len(data) < 5000:
+            log(f"[Pollinations] 응답 너무 작음: {len(data)}B")
+            return False
+        Path(filepath).write_bytes(data)
+        log(f"[Pollinations] 저장 완료: {Path(filepath).name} ({len(data)//1024}KB)")
+        return True
+    except Exception as e:
+        log(f"[Pollinations] 실패: {e}")
+        return False
+
+
+# ─── 공통 파일명 정리 ────────────────────────────────────────────────────
+def _clean_filename(filename: str, skip_webp: bool) -> str:
+    filename = re.sub(r'[^\w\-.]', '-', filename)
+    filename = re.sub(r'-+', '-', filename).strip('-')
+    if skip_webp:
+        if not filename.endswith(('.jpg', '.jpeg', '.png')):
+            filename = Path(filename).stem + '.jpg'
+    else:
+        if not filename.endswith('.webp'):
+            filename = Path(filename).stem + '.webp'
+    return filename
+
+
+# ─── 메인 라우터 ─────────────────────────────────────────────────────────
+def generate_images_for_blog(
+    blog_id: str,
+    image_infos: list,
+    skip_webp: bool = False,
+    on_log=None,
+) -> dict:
+    """블로그 타입에 따라 이미지 생성 소스를 분기해 이미지 생성.
+
+    Args:
+        blog_id:     "salim1su" | "nolja100" | "goodisak" | "baremi542" | "triplog"
+        image_infos: [{'index': int, 'prompt': str, 'filename': str}, ...]
+        skip_webp:   True면 .jpg 저장 (Naver용)
+        on_log:      로그 콜백
+
+    Returns:
+        {index: filepath} 딕셔너리 (성공한 것만)
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    if not image_infos:
+        return {}
+
+    # 프롬프트에 블로그별 스타일 적용
+    enhanced_infos = []
+    for info in image_infos:
+        enhanced = dict(info)
+        enhanced['prompt'] = _enhance_prompt(blog_id, info['prompt'])
+        enhanced['filename'] = _clean_filename(info['filename'], skip_webp)
+        enhanced_infos.append(enhanced)
+
+    is_naver = (blog_id == "salim1su")
+
+    if is_naver:
+        return _generate_naver(enhanced_infos, skip_webp, log)
+    else:
+        return _generate_other(enhanced_infos, skip_webp, log)
+
+
+def _generate_naver(image_infos: list, skip_webp: bool, log) -> dict:
+    """Naver(salim1su): Gemini → Bing → Pollinations"""
+    # 1단계: Gemini
+    try:
+        from gemini_image import generate_images, _quota_blocked_until
+        blocked = _quota_blocked_until()
+        if not blocked:
+            log("[Router] Naver: Gemini 시도")
+            results = generate_images(image_infos, on_log=log, skip_webp=skip_webp)
+            if results:
+                log(f"[Router] Gemini 성공: {len(results)}장")
+                # 실패한 것만 폴백
+                failed = [info for info in image_infos if info['index'] not in results]
+                if not failed:
+                    return results
+                log(f"[Router] Gemini 실패 {len(failed)}장 → Bing 폴백")
+                bing_res = _try_bing(failed, skip_webp, log)
+                results.update(bing_res)
+                # 여전히 실패한 것 → Pollinations
+                still_failed = [info for info in failed if info['index'] not in bing_res]
+                if still_failed:
+                    poll_res = _try_pollinations(still_failed, log)
+                    results.update(poll_res)
+                return results
+        else:
+            log(f"[Router] Gemini 쿼터 차단({blocked.strftime('%m/%d %H:%M')}) → Bing 시도")
+    except Exception as e:
+        log(f"[Router] Gemini 오류: {e}")
+
+    # 2단계: Bing(Copilot)
+    bing_res = _try_bing(image_infos, skip_webp, log)
+    if bing_res:
+        failed = [info for info in image_infos if info['index'] not in bing_res]
+        if not failed:
+            return bing_res
+        log(f"[Router] Bing 실패 {len(failed)}장 → Pollinations 폴백")
+        poll_res = _try_pollinations(failed, log)
+        bing_res.update(poll_res)
+        return bing_res
+
+    # 3단계: Pollinations
+    log("[Router] Bing 전체 실패 → Pollinations 폴백")
+    return _try_pollinations(image_infos, log)
+
+
+def _generate_other(image_infos: list, skip_webp: bool, log) -> dict:
+    """Tistory/WP: Bing → Pollinations (Gemini 사용 안 함)"""
+    # 1단계: Bing(Copilot)
+    bing_res = _try_bing(image_infos, skip_webp, log)
+    if bing_res:
+        failed = [info for info in image_infos if info['index'] not in bing_res]
+        if not failed:
+            return bing_res
+        log(f"[Router] Bing 실패 {len(failed)}장 → Pollinations 폴백")
+        poll_res = _try_pollinations(failed, log)
+        bing_res.update(poll_res)
+        return bing_res
+
+    # 2단계: Pollinations
+    log("[Router] Bing 전체 실패 → Pollinations 폴백")
+    return _try_pollinations(image_infos, log)
+
+
+def _try_bing(image_infos: list, skip_webp: bool, log) -> dict:
+    """Bing Image Creator로 이미지 생성 시도."""
+    try:
+        from bing_image import generate_images_bing
+        log(f"[Router] Bing Image Creator 시도: {len(image_infos)}장")
+        results = generate_images_bing(image_infos, skip_webp=skip_webp, on_log=log)
+        return results or {}
+    except Exception as e:
+        log(f"[Router] Bing 오류: {e}")
+        return {}
+
+
+def _try_pollinations(image_infos: list, log) -> dict:
+    """Pollinations API로 이미지 생성 시도."""
+    results = {}
+    for info in image_infos:
+        idx = info['index']
+        prompt = info['prompt']
+        filepath = str(IMAGES_DIR / info['filename'])
+        log(f"[Router] Pollinations [{idx}]: {prompt[:60]}")
+        ok = _pollinations_image(prompt, filepath, on_log=log)
+        if ok:
+            results[idx] = filepath
+        else:
+            log(f"[Router] Pollinations [{idx}] 실패")
+        time.sleep(1)
+    return results
+
+
+if __name__ == '__main__':
+    # 테스트
+    result = generate_images_for_blog(
+        blog_id="goodisak",
+        image_infos=[
+            {'index': 1, 'prompt': '노트북 화면에 코딩 화면', 'filename': 'test_goodisak1.jpg'},
+        ],
+        skip_webp=True,
+        on_log=print,
+    )
+    print('결과:', result)

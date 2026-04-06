@@ -10,7 +10,7 @@ except ImportError:
     import naver_agent as _base
 
 from claude_playwright import generate_text_with_fallback as generate_text
-from gemini_image import generate_images
+from image_router import generate_images_for_blog as _img_router
 from overnight_run import _truncate_title, fetch_next_keyword, update_keyword_status, check_duplicate_post
 from keyword_crawler import _is_banned
 
@@ -258,8 +258,8 @@ def run(keyword: str = None, on_log=None, on_status=None, _page_id=None):
         log(f"[작성] 이미지 마커 {total_imgs}개 주입 완료")
 
     if result["images"]:
-        log(f"[작성] Gemini 이미지 {len(result['images'])}개 생성 시작 (네이버 JPG 모드)")
-        image_paths = generate_images(result["images"], on_log=log, skip_webp=True)
+        log(f"[작성] 이미지 {len(result['images'])}개 생성 시작 (salim1su: Gemini→Bing→Pollinations)")
+        image_paths = _img_router("salim1su", result["images"], skip_webp=True, on_log=log)
         log(f"[작성] 이미지 {len(image_paths)}개 생성 완료")
 
         # 생성 실패한 이미지 제거 + 본문 마커 정리

@@ -138,7 +138,7 @@ def _generate_agent_template(blog_id: str, module_name: str, category: str):
         sys.path.insert(0, str(Path(__file__).parent.parent))
 
         from claude_playwright import generate_text_with_fallback as generate_text
-        from gemini_image import generate_images
+        from image_router import generate_images_for_blog as _img_router
         from overnight_run import _truncate_title
 
         BLOG_ID = "{blog_id}"
@@ -173,8 +173,9 @@ def _generate_agent_template(blog_id: str, module_name: str, category: str):
 
             image_paths = {{}}
             if result["images"]:
-                log(f"[작성] Gemini 이미지 {{len(result[\'images\'])}}개 생성 시작")
-                image_paths = generate_images(result["images"], on_log=log)
+                _is_naver = (blog_id == "salim1su")
+                log(f"[작성] 이미지 {{len(result[\'images\'])}}개 생성 시작 (blog={{blog_id}})")
+                image_paths = _img_router(blog_id, result["images"], skip_webp=_is_naver, on_log=log)
 
             result["image_paths"] = image_paths
             result["raw"] = raw

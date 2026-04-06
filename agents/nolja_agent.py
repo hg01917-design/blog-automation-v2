@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from claude_playwright import generate_text_with_fallback as generate_text
-from gemini_image import generate_images
+from image_router import generate_images_for_blog as _img_router
 from overnight_run import _truncate_title
 
 try:
@@ -74,8 +74,8 @@ def run(keyword: str, on_log=None, on_status=None):
     # 3. Gemini 이미지 생성
     image_paths = {}
     if result["images"]:
-        log(f"[작성] Gemini 이미지 {len(result['images'])}개 생성 시작")
-        image_paths = generate_images(result["images"], on_log=log)
+        log(f"[작성] 이미지 {len(result['images'])}개 생성 시작 (nolja100: Bing→Pollinations)")
+        image_paths = _img_router("nolja100", result["images"], skip_webp=False, on_log=log)
         log(f"[작성] 이미지 {len(image_paths)}개 생성 완료")
 
         # 생성 실패한 이미지 제거 + 본문 마커 정리
