@@ -1076,17 +1076,23 @@ async def main():
             print(f"  상세이미지: {len(detail_img_html)}자", flush=True)
             product["_detail_imgs"] = detail_img_html  # 상세 이미지 HTML (설명용)
 
-            # 2. 이미지 다운로드
+            # 2. 이미지 다운로드 (이미 있으면 재사용)
             orig_path = THUMB_DIR / f"{pid}_orig.jpg"
-            if not download_image(img_url, orig_path):
+            if orig_path.exists():
+                print(f"  ✅ 기존 원본 이미지 재사용: {orig_path.name}", flush=True)
+            elif not download_image(img_url, orig_path):
                 print(f"  ❌ 이미지 다운로드 실패 → 건너뜀", flush=True)
                 prog["failed"].append(pid)
                 save_progress(prog)
                 continue
 
-            # 3. Gemini로 실생활 배경 썸네일 생성
+            # 3. Gemini로 실생활 배경 썸네일 생성 (이미 생성된 경우 재사용)
             thumb_path = THUMB_DIR / f"{pid}_thumb.jpg"
-            gemini_ok = await generate_gemini_thumb(gemini_page, orig_path, name, thumb_path)
+            if thumb_path.exists():
+                print(f"  ✅ 기존 썸네일 재사용: {thumb_path.name}", flush=True)
+                gemini_ok = True
+            else:
+                gemini_ok = await generate_gemini_thumb(gemini_page, orig_path, name, thumb_path)
 
             if not gemini_ok:
                 # Gemini 실패 시 원본 이미지를 760×760으로 리사이즈해서 사용
