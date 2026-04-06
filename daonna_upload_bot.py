@@ -750,7 +750,7 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
                 if (f.itemCustomCode) {{ f.itemCustomCode.value = '{supplier_code}'; f.itemCustomCode.dispatchEvent(new Event('change')); }}
 
                 // 제조사
-                if (f.itemCompany) f.itemCompany.value = '다온나 상점';
+                if (f.itemCompany) f.itemCompany.value = '다온나상점';
 
                 // KC 인증: 인증대상아님 (itemSafetyCert value=0)
                 const certBtn = [...document.querySelectorAll('input[name="itemSafetyCert"]')].find(r => r.value === '0');
@@ -1027,9 +1027,7 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
                 }
                 if (window.infoDutyController) window.infoDutyController.validate = () => true;
                 window.itemMemoExist = true;
-                // 모델명 alert 방지 — itemCode 임시값 보장
-                const f = document.getElementById('frmRegItem') || document.querySelector('form[name="reg"]');
-                if (f && f.itemCode && !f.itemCode.value) f.itemCode.value = 'AUTO';
+                // 모델명 없음 체크 시 itemCode는 비워둠
             }
         """)
         await asyncio.sleep(0.3)
