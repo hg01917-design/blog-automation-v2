@@ -470,10 +470,15 @@ def seo_title(original: str) -> str:
 
 
 def make_seo_keywords(original: str) -> list:
-    """검색량 높은 키워드 리스트 반환 (최대 5개)"""
+    """검색량 높은 키워드 리스트 반환 (최대 10개, 공백 없음)"""
     n = original.lower()
     tokens = [t for t in re.split(r'[\s/,·]+', original.strip()) if len(t) >= 2][:5]
 
+    # 취급주의/파손주의/깨짐주의 스티커 전용 (고검색량 키워드)
+    if any(k in n for k in ["취급주의", "파손주의", "깨짐주의"]):
+        extra = ["취급주의스티커", "파손주의스티커", "깨짐주의스티커", "택배스티커",
+                 "배송라벨", "택배라벨", "포장스티커", "경고라벨", "쇼핑몰스티커", "택배경고스티커"]
+        return extra[:10]
     # 포장/생활용품 먼저 체크
     if any(k in n for k in ["택배", "포장", "노루지", "유산지", "에어캡"]):
         extra = ["포장재", "업소용포장", "택배용품", "포장용품", "대량포장"]
@@ -516,7 +521,7 @@ def make_seo_keywords(original: str) -> list:
         key = re.sub(r'\s+', '', t)
         if key and key not in seen:
             seen.add(key)
-            result.append(t)
+            result.append(key)  # 공백 없는 키워드만 등록
     return result[:10]
 
 
@@ -1133,10 +1138,19 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
                 () => {
                     const frm = document.getElementById('frmRegOption');
                     if (!frm) return 'NO_FORM';
+                    // 등록기간 90일
                     frm.periodREG.value = '90';
+                    // 옵션적용기간 90일
                     frm.periodADV.value = '90';
                     if (typeof calcDateREG === 'function') calcDateREG(frm);
                     if (typeof calcDateADV === 'function') calcDateADV(frm);
+                    // 기간 종료 후 재고 남으면 재등록: 99회, 90일씩
+                    const reRegChk = frm.querySelector('input[name="reRegChk"], input[id*="reReg"]');
+                    if (reRegChk && !reRegChk.checked) reRegChk.click();
+                    const reRegCnt = frm.querySelector('input[name="reRegCnt"], select[name="reRegCnt"]');
+                    if (reRegCnt) reRegCnt.value = '99';
+                    const reRegTerm = frm.querySelector('input[name="reRegTerm"], select[name="reRegTerm"]');
+                    if (reRegTerm) reRegTerm.value = '90';
                     window.confirm = () => true;
                     chkRegister(frm);
                     frm.submit();
