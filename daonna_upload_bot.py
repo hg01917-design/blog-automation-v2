@@ -503,13 +503,18 @@ def seo_title(original: str) -> str:
     if any(k in n for k in ["투두", "to do", "체크보드", "체크리스트"]):
         return f"투두리스트 체크리스트 데일리플래너 메모보드"[:50]
 
-    # ── 인테리어 자석 ──
+    # ── 인테리어 자석 / 무드등 ──
+    if any(k in n for k in ["무드등", "간판", "사인보드"]) and any(k in n for k in ["자석", "마그넷", "인테리어"]):
+        # 카페 꾸미기 소품 (무드등/간판 스타일) — 냉장고자석과 별도 분류
+        qty_str = f" {qty}" if qty else ""
+        return f"카페 인테리어소품 커피머신 미니 자석 장식 무드등{qty_str}"[:50]
+
     if any(k in n for k in ["자석", "마그넷"]):
         theme = ""
-        if "커피" in n or "카페" in n or "커피머신" in n:
-            theme = "카페 커피머신 "
-        elif "베이커리" in n:
+        if "베이커리" in n:
             theme = "베이커리 카페 "
+        elif "커피" in n or "카페" in n or "커피머신" in n:
+            theme = "카페 커피머신 "
         qty_str = f" {qty}" if qty else ""
         return f"{theme}냉장고자석 마그넷 인테리어소품{qty_str}"[:50]
 
