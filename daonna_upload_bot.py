@@ -27,6 +27,7 @@ CDP_URL = "http://localhost:9223"
 MISSING_FILE = Path("/tmp/daonna_compare.json")
 PROGRESS_FILE = Path("/tmp/daonna_upload_progress.json")
 THUMB_DIR = Path("/tmp/daonna_thumbs")
+ID_MAP_FILE = Path(__file__).parent / "daonna_id_map.json"  # source_id → daonna_no 매핑
 THUMB_DIR.mkdir(exist_ok=True)
 GEMINI_APP_URL = "https://gemini.google.com/app"
 REGISTER_URL = "https://domeggook.com/main/mySell/register/my_sellInfoForm.php?section=SELL"
@@ -1264,6 +1265,17 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
             import re as _re
             _no_match = _re.search(r'[?&]no=(\d+)', page.url)
             registered_no = _no_match.group(1) if _no_match else None
+            # source_id → daonna_no 매핑 저장
+            if registered_no:
+                _map = {}
+                if ID_MAP_FILE.exists():
+                    try:
+                        _map = json.loads(ID_MAP_FILE.read_text(encoding="utf-8"))
+                    except Exception:
+                        pass
+                _map[pid] = registered_no
+                ID_MAP_FILE.write_text(json.dumps(_map, ensure_ascii=False, indent=2), encoding="utf-8")
+                print(f"  [매핑] {pid} → {registered_no} 저장", flush=True)
 
             opt_alert_msgs = []
             def _on_opt_dialog(d):

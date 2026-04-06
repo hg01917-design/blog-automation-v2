@@ -18,9 +18,11 @@ from daonna_upload_bot import (
 )
 
 PROGRESS_FILE = Path("/tmp/daonna_upload_progress.json")
-COMPARE_FILE  = Path("/tmp/daonna_compare.json")
-if not COMPARE_FILE.exists():
-    COMPARE_FILE = Path(__file__).parent / "daonna_compare.json"
+# 프로젝트 파일 우선 (_img_url 포함), 없으면 /tmp 버전
+_prj = Path(__file__).parent / "daonna_compare.json"
+_tmp = Path("/tmp/daonna_compare.json")
+COMPARE_FILE = _prj if _prj.exists() else _tmp
+ID_MAP_FILE  = Path(__file__).parent / "daonna_id_map.json"  # source_id → daonna_no
 
 
 def load_product_map() -> dict:
@@ -75,27 +77,82 @@ async def dismiss_dialogs(page):
     await asyncio.sleep(0.3)
 
 
+_SELL_LIST_CACHE: list | None = None  # 페이지 전체 rows 캐시
+
+
+async def load_sell_list(page) -> list:
+    """셀러센터 전체 상품 목록 수집 (캐시)"""
+    global _SELL_LIST_CACHE
+    if _SELL_LIST_CACHE is not None:
+        return _SELL_LIST_CACHE
+
+    rows = []
+    page_no = 1
+    while True:
+        url = f"https://domeggook.com/main/mySell/register/my_sellList.php?pageNum={page_no}"
+        await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        await asyncio.sleep(1.5)
+        page_rows = await page.evaluate("""
+            () => [...document.querySelectorAll('tr')].map(r => ({
+                text: r.innerText?.replace(/\\s+/g, ' ') || '',
+                link: (r.querySelector('a[href*="editItem"]') || {}).href || ''
+            })).filter(r => r.link)
+        """)
+        if not page_rows:
+            break
+        rows.extend(page_rows)
+        # 다음 페이지 있는지 확인
+        has_next = await page.evaluate(f"""
+            () => !!document.querySelector('a[href*="pageNum={page_no + 1}"]')
+        """)
+        if not has_next:
+            break
+        page_no += 1
+
+    print(f"  [목록] 전체 {len(rows)}개 상품 로드", flush=True)
+    _SELL_LIST_CACHE = rows
+    return rows
+
+
+def load_id_map() -> dict:
+    """daonna_id_map.json — source_id → daonna_no 매핑 로드"""
+    if ID_MAP_FILE.exists():
+        try:
+            return json.loads(ID_MAP_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
 async def get_daonna_no(page, pid: str, name: str) -> str | None:
-    """셀러센터 목록에서 도매꾹 원본ID 또는 상품명으로 daonna no 찾기"""
-    await page.goto(
-        "https://domeggook.com/main/mySell/register/my_sellList.php",
-        wait_until="domcontentloaded", timeout=20000
-    )
-    await asyncio.sleep(2)
+    """daonna_no 찾기: 매핑 파일 우선, 없으면 키워드 매칭"""
+    # 1. 매핑 파일에서 직접 조회
+    id_map = load_id_map()
+    if pid in id_map:
+        print(f"  [매핑] {pid} → {id_map[pid]} (파일)", flush=True)
+        return id_map[pid]
 
-    rows = await page.evaluate("""
-        () => [...document.querySelectorAll('tr')].map(r => ({
-            text: r.innerText?.replace(/\\s+/g, ' ').slice(0, 120) || '',
-            link: (r.querySelector('a[href*="editItem"]') || {}).href || ''
-        })).filter(r => r.link)
-    """)
+    # 2. 셀러센터 목록에서 키워드 매칭
+    rows = await load_sell_list(page)
 
-    name_short = name[:15]
+    # 원본 이름에서 3글자 이상 토큰 추출 (짧은 토큰은 다중 매칭 오류 유발)
+    tokens = [t for t in re.split(r'[\s\(\)\[\]/,×Xx]+', name) if len(t) >= 3]
+
+    best_no, best_score = None, 0
     for r in rows:
-        if pid in r["text"] or name_short in r["text"]:
+        text = r["text"]
+        score = sum(1 for t in tokens if t in text)
+        if score > best_score:
+            best_score = score
             m = re.search(r'no=(\d+)', r["link"])
             if m:
-                return m.group(1)
+                best_no = m.group(1)
+
+    # 최소 3개 토큰 매칭돼야 유효 (2개는 오탐 위험)
+    if best_score >= 3:
+        return best_no
+
+    print(f"  ⚠️ 키워드 매칭 점수 낮음 ({best_score}개) — 건너뜀", flush=True)
     return None
 
 
