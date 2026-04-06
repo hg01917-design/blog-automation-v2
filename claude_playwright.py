@@ -10,10 +10,8 @@ CLAUDE_URL = "https://claude.ai"
 
 # blog_id별 Claude Project URL (없으면 일반 /new로 이동)
 BLOG_PROJECT_URLS = {
-    # goodisak 제거 — 프로젝트 모드에서 제목/본문이 별도 요소로 분리되어 추출 불가 → /new 모드로 전환
-    # "goodisak":  "https://claude.ai/project/019ca495-0520-7706-8188-bcd875c96b68",
-    # nolja100 제거 — 프로젝트 응답이 collapse돼 DOM 추출 실패 → /new 모드로 전환
-    # "nolja100":  "https://claude.ai/project/019b689e-1dbb-706d-93f3-6174de3a4835",
+    "goodisak":  "https://claude.ai/project/019ca495-0520-7706-8188-bcd875c96b68",
+    "nolja100":  "https://claude.ai/project/019b689e-1dbb-706d-93f3-6174de3a4835",
     "salim1su":  "https://claude.ai/project/019c8917-8337-74e8-989b-edf14e462901",
     "baremi542": "https://claude.ai/project/019d2882-7cfb-72e0-a40f-9669bc6408d6",
     "triplog": "https://claude.ai/project/019d50f9-e07f-7022-a571-4bb71bfa8361",
