@@ -372,7 +372,16 @@ def seo_title(original: str) -> str:
 
     # 카테고리별 SEO 접미어 추가
     suffix = ""
-    if any(k in n for k in ["타투", "문신", "스티커"]):
+    # 포장/생활용품 먼저 체크 (패션 스티커와 구분)
+    if any(k in n for k in ["택배", "포장", "노루지", "유산지", "비닐", "봉투", "박스", "에어캡"]):
+        suffix = "업소용 대량 포장재"
+    elif any(k in n for k in ["오링", "o링", "d고리", "버클", "키링", "열쇠고리", "구슬체인", "군번줄"]):
+        suffix = "DIY 부자재 액세서리"
+    elif any(k in n for k in ["노트", "수첩", "줄노트", "체크보드", "플래너", "메모"]):
+        suffix = "문구 사무용품"
+    elif any(k in n for k in ["자석", "마그넷", "냉장고자석"]):
+        suffix = "인테리어 소품 선물"
+    elif any(k in n for k in ["타투", "문신"]) or ("스티커" in n and "택배" not in n and "취급" not in n):
         suffix = "방수 임시문신 패션"
     elif any(k in n for k in ["헤어핀", "집게핀", "머리핀", "바렛"]):
         suffix = "여성 헤어 악세사리"
