@@ -114,7 +114,21 @@ async def get_product_info(page, item_id: str) -> dict:
                 detailImgHtml = imgTags.join('');
             }
 
-            return { imgUrl, detailImgHtml, categoryCode };
+            // 공급가(도매가) — 상품 페이지 가격 영역에서 추출
+            let supplyPrice = '';
+            const priceEls = [
+                document.querySelector('.lItemPrice, #lItemPrice, .itemPrice'),
+                document.querySelector('[class*="price"] strong, [class*="Price"] strong'),
+                document.querySelector('strong.price, span.price'),
+            ];
+            for (const el of priceEls) {
+                if (el && el.innerText) {
+                    const nums = el.innerText.replace(/[^\d]/g, '');
+                    if (nums && parseInt(nums) > 0) { supplyPrice = nums; break; }
+                }
+            }
+
+            return { imgUrl, detailImgHtml, categoryCode, supplyPrice };
         }
     """)
 
@@ -563,6 +577,7 @@ def make_detail_html(img_url: str) -> str:
 async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> bool:
     """도매꾹 상품 등록 폼에 모든 필수 항목 입력 후 제출"""
     price = parse_price(product.get("price", ""))
+    supply_price = parse_price(product.get("_supply_price", "")) or price  # 도매매 단가 (없으면 판매가 동일)
     orig_name = product["name"][:100]
     name = seo_title(orig_name)  # 검색량 높은 SEO 제목 생성
     pid = product["id"]
@@ -880,8 +895,23 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
                     // hidden 필드 직접 설정
                     const h = document.getElementById('lAmt1');
                     if (h) h.value = '{price}';
-                    const sa = document.getElementById('lSupplyAmt');
-                    if (sa) sa.value = '{price}';
+                }}
+            """)
+            await asyncio.sleep(0.3)
+
+        # 도매매 공급단가 입력 (lSupplyAmtTmp / lSupplyAmt)
+        if supply_price:
+            await page.evaluate(f"""
+                () => {{
+                    const tmp = document.getElementById('lSupplyAmtTmp');
+                    if (tmp) {{
+                        tmp.value = '{supply_price}';
+                        tmp.dispatchEvent(new Event('input'));
+                        tmp.dispatchEvent(new Event('change'));
+                        tmp.dispatchEvent(new Event('blur'));
+                    }}
+                    const h = document.getElementById('lSupplyAmt');
+                    if (h) h.value = '{supply_price}';
                 }}
             """)
             await asyncio.sleep(0.3)
@@ -1094,9 +1124,13 @@ async def main():
             img_url = info.get("imgUrl")
             detail_img_html = info.get("detailImgHtml", "")
             cat_from_page = info.get("categoryCode", "")
+            supply_price = info.get("supplyPrice", "")
             if cat_from_page:
                 product["_category_code"] = cat_from_page
                 print(f"  카테고리 스크랩: {cat_from_page}", flush=True)
+            if supply_price:
+                product["_supply_price"] = supply_price
+                print(f"  공급가(도매가): {supply_price}원", flush=True)
             if not img_url:
                 print(f"  ❌ 이미지 URL 추출 실패 → 건너뜀", flush=True)
                 prog["failed"].append(pid)
