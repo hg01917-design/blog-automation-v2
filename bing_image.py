@@ -1,0 +1,261 @@
+"""Bing Image Creator (DALL-E 3) Playwright 이미지 생성 — Gemini 쿼터 차단 시 대안
+
+사용법:
+    from bing_image import generate_images_bing
+    result = generate_images_bing([
+        {'index': 1, 'prompt': '세탁기에 이불 넣는 모습', 'filename': 'laundry1.jpg'},
+    ], skip_webp=True)
+"""
+import re
+import time
+import urllib.request
+import ssl
+from pathlib import Path
+
+from browser import connect_cdp, get_or_create_page
+
+IMAGES_DIR = Path(__file__).parent / "images"
+IMAGES_DIR.mkdir(exist_ok=True)
+BING_URL = "https://www.bing.com/images/create"
+
+
+def _download_image(url: str, filepath: str, on_log=None) -> bool:
+    def log(msg):
+        if on_log:
+            on_log(msg)
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        resp = urllib.request.urlopen(req, timeout=30, context=ctx)
+        data = resp.read()
+        if len(data) < 5000:
+            log(f"[Bing] 이미지 크기 너무 작음: {len(data)}bytes")
+            return False
+        Path(filepath).write_bytes(data)
+        log(f"[Bing] 저장 완료: {Path(filepath).name} ({len(data)//1024}KB)")
+        return True
+    except Exception as e:
+        log(f"[Bing] 다운로드 실패: {e}")
+        return False
+
+
+def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_log=None) -> str | None:
+    """Bing Image Creator에서 이미지 1장 생성 후 저장. 경로 반환."""
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    # 파일명 정리
+    filename = re.sub(r'[^\w\-.]', '-', filename)
+    filename = re.sub(r'-+', '-', filename).strip('-')
+    if skip_webp:
+        if not filename.endswith(('.jpg', '.jpeg', '.png')):
+            filename = Path(filename).stem + '.jpg'
+    else:
+        if not filename.endswith('.webp'):
+            filename = Path(filename).stem + '.webp'
+
+    out_path = str(IMAGES_DIR / filename)
+
+    # Bing 이미지 생성 페이지로 이동
+    page.goto(BING_URL, wait_until='domcontentloaded')
+    page.wait_for_timeout(3000)
+
+    # 로그인 확인
+    if 'login' in page.url.lower() or 'signin' in page.url.lower():
+        log("[Bing] 로그인 필요 — Microsoft 계정 로그인 상태 확인")
+        return None
+
+    JS_GET_OIG = """() => {
+        const selectors = [
+            '.giic_img img', '.giic_list img', 'img.mimg',
+            '.imgpt img', 'a.iusc img', 'img[src*="th.bing.com"]',
+        ];
+        const found = [];
+        for (const sel of selectors) {
+            for (const img of document.querySelectorAll(sel)) {
+                const src = img.src || img.getAttribute('data-src') || '';
+                if (src && src.includes('OIG')) found.push(src);
+            }
+        }
+        for (const sel of selectors) {
+            for (const img of document.querySelectorAll(sel)) {
+                const src = img.src || img.getAttribute('data-src') || '';
+                if (src && src.includes('blob.core.windows.net')) found.push(src);
+            }
+        }
+        return [...new Set(found)];
+    }"""
+
+    def _safe_get_oig():
+        try:
+            return set(page.evaluate(JS_GET_OIG))
+        except Exception:
+            return set()
+
+    def _safe_eval(js):
+        try:
+            return page.evaluate(js)
+        except Exception:
+            return None
+
+    # ★ 제출 전에 현재 OIG 이미지 목록 캡처 (이전 결과 제외용)
+    prev_urls = _safe_get_oig()
+    log(f"[Bing] 이전 캐시 OIG 수: {len(prev_urls)}")
+
+    # Image Creator 전용 입력창: #gi_form_q (TEXTAREA, class="b_searchbox gi_sb")
+    inp = page.query_selector('#gi_form_q')
+    if not inp:
+        # 폴백 순서
+        for sel in ['textarea.gi_sb', 'textarea[name="q"]', '#gipc_textbox']:
+            inp = page.query_selector(sel)
+            if inp:
+                break
+    if not inp:
+        log("[Bing] Image Creator 입력창 없음")
+        return None
+
+    inp.click()
+    page.wait_for_timeout(300)
+    inp.fill(prompt)
+    page.wait_for_timeout(500)
+
+    # 생성 버튼 또는 Enter 키
+    create_btn = page.query_selector('#create_btn_c, button.gi_submit, button[aria-label*="Create"]')
+    if create_btn:
+        create_btn.click()
+        log(f"[Bing] 생성 버튼 클릭")
+    else:
+        inp.press('Enter')
+        log(f"[Bing] Enter로 전송")
+    log(f"[Bing] 프롬프트 전송: {prompt[:50]}")
+    page.wait_for_timeout(5000)
+
+    # 네비게이션 완료 대기
+    try:
+        page.wait_for_load_state('domcontentloaded', timeout=10000)
+    except Exception:
+        pass
+
+    # 로딩 시작 대기 (최대 15초)
+    loading_detected = False
+    for _ in range(15):
+        page.wait_for_timeout(1000)
+        is_loading = _safe_eval("""() => {
+            return !!(document.querySelector('.gil_status, .giic_loading, [class*="loading"], [class*="progress"]'));
+        }""")
+        if is_loading:
+            log("[Bing] 로딩 감지됨, 생성 대기 중...")
+            loading_detected = True
+            break
+
+    # 로딩 중이면 완료될 때까지 대기
+    if loading_detected:
+        for _ in range(60):
+            page.wait_for_timeout(1000)
+            still_loading = _safe_eval("""() => {
+                return !!(document.querySelector('.gil_status, .giic_loading, [class*="loading"], [class*="progress"]'));
+            }""")
+            if not still_loading:
+                log("[Bing] 로딩 완료")
+                break
+        else:
+            log("[Bing] 로딩 60초 초과")
+
+    # 이미지 생성 완료 대기 (최대 30초 추가 확인)
+    img_url = None
+    for i in range(30):
+        page.wait_for_timeout(1000)
+        urls = _safe_get_oig()
+        new_urls = [u for u in urls if u not in prev_urls]
+        result = new_urls[0] if new_urls else None
+
+        if result:
+            img_url = result
+            log(f"[Bing] 이미지 감지 ({i+1}초): {img_url[:60]}")
+            break
+
+        # 에러 메시지 확인
+        err = _safe_eval("""() => {
+            const errEl = document.querySelector('.gil_err, .gipc_err, [class*="error"]');
+            return errEl ? errEl.innerText : null;
+        }""")
+        if err and ('limit' in err.lower() or 'boost' in err.lower()):
+            log(f"[Bing] 쿼터 한계: {err[:80]}")
+            return None
+
+    if not img_url:
+        log("[Bing] 이미지 URL 감지 실패 (60초 초과)")
+        return None
+
+    # 고해상도 URL로 변환: ?w=100&h= 같은 크기 제한 파라미터 제거
+    if 'th.bing.com' in img_url:
+        # OIG 이미지: 쿼리 파라미터 제거 → 원본 크기
+        base = img_url.split('?')[0]
+        img_url = base  # 파라미터 없이 요청하면 최대 해상도
+
+    # 다운로드
+    ok = _download_image(img_url, out_path, on_log)
+    if ok:
+        return out_path
+
+    # 스크린샷 폴백
+    try:
+        page.screenshot(path=out_path.replace('.jpg', '_screen.png'))
+        log(f"[Bing] 스크린샷 폴백: {out_path}")
+    except Exception:
+        pass
+    return None
+
+
+def generate_images_bing(image_infos: list, skip_webp: bool = False, on_log=None) -> dict:
+    """Bing Image Creator로 이미지 목록 생성.
+
+    Args:
+        image_infos: [{'index': int, 'prompt': str, 'filename': str}, ...]
+        skip_webp: True면 .jpg 저장 (Naver용)
+        on_log: 로그 콜백
+
+    Returns:
+        {index: filepath} 딕셔너리
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    if not image_infos:
+        return {}
+
+    results = {}
+    pw, browser = connect_cdp()
+    try:
+        page = get_or_create_page(browser, url_contains="bing.com", navigate_to=BING_URL)
+        page.wait_for_timeout(3000)
+
+        for info in image_infos:
+            idx = info['index']
+            prompt = info['prompt']
+            filename = info['filename']
+
+            log(f"[Bing] [{idx}] 생성 중: {prompt[:60]}")
+            path = _generate_one(page, prompt, filename, skip_webp, on_log)
+            if path:
+                results[idx] = path
+                log(f"[Bing] [{idx}] ✓ 저장: {path}")
+            else:
+                log(f"[Bing] [{idx}] 생성 실패")
+
+            time.sleep(2)
+    finally:
+        pw.stop()
+
+    return results
+
+
+if __name__ == '__main__':
+    result = generate_images_bing([
+        {'index': 1, 'prompt': '세탁기에 이불을 넣고 세탁하는 가정집 모습, 밝고 깔끔한 분위기', 'filename': 'test_bing1.jpg'},
+    ], skip_webp=True, on_log=print)
+    print('결과:', result)
