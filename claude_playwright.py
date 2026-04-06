@@ -16,8 +16,7 @@ BLOG_PROJECT_URLS = {
     # "nolja100":  "https://claude.ai/project/019b689e-1dbb-706d-93f3-6174de3a4835",
     "salim1su":  "https://claude.ai/project/019c8917-8337-74e8-989b-edf14e462901",
     "baremi542": "https://claude.ai/project/019d2882-7cfb-72e0-a40f-9669bc6408d6",
-    # triplog 제거 — MRT 커스텀 툴 결과가 스트리밍 후 collapse돼 추출 불가 → /new 직접 생성
-    # "triplog": "https://claude.ai/project/019d50f9-e07f-7022-a571-4bb71bfa8361",
+    "triplog": "https://claude.ai/project/019d50f9-e07f-7022-a571-4bb71bfa8361",
 }
 
 # 전송 버튼 (한국어/영어 + 다양한 UI 버전 대응)
