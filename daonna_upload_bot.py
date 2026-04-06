@@ -421,6 +421,12 @@ def seo_title(original: str) -> str:
     suffix = ""
     # 포장/생활용품 먼저 체크 (패션 스티커와 구분)
     if any(k in n for k in ["택배", "포장", "노루지", "유산지", "비닐", "봉투", "박스", "에어캡"]):
+        # 취급주의/파손주의 스티커 → 실검색어 기반 완전 재작성
+        if any(k in n for k in ["취급주의", "파손주의", "깨짐주의", "경고"]):
+            # 수량 토큰 추출 (1000매, 500장 등)
+            qty = next((t for t in tokens if any(c.isdigit() for c in t)), "")
+            qty_str = f" {qty}" if qty else ""
+            return f"파손주의 스티커 택배 라벨 코팅 낱장{qty_str} 배송용"[:50]
         suffix = "업소용 대량 포장재"
     elif any(k in n for k in ["오링", "o링", "d고리", "버클", "키링", "열쇠고리", "구슬체인", "군번줄"]):
         suffix = "DIY 부자재 액세서리"
