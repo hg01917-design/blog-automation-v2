@@ -681,7 +681,9 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
                     module.itemCountryController.validate = () => true;
                 }}
 
-                // 모델명 비움, 공급사상품코드 = supplier_code
+                // 모델명 없음 체크 + 공급사상품코드
+                const noModelChk = document.getElementById('lItemCodeChk') || document.querySelector('input[name="itemModelNone"]');
+                if (noModelChk && !noModelChk.checked) noModelChk.click();
                 if (f.itemCode) f.itemCode.value = '';
                 if (f.itemCustomCode) {{ f.itemCustomCode.value = '{supplier_code}'; f.itemCustomCode.dispatchEvent(new Event('change')); }}
 
