@@ -419,43 +419,43 @@ def seo_title(original: str) -> str:
 def make_seo_keywords(original: str) -> list:
     """검색량 높은 키워드 리스트 반환 (최대 5개)"""
     n = original.lower()
-    tokens = [t for t in re.split(r'[\s/,·]+', original.strip()) if len(t) >= 2][:3]
+    tokens = [t for t in re.split(r'[\s/,·]+', original.strip()) if len(t) >= 2][:5]
 
     # 포장/생활용품 먼저 체크
     if any(k in n for k in ["택배", "포장", "노루지", "유산지", "에어캡"]):
-        extra = ["포장재", "업소용포장"]
+        extra = ["포장재", "업소용포장", "택배용품", "포장용품", "대량포장"]
     elif any(k in n for k in ["박스", "비닐봉투", "봉투"]):
-        extra = ["포장용품", "업소용"]
+        extra = ["포장용품", "업소용", "포장재", "대량구매", "박스포장"]
     elif any(k in n for k in ["오링", "o링", "d고리", "버클", "구슬체인", "군번줄"]):
-        extra = ["DIY부자재", "키링재료"]
+        extra = ["DIY부자재", "키링재료", "액세서리부자재", "핸드메이드재료", "DIY소품"]
     elif any(k in n for k in ["노트", "수첩", "줄노트", "플래너", "체크보드", "메모"]):
-        extra = ["문구용품", "사무용품"]
+        extra = ["문구용품", "사무용품", "다이어리", "메모장", "학용품"]
     elif any(k in n for k in ["자석", "마그넷"]):
-        extra = ["냉장고자석", "인테리어소품"]
+        extra = ["냉장고자석", "인테리어소품", "마그넷", "냉장고꾸미기", "소품선물"]
     elif any(k in n for k in ["타투", "문신"]) or ("스티커" in n and "택배" not in n and "취급" not in n):
-        extra = ["임시문신", "타투스티커"]
+        extra = ["임시문신", "타투스티커", "방수타투", "패션타투", "바디스티커"]
     elif any(k in n for k in ["헤어핀", "집게핀", "머리핀"]):
-        extra = ["헤어핀", "올림머리"]
+        extra = ["헤어핀", "올림머리", "헤어악세사리", "여성헤어", "머리핀"]
     elif any(k in n for k in ["귀걸이", "이어링"]):
-        extra = ["귀걸이", "패션주얼리"]
+        extra = ["귀걸이", "패션주얼리", "여성귀걸이", "이어링", "주얼리"]
     elif any(k in n for k in ["목걸이"]):
-        extra = ["목걸이", "패션주얼리"]
+        extra = ["목걸이", "패션주얼리", "여성목걸이", "네클리스", "주얼리"]
     elif any(k in n for k in ["반지", "팔찌"]):
-        extra = ["패션주얼리", "악세사리"]
+        extra = ["패션주얼리", "악세사리", "여성팔찌", "패션팔찌", "주얼리"]
     elif any(k in n for k in ["바퀴", "캐리어커버"]):
-        extra = ["캐리어바퀴", "여행용품"]
+        extra = ["캐리어바퀴", "여행용품", "캐리어소음", "바퀴커버", "여행악세사리"]
     elif any(k in n for k in ["캐리어", "트롤리"]):
-        extra = ["여행가방", "캐리어"]
+        extra = ["여행가방", "캐리어", "여행용캐리어", "대용량캐리어", "여행용품"]
     elif any(k in n for k in ["파우치", "가방", "백"]):
-        extra = ["여성가방", "패션가방"]
+        extra = ["여성가방", "패션가방", "파우치", "미니백", "크로스백"]
     elif any(k in n for k in ["키링", "열쇠고리"]):
-        extra = ["키링", "가방소품"]
+        extra = ["키링", "가방소품", "열쇠고리", "키홀더", "가방꾸미기"]
     elif any(k in n for k in ["양말"]):
-        extra = ["여성양말", "패션양말"]
+        extra = ["여성양말", "패션양말", "덧신", "발목양말", "면양말"]
     elif any(k in n for k in ["모자"]):
-        extra = ["패션모자", "여름모자"]
+        extra = ["패션모자", "여름모자", "버킷햇", "야구모자", "모자"]
     else:
-        extra = ["패션소품", "여성악세사리"]
+        extra = ["패션소품", "여성악세사리", "소품", "악세사리", "선물용"]
 
     seen = set()
     result = []
@@ -464,7 +464,7 @@ def make_seo_keywords(original: str) -> list:
         if key and key not in seen:
             seen.add(key)
             result.append(t)
-    return result[:5]
+    return result[:10]
 
 
 def get_category_code(product_name: str) -> str:
@@ -779,59 +779,24 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
         # 상품명 입력
         await page.fill('input[name="itemTitle"]', name)
 
-        # 키워드 입력 (SEO 검색어 기반, 최대 5개)
+        # 키워드 입력 (SEO 검색어 기반, 최대 10개) — lKeywordTmp 개별 필드 방식
         kw_tokens = make_seo_keywords(orig_name)
-        # 1차 시도: module.keywordController 직접 설정
-        kw_set = await page.evaluate(f"""
-            () => {{
-                try {{
-                    if (window.module && module.keywordController) {{
-                        const kc = module.keywordController;
-                        if (kc.setKeywords) {{ kc.setKeywords({json.dumps(kw_tokens)}); return 'setKeywords'; }}
-                        if (kc.setTags) {{ kc.setTags({json.dumps(kw_tokens)}); return 'setTags'; }}
-                        if (kc.addTag) {{
-                            for (const t of {json.dumps(kw_tokens)}) kc.addTag(t);
-                            return 'addTag';
-                        }}
-                    }}
-                }} catch(e) {{}}
-                return false;
-            }}
-        """)
-        if not kw_set:
-            # 2차 시도: input 찾아서 한 단어씩 Enter로 추가 (tag-input 방식)
-            kw_input_sel = (
-                '#lKeyword input, '
-                '.keyword-wrap input, .tag-input input, '
-                'input[name="keyword"], input[placeholder*="키워드"], input[placeholder*="태그"]'
-            )
-            try:
-                kw_el = page.locator(kw_input_sel).first
-                if await kw_el.is_visible(timeout=2000):
-                    for kw in kw_tokens:
-                        await kw_el.click()
-                        await kw_el.fill(kw)
-                        await page.keyboard.press("Enter")
-                        await asyncio.sleep(0.3)
-                    kw_set = 'enter-key'
-            except Exception:
-                pass
-        if not kw_set:
-            # 3차 폴백: hidden/textarea에 쉼표 구분 직접 set
-            kw_set = await page.evaluate(f"""
-                () => {{
-                    const el = document.getElementById('lKeyword')
-                        || document.querySelector('textarea[name="keyword"], input[name="keyword"]');
-                    if (el) {{
-                        el.value = {json.dumps(','.join(kw_tokens))};
-                        el.dispatchEvent(new Event('input'));
-                        el.dispatchEvent(new Event('change'));
-                        return 'direct';
-                    }}
-                    return false;
-                }}
-            """)
-        print(f"  [키워드] {kw_tokens} → {kw_set or '실패'}", flush=True)
+        kw_set = await page.evaluate("""
+            (kws) => {
+                // hidden 필드
+                const hidden = document.getElementById('lKeyword') || document.querySelector('input[name="itemKeyword"]');
+                if (hidden) { hidden.value = kws.join(','); hidden.dispatchEvent(new Event('change')); }
+                // lKeywordTmp 개별 입력 필드에 하나씩
+                const inputs = [...document.querySelectorAll('input.lKeywordTmp')];
+                inputs.forEach((inp, i) => {
+                    inp.value = i < kws.length ? kws[i] : '';
+                    inp.dispatchEvent(new Event('input'));
+                    inp.dispatchEvent(new Event('change'));
+                });
+                return inputs.length + '개 필드';
+            }
+        """, kw_tokens)
+        print(f"  [키워드] {kw_tokens} → {kw_set}", flush=True)
         await asyncio.sleep(0.3)
 
         # 상품 상세 내용 — 깨끗한 자체 템플릿 사용 (원본 긁어오기 금지)
