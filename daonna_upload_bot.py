@@ -513,8 +513,10 @@ def seo_title(original: str) -> str:
         theme = ""
         if "베이커리" in n:
             theme = "베이커리 카페 "
-        elif "커피" in n or "카페" in n or "커피머신" in n:
+        elif "커피머신" in n or "coffee machine" in n:
             theme = "카페 커피머신 "
+        elif "커피" in n or "카페" in n:
+            theme = "카페 "
         qty_str = f" {qty}" if qty else ""
         return f"{theme}냉장고자석 마그넷 인테리어소품{qty_str}"[:50]
 
