@@ -107,7 +107,30 @@ async def get_product_info(page, item_id: str) -> dict:
                 detailImgHtml = imgTags.join('');
             }
 
-            return { imgUrl, detailImgHtml, categoryCode };
+            // 옵션 정보 추출 — 옵션명/값 목록
+            const options = [];
+            // 옵션 테이블 또는 select 요소에서 추출
+            const optSelects = document.querySelectorAll('select[name*="opt"], select[id*="opt"]');
+            const optRows = document.querySelectorAll('.lOptList tr, .optList tr, table.opt tr');
+            // select 방식
+            if (optSelects.length > 0) {
+                optSelects.forEach(sel => {
+                    const optName = sel.getAttribute('data-name') || sel.closest('td')?.previousElementSibling?.innerText?.trim() || '';
+                    const vals = [...sel.options].map(o => o.text.trim()).filter(t => t && t !== '선택');
+                    if (optName && vals.length) options.push({name: optName, values: vals});
+                });
+            }
+            // 텍스트 파싱 방식 — "옵션" 키워드 근처에서 값 추출
+            if (options.length === 0) {
+                const optEl = document.querySelector('.lOptGroup, #lOptGroup, .itemOpt, .item-option, [class*="option"]');
+                if (optEl) {
+                    const text = optEl.innerText;
+                    const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+                    if (lines.length > 0) options.push({name: lines[0], values: lines.slice(1)});
+                }
+            }
+
+            return { imgUrl, detailImgHtml, categoryCode, options };
         }
     """)
 
@@ -925,6 +948,60 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
                 }}
             """)
             await asyncio.sleep(0.3)
+
+        # 옵션 처리 — 옵션 있는 상품만
+        options = product.get("_options", [])  # [{"name":"색상","values":["검은고양이","흰고양이"]}]
+        if options:
+            print(f"  [옵션] {len(options)}개 옵션 타입 감지 → 팝업 설정", flush=True)
+            # 옵션사용 체크
+            await page.evaluate('() => { const c = document.getElementById("lItemOptUse"); if(c && !c.checked) c.click(); }')
+            await asyncio.sleep(0.5)
+            # 주문옵션 설정 버튼 클릭 → 팝업 열기
+            pages_before = len(ctx.pages)
+            await page.evaluate('() => { document.getElementById("lBtnItemOpt").click(); }')
+            await asyncio.sleep(2)
+            # 팝업 탭 찾기
+            opt_page = None
+            for p in ctx.pages:
+                if "popup_itemOptionEdit" in p.url:
+                    opt_page = p
+                    break
+            if opt_page:
+                opt_page.on('dialog', lambda d: asyncio.ensure_future(d.accept()))
+                # 옵션 타입 수 선택
+                opt_count = str(min(len(options), 3))
+                await opt_page.select_option('#selItemOpt', '0')
+                await asyncio.sleep(0.5)
+                await opt_page.select_option('#selItemOpt', opt_count)
+                await asyncio.sleep(1.5)
+                # 각 옵션 타입별 이름/값 입력 (클릭 후 입력)
+                name_inputs = opt_page.locator('input[name="optName[]"]')
+                val_inputs  = opt_page.locator('input[name="optValue[]"]')
+                for i, opt in enumerate(options[:3]):
+                    await name_inputs.nth(i).click()
+                    await asyncio.sleep(0.2)
+                    await name_inputs.nth(i).fill(opt["name"])
+                    await val_inputs.nth(i).click()
+                    await asyncio.sleep(0.2)
+                    await val_inputs.nth(i).fill(",".join(opt["values"]))
+                await asyncio.sleep(0.3)
+                # 옵션등록 (조합 생성)
+                await opt_page.evaluate('itemCls.optComplete()')
+                await asyncio.sleep(2)
+                # 재고수량 각 옵션별 211개 입력
+                await opt_page.evaluate('''() => {
+                    [...document.getElementsByName("qty[]")].forEach(q => {
+                        q.value = "211";
+                        q.dispatchEvent(new Event("change"));
+                    });
+                }''')
+                await asyncio.sleep(0.3)
+                # 저장 (파란버튼)
+                await opt_page.evaluate('itemCls.endOptSet()')
+                await asyncio.sleep(2)
+                print(f"  [옵션] 저장 완료", flush=True)
+            else:
+                print(f"  [옵션] 팝업 탭 못 찾음 — 옵션 건너뜀", flush=True)
 
         # 썸네일 업로드
         if thumb_path.exists():
