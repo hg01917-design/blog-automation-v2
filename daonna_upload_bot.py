@@ -68,14 +68,15 @@ async def get_product_info(page, item_id: str) -> dict:
 
     return await page.evaluate("""
         () => {
-            // 대표 이미지 — 스크롤 전 lThumbImg (imageHook 실행 전 상태)
+            // 대표 이미지 — data-src 우선 (lazy-load 원본 URL), 없으면 src
             const thumbImg = document.getElementById('lThumbImg')
                           || document.querySelector('#lThumbImgWrap img')
-                          || document.querySelector('img[src*="_img_760"]');
-            const imgUrl = thumbImg ? thumbImg.src : null;
+                          || document.querySelector('img[data-src*="_img_760"], img[src*="_img_760"]');
+            const imgUrl = thumbImg
+                ? (thumbImg.getAttribute('data-src') || thumbImg.src)
+                : null;
 
-            // 카테고리 코드 — 브레드크럼 cat= 파라미터에서 추출
-            // cat 코드가 01_ 로 시작하는 패션 카테고리만 허용 (10_ 이상은 네비게이션 오염)
+            // 카테고리 코드 — 브레드크럼 cat= 파라미터에서 추출 (카테고리 제한 없이 원본 그대로)
             let categoryCode = '';
             const catLinks = [...document.querySelectorAll('a[href*="cat="]')];
             for (let i = catLinks.length - 1; i >= 0; i--) {
@@ -83,8 +84,8 @@ async def get_product_info(page, item_id: str) -> dict:
                 const m = href.match(/[?&]cat=([0-9_]+)/);
                 if (m && m[1]) {
                     const parts = m[1].replace(/_+$/, '').split('_').filter(p => p !== '');
-                    // 패션 카테고리(01_xx)만 허용, 3단계 이상 & 3번째 숫자가 00이 아니어야 함
-                    if (parts.length >= 3 && parts[0] === '01' && parts[2] !== '00') {
+                    // 3단계 이상 & 마지막 유효 코드가 00이 아니면 사용
+                    if (parts.length >= 3 && parts[parts.length - 1] !== '00') {
                         while (parts.length < 6) parts.push('00');
                         categoryCode = parts.slice(0, 6).join('_');
                         break;
