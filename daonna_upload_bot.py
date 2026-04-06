@@ -15,6 +15,14 @@ import urllib.request
 from pathlib import Path
 from PIL import Image
 
+# 공급사별 상품코드 매핑
+SUPPLIER_ITEM_CODE = {
+    "유유팩토리": "uu",
+    "해리네점빵": "hery",
+    "승리아트": "victory",
+    "위셀07": "we",
+}
+
 CDP_URL = "http://localhost:9223"
 MISSING_FILE = Path("/tmp/daonna_compare.json")
 PROGRESS_FILE = Path("/tmp/daonna_upload_progress.json")
@@ -534,6 +542,8 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
     cat_code = product.get("_category_code") or get_category_code(orig_name)
     print(f"  [카테고리] {cat_code} {'(원본 스크랩)' if product.get('_category_code') else '(키워드 매핑)'}", flush=True)
     info_duty_type = "40"  # 기타재화 — 전체 상세정보 별도표기 처리
+    # 공급사 코드 (compare.json의 _supplier 필드 또는 기본값 uu)
+    supplier_code = SUPPLIER_ITEM_CODE.get(product.get("_supplier", "유유팩토리"), "uu")
     # 재고수량: 210~311 랜덤
     import math, random
     stock_qty = str(random.randint(210, 311))
@@ -651,7 +661,7 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
                 }}
 
                 // 공급사상품코드
-                if (f.itemCode) f.itemCode.value = 'uu';
+                if (f.itemCode) f.itemCode.value = '{supplier_code}';
 
                 // 제조사
                 if (f.itemCompany) f.itemCompany.value = '다온나상점';
