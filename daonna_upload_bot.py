@@ -409,64 +409,96 @@ async def generate_gemini_thumb(page, src_path: Path, product_name: str, out_pat
 
 
 def seo_title(original: str) -> str:
-    """검색량 높은 SEO 상품명 생성.
-    원본 제목을 토대로 사람들이 실제 검색하는 키워드 조합으로 재작성."""
+    """실제 검색량 기반 SEO 상품명 생성.
+    원칙: 구매자가 실제로 치는 검색어로 조합. 핵심 특징어는 유지하되
+    '귀여운/패션/제품' 같은 불필요한 수식어 제거, 검색량 높은 동의어 추가."""
     n = original.lower()
     tokens = [t for t in re.split(r'[\s/,·]+', original.strip()) if len(t) >= 2]
-    # 숫자/영문 컬러/수량 토큰 보존, 의미없는 단어 제거
-    skip = {"소품", "악세사리", "악세서리", "아이템", "잡화", "제품", "상품", "국내", "해외"}
+    # 수량/규격 토큰 추출 (1000매, 500장, 50P 등)
+    qty = next((t for t in tokens if any(c.isdigit() for c in t)), "")
+
+    # ── 포장재 ──
+    if any(k in n for k in ["취급주의", "파손주의", "깨짐주의"]):
+        # 사람들이 검색: 취급주의스티커, 파손주의스티커, 택배스티커
+        qty_str = f" {qty}" if qty else ""
+        return f"취급주의 스티커 파손주의 택배 라벨 낱장{qty_str}"[:50]
+
+    if any(k in n for k in ["노루지", "유산지"]):
+        # 사람들이 검색: 노루지, 베이킹페이퍼, 유산지, 쿠키
+        size = next((t for t in tokens if "x" in t.lower() or "X" in t), "")
+        qty_str = f" {qty}" if qty else ""
+        size_str = f" {size}" if size else ""
+        return f"노루지 유산지 베이킹페이퍼 쿠키{size_str}{qty_str}"[:50]
+
+    if any(k in n for k in ["에어캡", "뽁뽁이"]):
+        return f"에어캡 뽁뽁이 포장재 완충재 택배포장"[:50]
+
+    # ── 키링 부자재 ──
+    if any(k in n for k in ["오링", "o링"]):
+        return f"O링 오링 키링부자재 DIY {qty}".strip()[:50]
+
+    if any(k in n for k in ["d고리", "디고리"]):
+        color = "금색" if "금" in n or "gold" in n else "은색"
+        return f"D고리 {color} 버클 키링부자재 열쇠고리 DIY {qty}".strip()[:50]
+
+    if any(k in n for k in ["구슬체인", "군번줄"]):
+        return f"구슬체인 군번줄 키링DIY 핸드메이드 {qty}".strip()[:50]
+
+    if any(k in n for k in ["이중오링", "원형키링"]):
+        return f"이중오링 원형키링 열쇠고리부자재 DIY {qty}".strip()[:50]
+
+    if any(k in n for k in ["8자형", "8자버클"]):
+        return f"8자버클 열쇠고리 키링부자재 DIY {qty}".strip()[:50]
+
+    # ── 문구 ──
+    if any(k in n for k in ["줄노트", "스프링노트"]) or ("노트" in n and "a7" in n):
+        return f"미니노트 A7 스프링노트 줄노트 포켓수첩"[:50]
+
+    if any(k in n for k in ["투두", "to do", "체크보드", "체크리스트"]):
+        return f"투두리스트 체크리스트 데일리플래너 메모보드"[:50]
+
+    # ── 인테리어 자석 ──
+    if any(k in n for k in ["자석", "마그넷"]):
+        theme = ""
+        if "커피" in n or "카페" in n or "커피머신" in n:
+            theme = "카페 커피머신 "
+        elif "베이커리" in n:
+            theme = "베이커리 카페 "
+        qty_str = f" {qty}" if qty else ""
+        return f"{theme}냉장고자석 마그넷 인테리어소품{qty_str}"[:50]
+
+    # ── 가방/패션 ──
+    if any(k in n for k in ["핸드백", "숄더백", "크로스백", "토트백", "미니백"]):
+        # 캐릭터 가방류 (판다, 곰, 고양이 등)
+        char = ""
+        for c in ["판다", "곰", "고양이", "강아지", "토끼", "캐릭터"]:
+            if c in n:
+                char = c + " "
+                break
+        material = ""
+        if "니트" in n or "뜨개" in n:
+            material = "니트백 뜨개"
+        elif "가죽" in n:
+            material = "가죽"
+        bag_type = "미니크로스백" if "크로스" in n or "미니" in n else "숄더백"
+        return f"{char}{material} {bag_type} 여성 캐릭터가방".strip()[:50]
+
+    if any(k in n for k in ["팔찌"]):
+        material = ""
+        if "쿼츠" in n or "로즈" in n:
+            material = "로즈쿼츠 천연석 "
+        elif "복숭아" in n or "꽃" in n:
+            material = "플라워 구슬 "
+        return f"{material}팔찌 여성 패션팔찌 행운팔찌"[:50]
+
+    if any(k in n for k in ["키링", "열쇠고리"]) and "털" in n:
+        return f"털키링 폼폼 가방키링 인형키링 포인트소품"[:50]
+
+    # 기본: 원본 핵심어 유지하되 불필요 수식어 제거
+    skip = {"귀여운", "예쁜", "패션", "여성", "남성", "제품", "상품", "국내", "소품",
+            "악세사리", "악세서리", "아이템", "잡화", "용", "및", "기타"}
     core = [t for t in tokens if t not in skip]
-
-    # 카테고리별 SEO 접미어 추가
-    suffix = ""
-    # 포장/생활용품 먼저 체크 (패션 스티커와 구분)
-    if any(k in n for k in ["택배", "포장", "노루지", "유산지", "비닐", "봉투", "박스", "에어캡"]):
-        # 취급주의/파손주의 스티커 → 실검색어 기반 완전 재작성
-        if any(k in n for k in ["취급주의", "파손주의", "깨짐주의", "경고"]):
-            # 수량 토큰 추출 (1000매, 500장 등)
-            qty = next((t for t in tokens if any(c.isdigit() for c in t)), "")
-            qty_str = f" {qty}" if qty else ""
-            return f"파손주의 스티커 택배 라벨 코팅 낱장{qty_str} 배송용"[:50]
-        suffix = "업소용 대량 포장재"
-    elif any(k in n for k in ["오링", "o링", "d고리", "버클", "키링", "열쇠고리", "구슬체인", "군번줄"]):
-        suffix = "DIY 부자재 액세서리"
-    elif any(k in n for k in ["노트", "수첩", "줄노트", "체크보드", "플래너", "메모"]):
-        suffix = "문구 사무용품"
-    elif any(k in n for k in ["자석", "마그넷", "냉장고자석"]):
-        suffix = "인테리어 소품 선물"
-    elif any(k in n for k in ["타투", "문신"]) or ("스티커" in n and "택배" not in n and "취급" not in n):
-        suffix = "방수 임시문신 패션"
-    elif any(k in n for k in ["헤어핀", "집게핀", "머리핀", "바렛"]):
-        suffix = "여성 헤어 악세사리"
-    elif any(k in n for k in ["헤어밴드", "머리띠"]):
-        suffix = "여성 헤어 악세사리"
-    elif any(k in n for k in ["귀걸이", "이어링"]):
-        suffix = "여성 패션 주얼리"
-    elif any(k in n for k in ["목걸이", "네클리스"]):
-        suffix = "여성 패션 주얼리"
-    elif any(k in n for k in ["반지", "팔찌", "발찌"]):
-        suffix = "여성 패션 주얼리"
-    elif any(k in n for k in ["바퀴커버", "바퀴", "캐리어커버"]):
-        suffix = "실리콘 소음 방지"
-    elif any(k in n for k in ["캐리어", "여행용가방", "트롤리"]):
-        suffix = "여행 가방 대용량"
-    elif any(k in n for k in ["파우치", "화장품파우치"]):
-        suffix = "여성 패션 가방"
-    elif any(k in n for k in ["백팩", "크로스백", "숄더백"]):
-        suffix = "여성 패션 가방"
-    elif any(k in n for k in ["키링", "열쇠고리"]):
-        suffix = "가방 꾸미기 선물"
-    elif any(k in n for k in ["모자", "야구모자", "버킷햇"]):
-        suffix = "패션 소품 여름"
-    elif any(k in n for k in ["양말"]):
-        suffix = "여성 패션 양말"
-    elif any(k in n for k in ["스카프", "머플러"]):
-        suffix = "여성 패션 소품"
-
-    # core 토큰 최대 5개 + suffix
-    base = ' '.join(core[:5])
-    result = f"{base} {suffix}".strip() if suffix else base
-    return result[:50]  # 도매꾹 상품명 최대 50자
+    return ' '.join(core[:6])[:50]
 
 
 def make_seo_keywords(original: str) -> list:
