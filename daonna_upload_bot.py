@@ -553,71 +553,11 @@ def get_category_code(product_name: str) -> str:
     return "01_22_01_00_00_00"
 
 
-def make_detail_html(name: str, orig_name: str, price_disp: str) -> str:
-    """카테고리별 상품 상세 HTML 템플릿 생성"""
-    n = orig_name.lower()
-
-    # 카테고리 분류
-    if any(k in n for k in ["택배", "포장", "노루지", "유산지", "에어캡", "봉투", "박스"]):
-        features = ["강력 접착력으로 박스에 단단히 부착", "코팅 처리 — 물기·습기에 강함", "선명한 인쇄로 경고 내용 명확히 전달", "낱장 타입으로 필요한 만큼 사용", "업소·물류센터 대량 사용에 최적"]
-        specs = [("용도", "포장·배송용"), ("수량", "대용량"), ("재질", "코팅 스티커")]
-        note = "업소용 대량 포장재"
-    elif any(k in n for k in ["오링", "o링", "d고리", "버클", "키링", "구슬체인", "군번줄", "열쇠고리"]):
-        features = ["고급 도금 처리로 변색 방지", "내구성 강한 금속 소재", "DIY 액세서리·키링 제작에 최적", "다양한 크기·컬러 선택 가능", "소량~대량 구매 가능"]
-        specs = [("소재", "금속 (도금 처리)"), ("용도", "DIY 부자재·키링")]
-        note = "핸드메이드·DIY 소품 제작"
-    elif any(k in n for k in ["팔찌", "반지", "목걸이", "귀걸이"]):
-        features = ["트렌디한 디자인으로 어디에나 어울림", "가볍고 착용감 우수", "선물용으로도 제격", "합리적인 도매가", "패션 포인트 아이템"]
-        specs = [("소재", "합금·비즈"), ("용도", "패션 액세서리")]
-        note = "데일리 패션 아이템"
-    elif any(k in n for k in ["자석", "마그넷"]):
-        features = ["강력 자석으로 냉장고에 단단히 부착", "감각적인 미니어처 디자인", "인테리어 소품 및 선물용으로 인기", "가볍고 설치 간편", "다양한 디자인 구성"]
-        specs = [("소재", "합성수지+자석"), ("용도", "냉장고·냉동고 부착")]
-        note = "인테리어 소품·기념품"
-    elif any(k in n for k in ["노트", "수첩", "줄노트", "플래너", "체크보드", "메모"]):
-        features = ["휴대하기 편한 소형 사이즈", "부드러운 필기감", "귀여운 디자인으로 인기 아이템", "학교·사무실·다이어리 용도", "선물용으로도 적합"]
-        specs = [("용도", "메모·필기·플래너"), ("사이즈", "휴대용")]
-        note = "문구·사무용품"
-    else:
-        features = ["고품질 소재 사용", "트렌디한 디자인", "합리적인 도매가", "다양한 활용 가능", "선물용으로도 적합"]
-        specs = [("소재", "고급 소재"), ("용도", "패션 소품")]
-        note = "패션·생활 소품"
-
-    features_html = "\n".join(f"    <li>{f}</li>" for f in features)
-    specs_html = ""
-    for i, (k, v) in enumerate(specs):
-        border = "border-bottom:1px solid #ddd;" if i < len(specs)-1 else ""
-        specs_html += f'<tr style="{border}"><td style="padding:8px;color:#666;width:40%;">{k}</td><td style="padding:8px;font-weight:bold;">{v}</td></tr>\n'
-
-    return f"""<div style="text-align:center;max-width:800px;margin:0 auto;font-family:나눔고딕,sans-serif;">
-
-<h2 style="font-size:22px;color:#222;margin:30px 0 10px;">{name}</h2>
-<p style="color:#e44;font-size:16px;font-weight:bold;margin-bottom:30px;">도매가 {price_disp}원</p>
-
-<div style="background:#fff8f0;border:2px solid #f90;border-radius:8px;padding:20px;margin:20px 0;text-align:left;">
-  <h3 style="font-size:16px;color:#333;margin:0 0 12px;">✅ 상품 특징</h3>
-  <ul style="margin:0;padding-left:20px;line-height:2;color:#444;">
-{features_html}
-  </ul>
-</div>
-
-<div style="background:#f5f5f5;border-radius:8px;padding:20px;margin:20px 0;text-align:left;">
-  <h3 style="font-size:16px;color:#333;margin:0 0 12px;">📦 상품 정보</h3>
-  <table style="width:100%;border-collapse:collapse;font-size:14px;">
-{specs_html}  </table>
-</div>
-
-<div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:20px;margin:20px 0;text-align:left;">
-  <h3 style="font-size:16px;color:#333;margin:0 0 12px;">🚚 배송 안내</h3>
-  <p style="font-size:14px;color:#555;line-height:1.8;margin:0;">
-    · 주문 당일 출고 (평일 기준)<br>
-    · 택배 배송비 3,000원 (제주·도서산간 추가 발생)<br>
-    · 대량 주문 시 별도 문의
-  </p>
-</div>
-
-<p style="font-size:12px;color:#999;margin-top:20px;">※ {note} / 모니터 환경에 따라 실제 색상과 다소 차이가 있을 수 있습니다.</p>
-</div>"""
+def make_detail_html(img_url: str) -> str:
+    """상품 상세 HTML — esmplus 이미지 URL을 center+img 태그로 감싸서 반환"""
+    if img_url:
+        return f'<center><img src="{img_url}" /></center>'
+    return ""
 
 
 async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> bool:
@@ -866,9 +806,9 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
         print(f"  [키워드] {kw_tokens} → {kw_set}", flush=True)
         await asyncio.sleep(0.3)
 
-        # 상품 상세 내용 — 카테고리별 템플릿 생성
-        price_disp = f"{int(price):,}" if price.isdigit() else price
-        desc = make_detail_html(name, orig_name, price_disp)
+        # 상품 상세 내용 — esmplus 이미지 URL 사용
+        img_url = product.get("_img_url", "")
+        desc = make_detail_html(img_url)
         desc_escaped = desc.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
 
         # 상세내용 작성하기 버튼 클릭 → 에디터 팝업 열기
