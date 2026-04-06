@@ -102,6 +102,8 @@ async def get_product_info(page, item_id: str) -> dict:
                     .map(img => img.getAttribute('data-src') || img.getAttribute('src') || '')
                     .filter(src => {
                         if (!src || src.startsWith('data:') || src === '#' || src === '' || seen.has(src)) return false;
+                        // 공급사 이미지(esmplus)만 포함 — 다른 판매자 추천 이미지(cdn1.domeggook.com) 제외
+                        if (!src.includes('esmplus.com')) return false;
                         seen.add(src); return true;
                     })
                     .map(src => '<p><img src="' + src + '" style="max-width:100%;display:block;margin:10px auto;"></p>');
@@ -480,7 +482,8 @@ def seo_title(original: str) -> str:
         return f"O링 오링 키링부자재 DIY {qty}".strip()[:50]
 
     if any(k in n for k in ["d고리", "디고리"]):
-        color = "금색" if "금" in n or "gold" in n else "은색"
+        # "도금"의 "금"에 오인식 방지 — 명시적 "금색"/"골드"가 있고 "은색"이 없을 때만 금색
+        color = "금색" if ("금색" in n or "gold" in n) and "은색" not in n else "은색"
         return f"D고리 {color} 버클 키링부자재 열쇠고리 DIY {qty}".strip()[:50]
 
     if any(k in n for k in ["구슬체인", "군번줄"]):
@@ -1257,6 +1260,11 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
                     break
                 await asyncio.sleep(1)
 
+            # 상품 no 추출 (상세내용 설정에서 사용)
+            import re as _re
+            _no_match = _re.search(r'[?&]no=(\d+)', page.url)
+            registered_no = _no_match.group(1) if _no_match else None
+
             opt_alert_msgs = []
             def _on_opt_dialog(d):
                 opt_alert_msgs.append(d.message)
@@ -1295,6 +1303,74 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
         except Exception as e:
             print(f"  [등록옵션] 오류: {e}", flush=True)
 
+        # 상세내용 설정 — addItem에는 textarea 없으므로 editItem에서 별도 저장
+        if registered_no and desc:
+            print(f"  [상세내용] editItem으로 이동하여 상세내용 저장 (no={registered_no})", flush=True)
+            try:
+                edit_url = f"https://domeggook.com/main/mySell/register/my_sellInfoForm.php?mode=editItem&no={registered_no}"
+                await page.goto(edit_url, wait_until="domcontentloaded", timeout=20000)
+                await asyncio.sleep(2)
+                # 다이얼로그 닫기
+                await page.evaluate("""
+                    () => {
+                        document.querySelectorAll('.pDialog, .pDialogOverlay, .pOverlay').forEach(el => {
+                            el.style.display = 'none';
+                        });
+                        window.confirm = () => true;
+                    }
+                """)
+                await asyncio.sleep(0.3)
+
+                detail_set = await page.evaluate(f"""
+                    () => {{
+                        const ta = document.querySelector('textarea[name="itemMemo[Item]"]');
+                        if (!ta) return 'NO_TEXTAREA';
+                        ta.value = `{desc_escaped}`;
+                        ta.dispatchEvent(new Event('change'));
+                        if (typeof lEditorPopupSubmit === 'function') {{
+                            lEditorPopupSubmit([`{desc_escaped}`, '', '', '']);
+                        }}
+                        window.itemMemoExist = true;
+                        return 'OK:' + ta.value.length;
+                    }}
+                """)
+                print(f"  [상세내용] 설정: {detail_set}", flush=True)
+
+                if "OK" in str(detail_set):
+                    # 저장 (validator 우회 후 제출)
+                    detail_alert = []
+                    def _on_detail_dlg(d):
+                        detail_alert.append(d.message)
+                        asyncio.ensure_future(d.accept())
+                    page.on("dialog", _on_detail_dlg)
+                    await page.evaluate("""
+                        () => {
+                            window.confirm = () => true;
+                            window.itemMemoExist = true;
+                            if (window.module && module.submitController && module.submitController.submit) {
+                                module.submitController.submit();
+                            } else {
+                                const btn = document.querySelector('#lItemRegBtnSubmit button');
+                                if (btn) btn.click();
+                            }
+                        }
+                    """)
+                    await asyncio.sleep(4)
+                    # sellOptionForm 다시 나오면 바로 제출
+                    if "sellOptionForm" in page.url:
+                        await page.evaluate("""
+                            () => {
+                                window.confirm = () => true;
+                                const frm = document.getElementById('frmRegOption');
+                                if (frm) { chkRegister(frm); frm.submit(); }
+                            }
+                        """)
+                        await asyncio.sleep(3)
+                    page.remove_listener("dialog", _on_detail_dlg)
+                    print(f"  [상세내용] 저장 완료", flush=True)
+            except Exception as e:
+                print(f"  [상세내용] 오류 (무시): {e}", flush=True)
+
         return True
 
     except Exception as e:
@@ -1312,6 +1388,8 @@ async def main():
 
     # 일일 최대 등록 수 (기본 10개, 인자로 조정 가능)
     max_today = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    # Gemini 건너뛰기 플래그
+    skip_gemini = "--no-gemini" in sys.argv
 
     # 대상 상품 로드
     data = json.loads(MISSING_FILE.read_text(encoding="utf-8"))
@@ -1401,30 +1479,45 @@ async def main():
                 print(f"  ✅ 기존 썸네일 재사용 ({thumb_path.stat().st_size//1024}KB): {thumb_path.name}", flush=True)
                 gemini_ok = True
             else:
-                gemini_ok = await generate_gemini_thumb(gemini_page, orig_path, name, thumb_path)
+                if skip_gemini:
+                    print(f"  ⏭ Gemini 건너뜀 (--no-gemini)", flush=True)
+                    gemini_ok = False
+                else:
+                    gemini_ok = await generate_gemini_thumb(gemini_page, orig_path, name, thumb_path)
 
             if not gemini_ok:
-                # Gemini 실패 시 → 상세페이지 이미지 중 텍스트 없는 것(정방형에 가까운 것) 선택
-                print(f"  ⚠️ Gemini 실패 → 상세이미지에서 썸네일 대체 시도", flush=True)
-                detail_html = product.get("_detail_imgs", "")
-                detail_urls = re.findall(r'src="([^"]+)"', detail_html)
+                # Gemini 실패 시 → esmplus 원본 이미지 상단 정방형 크롭으로 대체
+                print(f"  ⚠️ Gemini 실패 → esmplus 원본 이미지 크롭으로 대체 시도", flush=True)
+                esm_url = product.get("_img_url", "")
                 fallback_ok = False
-                for durl in detail_urls:
+                if esm_url:
                     try:
                         fallback_path = THUMB_DIR / f"{pid}_fallback.jpg"
-                        if not download_image(durl, fallback_path):
-                            continue
-                        img = Image.open(fallback_path).convert("RGB")
-                        w, h = img.size
-                        ratio = w / h if h else 0
-                        # 정방형에 가까운 이미지(0.7~1.5 비율)만 사용 — 텍스트배너(가로로 긴)는 제외
-                        if 0.7 <= ratio <= 1.5:
-                            img.resize((760, 760), Image.LANCZOS).save(str(thumb_path), "JPEG", quality=92)
-                            print(f"  ✅ 상세이미지 썸네일 대체 성공: {durl[:60]}", flush=True)
+                        if download_image(esm_url, fallback_path):
+                            img = Image.open(fallback_path).convert("RGB")
+                            w, h = img.size
+                            ratio = w / h if h else 0
+                            if ratio >= 0.65:
+                                # 정방형이거나 가로로 긴 이미지 → 중앙 크롭
+                                side = min(w, h)
+                                left = (w - side) // 2
+                                top = (h - side) // 2
+                                crop = img.crop((left, top, left + side, top + side))
+                            else:
+                                # 세로로 긴 스트립 (esmplus 상세 합본) → 상단 정방형 크롭
+                                side = w
+                                crop = img.crop((0, 0, side, side))
+                            # 흰 배경 760x760 캔버스에 90% 크기로 중앙 배치 (원본과 시각적으로 다르게)
+                            canvas = Image.new("RGB", (760, 760), (255, 255, 255))
+                            inner = int(760 * 0.88)
+                            resized = crop.resize((inner, inner), Image.LANCZOS)
+                            offset = (760 - inner) // 2
+                            canvas.paste(resized, (offset, offset))
+                            canvas.save(str(thumb_path), "JPEG", quality=92)
+                            print(f"  ✅ esmplus 크롭+흰배경 썸네일 저장 ({w}x{h} → {side}x{side})", flush=True)
                             fallback_ok = True
-                            break
-                    except Exception:
-                        continue
+                    except Exception as e:
+                        print(f"  ❌ esmplus 크롭 실패: {e}", flush=True)
                 if not fallback_ok:
                     print(f"  ❌ 썸네일 대체 실패 → 건너뜀 (나중에 재시도)", flush=True)
                     prog["failed"].append(pid)
