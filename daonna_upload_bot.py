@@ -706,8 +706,11 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
     # 공급사 코드 (compare.json의 _supplier 필드 또는 기본값 uu)
     supplier_code = SUPPLIER_ITEM_CODE.get(product.get("_supplier", "유유팩토리"), "uu")
     # 배송비: 원본 상품 페이지 스크랩값 우선, 없으면 3000원 기본
+    # 단, free/0원 감지 시에도 프로젝트 설정(3000원 고정)으로 강제 세팅
     deli_info = product.get("_deli_info", {"type": "fix", "amount": "3000"})
     deli_amount = deli_info.get("amount", "3000")
+    if not deli_amount or deli_amount == "0":
+        deli_amount = "3000"
     # 재고수량: 210~311 랜덤
     import math, random
     stock_qty = str(random.randint(210, 311))
