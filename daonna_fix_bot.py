@@ -35,8 +35,26 @@ def load_product_map() -> dict:
     return result
 
 
+async def fetch_domeggook_thumb(page, pid: str) -> str | None:
+    """도매꾹 상품 페이지에서 실제 썸네일 URL (cdn1, 정방형) 가져오기"""
+    try:
+        await page.goto(f"https://domeggook.com/main/item/itemView.php?no={pid}",
+                        wait_until="domcontentloaded", timeout=15000)
+        await asyncio.sleep(1.5)
+        src = await page.evaluate("""
+            () => {
+                const el = document.querySelector('img[id*=Thumb], #lItemMainImg, #lMainImg');
+                return el ? (el.src || el.getAttribute('src') || '') : '';
+            }
+        """)
+        return src if src and src.startswith("http") else None
+    except Exception as e:
+        print(f"  ⚠️ 썸네일 URL 추출 실패: {e}", flush=True)
+        return None
+
+
 def make_thumb(img_url: str, pid: str) -> Path | None:
-    """esmplus URL → 흰 배경 760×760 썸네일 생성"""
+    """이미지 URL → 흰 배경 760×760 썸네일 생성"""
     THUMB_DIR.mkdir(parents=True, exist_ok=True)
     tmp = THUMB_DIR / f"{pid}_fix_tmp.jpg"
     out = THUMB_DIR / f"{pid}_thumb_fix.jpg"
@@ -51,6 +69,7 @@ def make_thumb(img_url: str, pid: str) -> Path | None:
             left, top = (w - side) // 2, (h - side) // 2
             crop = img.crop((left, top, left + side, top + side))
         else:
+            # 세로 스트립: 상단 크롭
             side = w
             crop = img.crop((0, 0, side, side))
         canvas = Image.new("RGB", (760, 760), (255, 255, 255))
@@ -158,15 +177,18 @@ async def get_daonna_no(page, pid: str, name: str) -> str | None:
 
 async def fix_product(page, daonna_no: str, img_url: str, pid: str, name: str):
     """editItem에서 썸네일 + 상세내용 수정 후 저장"""
+    fixed = []
+
+    # 1. 썸네일 — 도매꾹 상품 페이지 정방형 썸네일 우선, 없으면 esmplus fallback
+    dg_thumb_url = await fetch_domeggook_thumb(page, pid)
+    thumb_src = dg_thumb_url or img_url
+    print(f"  [썸네일 소스] {'도매꾹cdn' if dg_thumb_url else 'esmplus'}: {thumb_src[:70]}", flush=True)
+    thumb_path = make_thumb(thumb_src, pid)
+
     edit_url = f"https://domeggook.com/main/mySell/register/my_sellInfoForm.php?mode=editItem&no={daonna_no}"
     await page.goto(edit_url, wait_until="domcontentloaded", timeout=20000)
     await asyncio.sleep(2)
     await dismiss_dialogs(page)
-
-    fixed = []
-
-    # 1. 썸네일
-    thumb_path = make_thumb(img_url, pid)
     if thumb_path:
         try:
             fi = page.locator('#lImageNormal, input[name="image0"]').first
