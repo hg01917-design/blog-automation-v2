@@ -576,15 +576,6 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             try:
                 prompt = fetch_prompt(blog_id, keyword, on_log)
                 prompt = prompt + _BOLD_RULE
-                # 여행 블로그(Notion 모드): 장소 1곳 심층 작성 규칙 추가
-                if blog_id in {"triplog"}:
-                    prompt += (
-                        "\n\n[장소 심층 작성 규칙 — 필수]\n"
-                        "이 키워드를 검색하는 사람은 '어디가 좋은지'를 모르는 상태야.\n"
-                        "키워드에서 가장 적합한 장소(관광지·식당·숙소·코스) 1곳을 직접 선정해서 그 장소만 깊게 작성해.\n"
-                        "예) '속초 여행 추천 강원도 뚜벅이' → '속초 영금정' 1곳 집중\n"
-                        "여러 장소를 나열하는 가이드 글 금지. 1곳의 볼거리·먹거리·교통·시간·꿀팁을 구체적으로 작성해.\n"
-                    )
             except Exception as e:
                 log(f"[Notion] 프롬프트 가져오기 실패: {e}")
                 log("[Notion] 기본 프롬프트로 진행합니다.")
