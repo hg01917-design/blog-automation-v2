@@ -841,26 +841,29 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
         await asyncio.sleep(0.5)
 
         # 상품명 입력
+        await page.click('input[name="itemTitle"]')
         await page.fill('input[name="itemTitle"]', name)
 
-        # 키워드 입력 (SEO 검색어 기반, 최대 10개) — lKeywordTmp 개별 필드 방식
+        # 키워드 입력 (SEO 검색어 기반, 최대 10개) — 클릭 후 입력
         kw_tokens = make_seo_keywords(orig_name)
-        kw_set = await page.evaluate("""
+        kw_inputs = await page.evaluate("() => [...document.querySelectorAll('input.lKeywordTmp')].map((_, i) => i)")
+        for i, _ in enumerate(kw_inputs):
+            if i >= len(kw_tokens):
+                break
+            try:
+                loc = page.locator('input.lKeywordTmp').nth(i)
+                await loc.click()
+                await loc.fill(kw_tokens[i])
+            except Exception:
+                pass
+        # hidden 필드도 동기화
+        await page.evaluate("""
             (kws) => {
-                // hidden 필드
                 const hidden = document.getElementById('lKeyword') || document.querySelector('input[name="itemKeyword"]');
                 if (hidden) { hidden.value = kws.join(','); hidden.dispatchEvent(new Event('change')); }
-                // lKeywordTmp 개별 입력 필드에 하나씩
-                const inputs = [...document.querySelectorAll('input.lKeywordTmp')];
-                inputs.forEach((inp, i) => {
-                    inp.value = i < kws.length ? kws[i] : '';
-                    inp.dispatchEvent(new Event('input'));
-                    inp.dispatchEvent(new Event('change'));
-                });
-                return inputs.length + '개 필드';
             }
         """, kw_tokens)
-        print(f"  [키워드] {kw_tokens} → {kw_set}", flush=True)
+        print(f"  [키워드] {kw_tokens}", flush=True)
         await asyncio.sleep(0.3)
 
         # 상품 상세 내용 — esmplus 이미지 URL 사용
@@ -924,6 +927,7 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
 
         # 판매가 입력 (lAmt1Tmp = 가시 입력 필드, lAmt1 = hidden 실제 값)
         if price:
+            await page.click('#lAmt1Tmp')
             await page.fill('#lAmt1Tmp', price)
             await page.evaluate(f"""
                 () => {{
