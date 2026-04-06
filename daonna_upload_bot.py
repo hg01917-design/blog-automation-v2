@@ -54,21 +54,21 @@ def parse_price(price_str: str) -> str:
 
 
 async def get_product_info(page, item_id: str) -> dict:
-    """도매꾹 상품 페이지에서 대표 이미지 URL + 상세설명 HTML + 카테고리 코드 추출.
-    ※ 스크롤 금지 — imageHook()이 사이드바 이미지를 lInfoViewItemContents에 오염시키기 때문."""
-    url = f"https://domeggook.com/main/item/itemView.php?no={item_id}"
+    """도매매 상품 페이지에서 대표 이미지 URL + 카테고리 코드 + 공급단가 추출.
+    카테고리/이미지는 도매꾹 페이지에서, 공급단가는 도매매 페이지에서 가져옴."""
+
+    # 1. 도매꾹 페이지 — 대표이미지 + 카테고리
+    dg_url = f"https://domeggook.com/main/item/itemView.php?no={item_id}"
     try:
-        await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        await page.goto(dg_url, wait_until="domcontentloaded", timeout=20000)
         await asyncio.sleep(2)
     except Exception as e:
-        print(f"  [상품정보] 페이지 로드 실패: {e}", flush=True)
+        print(f"  [상품정보] 도매꾹 페이지 로드 실패: {e}", flush=True)
         return {}
 
-    # 스크롤 안 함 — imageHook 실행 방지 (사이드바 이미지 오염 차단)
-
-    return await page.evaluate("""
+    dg_info = await page.evaluate("""
         () => {
-            // 대표 이미지 — data-src 우선 (lazy-load 원본 URL), 없으면 src
+            // 대표 이미지
             const thumbImg = document.getElementById('lThumbImg')
                           || document.querySelector('#lThumbImgWrap img')
                           || document.querySelector('img[data-src*="_img_760"], img[src*="_img_760"]');
@@ -76,7 +76,7 @@ async def get_product_info(page, item_id: str) -> dict:
                 ? (thumbImg.getAttribute('data-src') || thumbImg.src)
                 : null;
 
-            // 카테고리 코드 — 브레드크럼 cat= 파라미터에서 추출 (카테고리 제한 없이 원본 그대로)
+            // 카테고리 코드 — 브레드크럼 cat= 파라미터에서 추출
             let categoryCode = '';
             const catLinks = [...document.querySelectorAll('a[href*="cat="]')];
             for (let i = catLinks.length - 1; i >= 0; i--) {
@@ -84,7 +84,6 @@ async def get_product_info(page, item_id: str) -> dict:
                 const m = href.match(/[?&]cat=([0-9_]+)/);
                 if (m && m[1]) {
                     const parts = m[1].replace(/_+$/, '').split('_').filter(p => p !== '');
-                    // 3단계 이상 & 마지막 유효 코드가 00이 아니면 사용
                     if (parts.length >= 3 && parts[parts.length - 1] !== '00') {
                         while (parts.length < 6) parts.push('00');
                         categoryCode = parts.slice(0, 6).join('_');
@@ -93,44 +92,55 @@ async def get_product_info(page, item_id: str) -> dict:
                 }
             }
 
-            // 상세 이미지 — data-src 우선 (imageHook 실행 전 lazy-load 원본 URL)
-            // lInfoViewItemContents 안 img 태그만. 스크롤 안 했으므로 사이드바 오염 없음.
+            // 상세 이미지
             const detailEl = document.getElementById('lInfoViewItemContents');
             let detailImgHtml = '';
             if (detailEl) {
-                const imgs = [...detailEl.querySelectorAll('img')];
                 const seen = new Set();
-                const imgTags = imgs
-                    .map(img => {
-                        // data-src 우선 (lazy-load 원본), 없으면 src
-                        return img.getAttribute('data-src') || img.getAttribute('src') || '';
-                    })
+                const imgTags = [...detailEl.querySelectorAll('img')]
+                    .map(img => img.getAttribute('data-src') || img.getAttribute('src') || '')
                     .filter(src => {
                         if (!src || src.startsWith('data:') || src === '#' || src === '' || seen.has(src)) return false;
-                        seen.add(src);
-                        return true;
+                        seen.add(src); return true;
                     })
                     .map(src => `<p><img src="${src}" style="max-width:100%;display:block;margin:10px auto;"></p>`);
                 detailImgHtml = imgTags.join('');
             }
 
-            // 공급가(도매가) — 상품 페이지 가격 영역에서 추출
-            let supplyPrice = '';
-            const priceEls = [
-                document.querySelector('.lItemPrice, #lItemPrice, .itemPrice'),
-                document.querySelector('[class*="price"] strong, [class*="Price"] strong'),
-                document.querySelector('strong.price, span.price'),
-            ];
-            for (const el of priceEls) {
-                if (el && el.innerText) {
-                    const nums = el.innerText.replace(/[^\d]/g, '');
-                    if (nums && parseInt(nums) > 0) { supplyPrice = nums; break; }
-                }
-            }
-
-            return { imgUrl, detailImgHtml, categoryCode, supplyPrice };
+            return { imgUrl, detailImgHtml, categoryCode };
         }
     """)
+
+    # 2. 도매매 페이지 — 공급단가
+    dm_url = f"https://domeme.domeggook.com/s/{item_id}"
+    supply_price = ''
+    try:
+        await page.goto(dm_url, wait_until="domcontentloaded", timeout=20000)
+        await asyncio.sleep(2)
+        supply_price = await page.evaluate("""
+            () => {
+                // 가격 요소 — 숫자+원 패턴에서 첫 번째 유효한 가격
+                const candidates = [...document.querySelectorAll('*')]
+                    .filter(e => e.children.length === 0 && e.innerText)
+                    .map(e => e.innerText.trim())
+                    .filter(t => /^[\\d,]+원$/.test(t));
+                for (const t of candidates) {
+                    const n = parseInt(t.replace(/[^\\d]/g, ''));
+                    if (n >= 100) return String(n);
+                }
+                return '';
+            }
+        """)
+        print(f"  [도매매] 공급단가: {supply_price}원", flush=True)
+    except Exception as e:
+        print(f"  [도매매] 페이지 로드 실패: {e}", flush=True)
+
+    return {
+        "imgUrl": dg_info.get("imgUrl"),
+        "detailImgHtml": dg_info.get("detailImgHtml", ""),
+        "categoryCode": dg_info.get("categoryCode", ""),
+        "supplyPrice": supply_price,
+    }
 
 
 async def get_product_image_url(page, item_id: str) -> str | None:
