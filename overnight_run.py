@@ -227,6 +227,9 @@ def _extract_core_words(keyword):
         '방법', '추천', '정리', '비교', '후기', '종류', '가이드',
         '및', '또는', '그리고', '하는', '위한', '대한', '좋은', '최고',
         '가장', '진짜', '완벽', '꿀팁', '팁', '꿀',
+        # 여행/블로그 자주 쓰는 수식어
+        '코스', '여행', '일정', '동선', '정복', '완주', '완전', '정보',
+        '소개', '총정리', '핵심', '필수', '최신', '2026', '2025',
     }
     words = keyword.split()
     core = [w for w in words if len(w) >= 2 and w not in STOP_WORDS]
@@ -285,9 +288,11 @@ def check_keyword_duplicate_in_notion(blog_id, keyword):
 
 
 def check_duplicate_post(blog_id, keyword, on_log=None):
-    """네이버 블로그에서 유사 주제 글이 이미 있는지 확인한다.
+    """블로그 타입에 맞게 중복 글 여부를 확인한다.
 
-    핵심 단어로 블로그 내 검색 → 기존 글 제목에 핵심 단어가 포함되면 중복.
+    1단계: SQLite DB에서 이미 발행/임시저장된 유사 키워드 확인 (모든 블로그 공통)
+    2단계: 블로그별 실제 발행 글 검색 (Naver/WP/Tistory 각각 다른 방법)
+
     Returns: (is_duplicate: bool, matched_title: str or None)
     """
     def _log(msg):
@@ -297,48 +302,121 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
     core_words = _extract_core_words(keyword)
     _log(f"[유사문서] 핵심 단어: {core_words}")
 
-    # 네이버 블로그 검색 API (RSS)
-    search_query = "+".join(core_words)
-    search_url = (
-        f"https://blog.naver.com/PostSearchList.naver?"
-        f"blogId={blog_id}&searchText={urllib.parse.quote(search_query)}"
-        f"&orderType=sim&directAccess=false"
-    )
-
+    # ── 1단계: SQLite DB 중복 체크 (모든 블로그 공통) ─────────────────
     try:
-        req = urllib.request.Request(search_url, headers={
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
-        })
-        resp = urllib.request.urlopen(req, timeout=10)
-        html = resp.read().decode("utf-8", errors="ignore")
-
-        # 글 제목 추출 (네이버 블로그 검색 결과 HTML에서)
-        titles = re.findall(r'<span class="ell">(.*?)</span>', html)
-        if not titles:
-            titles = re.findall(r'class="pcol2"[^>]*>(.*?)</a>', html)
-        if not titles:
-            titles = re.findall(r'title="([^"]+)"', html)
-
-        # HTML 태그 제거
-        clean_titles = [re.sub(r'<[^>]+>', '', t).strip() for t in titles]
-        clean_titles = [t for t in clean_titles if len(t) > 5]
-
-        _log(f"[유사문서] {blog_id} 검색 결과: {len(clean_titles)}개 글")
-
-        # 핵심 단어 2개 이상 포함된 제목이 있으면 중복
-        for t in clean_titles[:10]:
-            match_count = sum(1 for w in core_words if w in t)
-            if match_count >= 2 or (len(core_words) == 1 and match_count >= 1):
-                _log(f"[유사문서] ⚠ 유사 글 발견: \"{t}\"")
-                _log(f"[유사문서] 매칭 단어: {[w for w in core_words if w in t]}")
-                return True, t
-
-        _log(f"[유사문서] 유사 글 없음 — 진행 가능")
-        return False, None
-
+        from keyword_engine.db_handler import _conn
+        with _conn() as db:
+            rows = db.execute(
+                """SELECT keyword FROM keyword_blog_status
+                   WHERE blog_id = ? AND status IN ('published', 'draft_saved', 'in_progress')""",
+                (blog_id,),
+            ).fetchall()
+        existing_keywords = [r[0] for r in rows]
+        for ek in existing_keywords:
+            ek_core = set(_extract_core_words(ek))
+            kw_core = set(core_words)
+            # 핵심 단어 절반 이상 겹치면 중복
+            overlap = ek_core & kw_core
+            if len(overlap) >= max(2, len(kw_core) * 0.5):
+                _log(f"[유사문서] ⚠ DB 중복 키워드: '{ek}' (겹침: {overlap})")
+                return True, ek
     except Exception as e:
-        _log(f"[유사문서] 검색 실패: {e} — 안전하게 진행")
-        return False, None
+        _log(f"[유사문서] DB 체크 실패: {e}")
+
+    # ── 2단계: 블로그별 실제 발행 글 확인 ───────────────────────────
+    WP_BLOGS = {
+        "baremi542": ("TRIPLOG_WP_URL", "TRIPLOG_WP_USER", "TRIPLOG_WP_APP_PASSWORD"),  # 오타 방어
+        "triplog":   ("TRIPLOG_WP_URL", "TRIPLOG_WP_USER", "TRIPLOG_WP_APP_PASSWORD"),
+    }
+    # remote_secrets.json에서 실제 키 확인
+    try:
+        _sec = json.loads(Path(__file__).parent.joinpath("remote_secrets.json").read_text())
+    except Exception:
+        _sec = {}
+
+    if blog_id == "baremi542":
+        _wp_url = _sec.get("WP_URL", "")
+        _wp_user = _sec.get("WP_USER", "")
+        _wp_pass = _sec.get("WP_APP_PASSWORD", "")
+    elif blog_id == "triplog":
+        _wp_url = _sec.get("TRIPLOG_WP_URL", "")
+        _wp_user = _sec.get("TRIPLOG_WP_USER", "")
+        _wp_pass = _sec.get("TRIPLOG_WP_APP_PASSWORD", "")
+    else:
+        _wp_url = _wp_user = _wp_pass = ""
+
+    if _wp_url and _wp_user:
+        # WordPress REST API로 유사 제목 검색
+        try:
+            import base64 as _b64, ssl as _ssl
+            _auth = _b64.b64encode(f"{_wp_user}:{_wp_pass}".encode()).decode()
+            _ctx = _ssl.create_default_context(); _ctx.check_hostname = False; _ctx.verify_mode = 0
+            _search_q = urllib.parse.urlencode({"search": " ".join(core_words[:3]), "per_page": 20, "status": "publish"})
+            _req = urllib.request.Request(
+                f"{_wp_url}/wp-json/wp/v2/posts?{_search_q}",
+                headers={"Authorization": f"Basic {_auth}"},
+            )
+            _posts = json.loads(urllib.request.urlopen(_req, timeout=10, context=_ctx).read())
+            for p in _posts:
+                title = re.sub(r'<[^>]+>', '', p.get("title", {}).get("rendered", ""))
+                match_count = sum(1 for w in core_words if w in title)
+                if match_count >= max(2, len(core_words) * 0.5):
+                    _log(f"[유사문서] ⚠ WP 중복 발견: \"{title}\" (id={p['id']})")
+                    return True, title
+            _log(f"[유사문서] WP 검색 완료 — {len(_posts)}개 중 중복 없음")
+        except Exception as e:
+            _log(f"[유사문서] WP 검색 실패: {e}")
+
+    elif blog_id in ("nolja100", "goodisak"):
+        # Tistory RSS로 최근 글 확인
+        TISTORY_RSS = {
+            "nolja100": "https://issue.baremi542.com/rss",
+            "goodisak": "https://welfare.baremi542.com/rss",
+        }
+        rss_url = TISTORY_RSS.get(blog_id, "")
+        if rss_url:
+            try:
+                _ctx2 = __import__("ssl").create_default_context(); _ctx2.check_hostname = False; _ctx2.verify_mode = 0
+                _rreq = urllib.request.Request(rss_url, headers={"User-Agent": "Mozilla/5.0"})
+                _rss = urllib.request.urlopen(_rreq, timeout=10, context=_ctx2).read().decode("utf-8", errors="ignore")
+                _rtitles = re.findall(r'<title><!\[CDATA\[(.*?)\]\]></title>', _rss)
+                if not _rtitles:
+                    _rtitles = re.findall(r'<title>(.*?)</title>', _rss)
+                for t in _rtitles[1:21]:  # 첫 번째는 블로그 제목
+                    t_clean = re.sub(r'<[^>]+>', '', t).strip()
+                    match_count = sum(1 for w in core_words if w in t_clean)
+                    if match_count >= max(2, len(core_words) * 0.5):
+                        _log(f"[유사문서] ⚠ Tistory RSS 중복: \"{t_clean}\"")
+                        return True, t_clean
+                _log(f"[유사문서] Tistory RSS 확인 완료 — 중복 없음")
+            except Exception as e:
+                _log(f"[유사문서] Tistory RSS 실패: {e}")
+
+    elif blog_id == "salim1su":
+        # 기존 Naver 블로그 검색
+        search_query = "+".join(core_words)
+        search_url = (
+            f"https://blog.naver.com/PostSearchList.naver?"
+            f"blogId={blog_id}&searchText={urllib.parse.quote(search_query)}"
+            f"&orderType=sim&directAccess=false"
+        )
+        try:
+            req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0"})
+            html = urllib.request.urlopen(req, timeout=10).read().decode("utf-8", errors="ignore")
+            titles = re.findall(r'<span class="ell">(.*?)</span>', html)
+            if not titles:
+                titles = re.findall(r'class="pcol2"[^>]*>(.*?)</a>', html)
+            clean_titles = [re.sub(r'<[^>]+>', '', t).strip() for t in titles if len(t) > 5]
+            for t in clean_titles[:10]:
+                match_count = sum(1 for w in core_words if w in t)
+                if match_count >= 2 or (len(core_words) == 1 and match_count >= 1):
+                    _log(f"[유사문서] ⚠ Naver 중복: \"{t}\"")
+                    return True, t
+        except Exception as e:
+            _log(f"[유사문서] Naver 검색 실패: {e}")
+
+    _log(f"[유사문서] 중복 없음 — 진행 가능")
+    return False, None
 
 
 def _truncate_title(title, max_len=40):
