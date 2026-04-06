@@ -483,21 +483,42 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
         try:
             from mrt_affiliate import get_affiliate_links
             log(f"[파이프라인] triplog — MRT 제휴 링크 조회 중: '{keyword}'")
-            mrt_links = get_affiliate_links(keyword, top_n=3, on_log=log)
+            mrt_links = get_affiliate_links(keyword, top_n=5, on_log=log)
+
+            # 관련성 필터: 키워드의 핵심 지역/도시가 상품 제목에 포함되어야 함
+            if mrt_links:
+                dest_words = _extract_core_words(keyword)  # 핵심 단어 추출
+                # 국내 여행 지역 키워드 (1글자 이상)
+                dest_keywords = [w for w in dest_words if len(w) >= 2 and w not in {
+                    '여행', '코스', '여행코스', '당일치기', '뚜벅이', '드라이브',
+                    '맛집', '숙소', '카페', '일정', '추천', '2박3일', '1박2일',
+                }]
+                relevant_links = []
+                for link in mrt_links:
+                    title = link.get("title", "")
+                    # 지역 키워드가 상품 제목에 하나라도 있어야 관련 있음
+                    if any(dw in title for dw in dest_keywords):
+                        relevant_links.append(link)
+                if len(relevant_links) < len(mrt_links):
+                    log(f"[파이프라인] MRT 관련성 필터: {len(mrt_links)}개 → {len(relevant_links)}개 (지역: {dest_keywords})")
+                mrt_links = relevant_links[:3]
+
             if mrt_links:
                 mrt_ctx = (
                     "\n\n[마이리얼트립 제휴 상품 — 글 하단 '추천 투어' 섹션에 필수 포함]\n"
-                    "아래 상품들을 글 하단에 자연스럽게 소개하고 링크를 그대로 삽입해.\n"
-                    "글 최상단(제목 바로 아래)에 반드시 이 문구를 삽입해:\n"
+                    "글 최상단(첫 문단 전)에 반드시 이 한 줄을 삽입해:\n"
                     "「이 글에는 마이리얼트립 파트너스 프로그램을 통해 소정의 수수료를 받을 수 있는 제휴 링크가 포함되어 있습니다.」\n\n"
+                    "글 맨 하단에 '## 추천 투어' 섹션을 만들고, 아래 상품을 반드시 HTML <a href> 링크로 삽입해.\n"
+                    "형식: <a href=\"{URL}\" target=\"_blank\">{상품명}</a> — {가격/설명}\n\n"
                 )
                 for i, p in enumerate(mrt_links, 1):
                     name = p["title"][:60]
-                    mrt_ctx += f"{i}. {name}\n   링크: {p['affiliate_url']}\n"
+                    aff_url = p.get('affiliate_url', '')
+                    mrt_ctx += f"{i}. 상품명: {name}\n   URL: {aff_url}\n"
                 keyword_with_mrt = keyword + mrt_ctx
-                log(f"[파이프라인] MRT {len(mrt_links)}개 제휴 링크 주입 완료")
+                log(f"[파이프라인] MRT {len(mrt_links)}개 관련 제휴 링크 주입 완료")
             else:
-                log(f"[파이프라인] MRT 제품 없음 — MRT 섹션 없이 진행")
+                log(f"[파이프라인] MRT 관련 상품 없음 — 제휴 섹션 생략")
         except Exception as e:
             log(f"[파이프라인] MRT 조회 실패 (무시): {e}")
 
@@ -730,7 +751,10 @@ def post_one_blog(blog_id):
     try:
         ok = run_posting_pipeline(blog_id, kw, page_id=None)
         if ok:
-            _db_set(kw, "draft_saved", blog_id=blog_id)
+            # WP(triplog/baremi542)는 즉시 발행 → published 상태로 기록 (중복 방지)
+            # Naver/Tistory는 임시저장 → draft_saved (Claude Code가 검수 후 발행)
+            wp_immediate = blog_id in ("triplog", "baremi542")
+            _db_set(kw, "published" if wp_immediate else "draft_saved", blog_id=blog_id)
         else:
             _db_set(kw, "failed", blog_id=blog_id)
         return ok
