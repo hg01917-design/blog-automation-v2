@@ -1813,11 +1813,11 @@ def _post_wordpress(account, title, content, tags=None,
         except Exception as e:
             log(f"[WordPress] 카테고리 설정 실패: {e}")
 
-    # 8. 글 발행
+    # 8. 글 임시저장 (발행은 Claude Code 검수 후 별도 수행)
     post_body = {
         "title": title,
         "content": html_content,
-        "status": "publish",
+        "status": "draft",
         "slug": slug,
         "tags": tag_ids,
         "categories": category_ids,
@@ -1845,7 +1845,7 @@ def _post_wordpress(account, title, content, tags=None,
         resp = json.loads(_urlopen(req, timeout=30).read())
         post_id = resp.get("id")
         post_url = resp.get("link", "")
-        log(f"[WordPress] ✓ 발행 완료: {post_url}")
+        log(f"[WordPress] ✓ 임시저장 완료: {post_url}")
 
         # Rank Math updateMeta — REST API meta 필드가 비활성화된 경우 전용 엔드포인트 사용
         if post_id and rm_keyword:

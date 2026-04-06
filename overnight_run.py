@@ -42,23 +42,13 @@ def _notify_draft_saved(blog_id: str, keyword: str):
     CLAUDE_BIN = "/Users/hana/.local/bin/claude"
     PROJECT_DIR = str(Path(__file__).parent)
 
-    # WordPress는 API로 즉시 발행 → 검수 후 문제 있으면 수정
-    WP_BLOGS = {"baremi542", "triplog"}
-    if blog_id in WP_BLOGS:
-        prompt = (
-            f"봇이 {blog_id} 워드프레스 블로그에 '{keyword}' 글을 방금 발행했어. "
-            f"CLAUDE.md 체크리스트에 따라 발행된 글을 검수해줘. "
-            f"마크다운 잔재, 내부마커, 이미지 부족, 1700자 미만 등 문제 있으면 "
-            f"WordPress REST API로 수정해줘. 정상이면 그냥 놔둬."
-        )
-    else:
-        # Tistory/Naver는 임시저장 → 검수 후 발행
-        prompt = (
-            f"봇이 {blog_id} 블로그에 '{keyword}' 글을 임시저장했어. "
-            f"CLAUDE.md의 발행 전 체크리스트와 블로그별 추가 규칙에 따라 "
-            f"지금 바로 검수 후 발행해줘. "
-            f"문제 있으면 수정 후 발행. 간격 미충족이면 충족 후 발행."
-        )
+    # 모든 블로그 임시저장 → Claude Code가 검수 후 발행
+    prompt = (
+        f"봇이 {blog_id} 블로그에 '{keyword}' 글을 임시저장했어. "
+        f"CLAUDE.md의 발행 전 체크리스트와 블로그별 추가 규칙에 따라 "
+        f"지금 바로 검수 후 발행해줘. "
+        f"문제 있으면 수정 후 발행. 간격 미충족이면 충족 후 발행."
+    )
     try:
         _sp.Popen(
             [CLAUDE_BIN, "--print", prompt],
@@ -66,7 +56,7 @@ def _notify_draft_saved(blog_id: str, keyword: str):
             stdout=open(PROJECT_DIR + f"/logs/claude_publish_{blog_id}.log", "a"),
             stderr=_sp.STDOUT,
         )
-        log(f"[Claude] {blog_id} 검수+{'수정' if blog_id in WP_BLOGS else '발행'} 세션 시작됨")
+        log(f"[Claude] {blog_id} 검수+발행 세션 시작됨")
     except Exception as e:
         log(f"[Claude] 실행 실패: {e}")
 
@@ -751,10 +741,8 @@ def post_one_blog(blog_id):
     try:
         ok = run_posting_pipeline(blog_id, kw, page_id=None)
         if ok:
-            # WP(triplog/baremi542)는 즉시 발행 → published 상태로 기록 (중복 방지)
-            # Naver/Tistory는 임시저장 → draft_saved (Claude Code가 검수 후 발행)
-            wp_immediate = blog_id in ("triplog", "baremi542")
-            _db_set(kw, "published" if wp_immediate else "draft_saved", blog_id=blog_id)
+            # 모든 블로그 임시저장 → draft_saved (Claude Code가 검수 후 발행)
+            _db_set(kw, "draft_saved", blog_id=blog_id)
         else:
             _db_set(kw, "failed", blog_id=blog_id)
         return ok
