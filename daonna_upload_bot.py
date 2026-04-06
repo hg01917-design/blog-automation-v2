@@ -688,7 +688,7 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
                 if (f.itemCustomCode) {{ f.itemCustomCode.value = '{supplier_code}'; f.itemCustomCode.dispatchEvent(new Event('change')); }}
 
                 // 제조사
-                if (f.itemCompany) f.itemCompany.value = '다온나상점';
+                if (f.itemCompany) f.itemCompany.value = '다온나 상점';
 
                 // KC 인증: 인증대상아님
                 const certBtn = document.getElementById('lSafetyCertFlagN') ||
