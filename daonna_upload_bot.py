@@ -577,7 +577,8 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
     stock_qty = str(random.randint(210, 311))
     try:
         price_int = int(price) if price else 0
-        min_qty = str(max(2, math.ceil(5000 / price_int))) if price_int > 0 else "2"
+        # 5000원 미만이면 5000원 채우는 수량, 이상이면 1개
+        min_qty = str(math.ceil(5000 / price_int)) if price_int < 5000 else "1"
     except Exception:
         min_qty = "2"
 
