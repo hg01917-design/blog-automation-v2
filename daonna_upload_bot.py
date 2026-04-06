@@ -671,7 +671,7 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
         # 5000원 미만이면 5000원 채우는 수량, 이상이면 1개
         min_qty = str(math.ceil(5000 / price_int)) if price_int < 5000 else "1"
     except Exception:
-        min_qty = "2"
+        min_qty = "1"
 
     # alert 인터셉트 — goto() 이전에 등록 (검증 alert 자동 수락)
     alert_msgs = []
@@ -811,9 +811,9 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
                 const deliReadyDay = [...document.querySelectorAll('input[name="deliReadyDay"], input[name="deliDay"]')].find(r => r.value === '0' || r.value === 'D');
                 if (deliReadyDay) deliReadyDay.click();
 
-                // 묶음배송: 불가능
-                const bundleN = [...document.querySelectorAll('input[name="deliMultiFlag"], input[name="bundleDelivery"]')].find(r => r.value === 'N' || r.value === '0');
-                if (bundleN) bundleN.click();
+                // 묶음배송: 불가능 (lDeliMergeEnable = N)
+                const bundleN = [...document.querySelectorAll('input[name="lDeliMergeEnable"]')].find(r => r.value === 'N');
+                if (bundleN && !bundleN.checked) bundleN.click();
 
                 // 과세유형 선택 (과세 = 1)
                 const taxRadio = [...document.querySelectorAll('input[name="taxAdded"]')].find(r => r.value === '1');
@@ -839,12 +839,15 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
                 const deliBuyerFix = [...document.querySelectorAll('input[name="deliBuyerOpt"]')].find(r => r.value === 'fix');
                 if (deliBuyerFix) deliBuyerFix.click();
                 const deliAmtEl = document.querySelector('input[name="deliveryAmount"]');
-                if (deliAmtEl && !deliAmtEl.value) {{ deliAmtEl.value = '3000'; deliAmtEl.dispatchEvent(new Event('change')); }}
+                if (deliAmtEl) {{ deliAmtEl.value = '3000'; deliAmtEl.dispatchEvent(new Event('change')); }}
                 // 반품 배송비 (편도 3500원)
                 const retAmtEl = document.getElementById('lReturnAmtReal') || document.querySelector('input[name="returnDeliAmt"]');
                 if (retAmtEl) {{ retAmtEl.value = '3500'; retAmtEl.dispatchEvent(new Event('change')); }}
                 const retAmtInput = document.getElementById('lReturnAmtInput');
                 if (retAmtInput) {{ retAmtInput.value = '3,500'; retAmtInput.dispatchEvent(new Event('change')); }}
+                // 최초배송비 무료인 경우 왕복배송비 체크
+                const retDouble = document.getElementById('returnDeliAmtDouble') || document.getElementById('asdf');
+                if (retDouble && !retDouble.checked) retDouble.click();
 
                 // 도매매 채널 체크
                 const domemeChk = document.getElementById('lChannelDomeme');
