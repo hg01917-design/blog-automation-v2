@@ -66,7 +66,8 @@ async def get_product_info(page, item_id: str) -> dict:
         print(f"  [상품정보] 도매꾹 페이지 로드 실패: {e}", flush=True)
         return {}
 
-    dg_info = await page.evaluate("""
+    try:
+        dg_info = await page.evaluate("""
         () => {
             // 대표 이미지
             const thumbImg = document.getElementById('lThumbImg')
@@ -103,7 +104,7 @@ async def get_product_info(page, item_id: str) -> dict:
                         if (!src || src.startsWith('data:') || src === '#' || src === '' || seen.has(src)) return false;
                         seen.add(src); return true;
                     })
-                    .map(src => `<p><img src="${src}" style="max-width:100%;display:block;margin:10px auto;"></p>`);
+                    .map(src => '<p><img src="' + src + '" style="max-width:100%;display:block;margin:10px auto;"></p>');
                 detailImgHtml = imgTags.join('');
             }
 
@@ -115,7 +116,8 @@ async def get_product_info(page, item_id: str) -> dict:
             // select 방식
             if (optSelects.length > 0) {
                 optSelects.forEach(sel => {
-                    const optName = sel.getAttribute('data-name') || sel.closest('td')?.previousElementSibling?.innerText?.trim() || '';
+                    var td = sel.closest('td'); var prevSib = td ? td.previousElementSibling : null;
+                    const optName = sel.getAttribute('data-name') || (prevSib && prevSib.innerText ? prevSib.innerText.trim() : '') || '';
                     const vals = [...sel.options].map(o => o.text.trim()).filter(t => t && t !== '선택');
                     if (optName && vals.length) options.push({name: optName, values: vals});
                 });
@@ -125,7 +127,7 @@ async def get_product_info(page, item_id: str) -> dict:
                 const optEl = document.querySelector('.lOptGroup, #lOptGroup, .itemOpt, .item-option, [class*="option"]');
                 if (optEl) {
                     const text = optEl.innerText;
-                    const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+                    const lines = text.split('\\n').map(l => l.trim()).filter(l => l);
                     if (lines.length > 0) options.push({name: lines[0], values: lines.slice(1)});
                 }
             }
@@ -144,7 +146,7 @@ async def get_product_info(page, item_id: str) -> dict:
                     deliInfo = { type: 'free', amount: '0', tiers: [] };
                 } else {
                     // 수량별 차등 배송비 (예: 1~2개 3000원, 3개이상 무료 등)
-                    const tierPattern = /(\d+)[~\-개].*?(\d[\d,]+)원/g;
+                    const tierPattern = /(\\d+)[~\\-개].*?(\\d[\\d,]+)원/g;
                     const bodyText = document.body.innerText;
                     const tiers = [];
                     let m;
@@ -157,7 +159,7 @@ async def get_product_info(page, item_id: str) -> dict:
                         deliInfo = { type: 'tier', amount: String(tiers[0].amount), tiers };
                     } else {
                         // 고정 배송비 금액 추출
-                        const amtMatch = bodyText.match(/배송비[^\d]*(\d[\d,]+)원/);
+                        const amtMatch = bodyText.match(/배송비[^\\d]*(\\d[\\d,]+)원/);
                         if (amtMatch) {
                             const amt = parseInt(amtMatch[1].replace(/,/g, ''));
                             if (amt > 0 && amt < 50000) deliInfo = { type: 'fix', amount: String(amt), tiers: [] };
@@ -168,7 +170,10 @@ async def get_product_info(page, item_id: str) -> dict:
 
             return { imgUrl, detailImgHtml, categoryCode, options, deliInfo };
         }
-    """)
+        """)
+    except Exception as e:
+        print(f"  [상품정보] JS evaluate 실패 ({e}), 기본값 사용", flush=True)
+        dg_info = {"imgUrl": None, "detailImgHtml": "", "categoryCode": "", "options": [], "deliInfo": {"type": "fix", "amount": "3000", "tiers": []}}
 
     # 2. 도매매 페이지 — 공급단가
     dm_url = f"https://domeme.domeggook.com/s/{item_id}"
@@ -843,7 +848,7 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
                 if (byUnitQty) {{ byUnitQty.value = '{min_qty}'; byUnitQty.dispatchEvent(new Event('change')); }}
 
                 // 상품 부피/무게 (가로/세로/높이 각 1cm, 무게 1kg)
-                ['itemSizeWidth','itemSizeLength','itemSizeHeight','itemSizeX','itemSizeY','itemSizeZ'].forEach(n => { if(f[n]) { f[n].value='1'; f[n].dispatchEvent(new Event('change')); } });
+                ['itemSizeWidth','itemSizeLength','itemSizeHeight','itemSizeX','itemSizeY','itemSizeZ'].forEach(n => {{ if(f[n]) {{ f[n].value='1'; f[n].dispatchEvent(new Event('change')); }} }});
                 if (f.itemSize) f.itemSize.value = '1';
                 if (f.itemWeight) f.itemWeight.value = '1';
 
@@ -946,64 +951,16 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
         print(f"  [키워드] {kw_tokens}", flush=True)
         await asyncio.sleep(0.3)
 
-        # 상품 상세 내용 — esmplus 이미지 URL 사용
+        # 상품 상세 내용 — 상세 HTML 준비 (실제 설정은 제출 직전에)
         img_url = product.get("_img_url", "")
-        desc = make_detail_html(img_url)
-        desc_escaped = desc.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
-
-        # 상세내용 작성하기 버튼 클릭 → 에디터 팝업 열기
-        pages_before = len(ctx.pages)
-        try:
-            edit_btn = page.locator('a:text("상품상세내용작성하기"), button:text("상품상세내용작성하기"), a[onclick*="Editor"], a[onclick*="editor"]').first
-            if await edit_btn.is_visible(timeout=3000):
-                await edit_btn.click()
-                await asyncio.sleep(2)
-        except Exception:
-            pass
-
-        # 팝업 탭 찾기
-        editor_page = None
-        for p in ctx.pages:
-            if "Editor" in p.url or "editor" in p.url or "Popup" in p.url:
-                editor_page = p
-                break
-
-        if editor_page:
-            await asyncio.sleep(1)
-            detail_filled = await editor_page.evaluate(f"""
-                () => {{
-                    // textarea에 직접 입력
-                    const ta = document.querySelector('textarea');
-                    if (ta) {{ ta.value = `{desc_escaped}`; ta.dispatchEvent(new Event('change')); return 'popup-textarea'; }}
-                    // CKEditor
-                    if (window.CKEDITOR) {{
-                        const keys = Object.keys(CKEDITOR.instances);
-                        if (keys.length) {{ CKEDITOR.instances[keys[0]].setData(`{desc_escaped}`); return 'popup-ckeditor'; }}
-                    }}
-                    return 'popup-not-found';
-                }}
-            """)
-            print(f"  [상세] 팝업 입력: {detail_filled}", flush=True)
-            await asyncio.sleep(0.5)
-            # 확인/저장 버튼 클릭
-            try:
-                ok_btn = editor_page.locator('button:text("확인"), button:text("저장"), input[value="확인"]').first
-                if await ok_btn.is_visible(timeout=2000):
-                    await ok_btn.click()
-                    await asyncio.sleep(1)
-            except Exception:
-                pass
+        detail_imgs_html = product.get("_detail_imgs", "")
+        if detail_imgs_html:
+            desc = detail_imgs_html  # 스크랩된 상세이미지 HTML 우선
         else:
-            # 팝업 없으면 메인 폼에 직접 입력
-            detail_filled = await page.evaluate(f"""
-                () => {{
-                    const ta = document.querySelector('textarea[name="itemMemo[Item]"], textarea[name="itemDetail"], textarea[name="itemContents"]');
-                    if (ta) {{ ta.value = `{desc_escaped}`; ta.dispatchEvent(new Event('change')); return 'textarea:'+ta.name; }}
-                    return false;
-                }}
-            """)
-            print(f"  [상세] 직접 입력: {detail_filled}", flush=True)
-        await asyncio.sleep(0.3)
+            desc = make_detail_html(img_url)  # 없으면 썸네일 URL로 단일 이미지
+        desc_escaped = desc.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
+        print(f"  [상세준비] desc={len(desc)}자, img_url={img_url[:50] if img_url else 'EMPTY'}", flush=True)
+        await asyncio.sleep(0.1)
 
         # 판매가 입력 (lAmt1Tmp = 가시 입력 필드, lAmt1 = hidden 실제 값)
         if price:
@@ -1101,6 +1058,26 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
             await file_input.set_input_files(str(thumb_path))
             await asyncio.sleep(2)
 
+        # 상세내용 설정 (썸네일 업로드 후 — 업로드가 초기화할 수 있으므로 마지막에)
+        detail_filled = await page.evaluate(f"""
+            () => {{
+                if (typeof lEditorPopupSubmit === 'function') {{
+                    lEditorPopupSubmit([`{desc_escaped}`, '', '', '']);
+                    // 직접 .value도 설정 (이중 보장)
+                    const ta = document.querySelector('textarea[name="itemMemo[Item]"]');
+                    if (ta) ta.value = `{desc_escaped}`;
+                    const checkLen = ta ? ta.value.length : -1;
+                    return 'lEditorPopupSubmit:' + checkLen;
+                }}
+                const ta = document.querySelector('textarea[name="itemMemo[Item]"]');
+                if (ta) {{ ta.value = `{desc_escaped}`; ta.dispatchEvent(new Event('change')); }}
+                window.itemMemoExist = true;
+                return 'textarea-fallback:' + (ta ? ta.value.length : -1);
+            }}
+        """)
+        print(f"  [상세] {detail_filled}", flush=True)
+        await asyncio.sleep(0.2)
+
         # 제출 직전 모든 validator 재우회
         await page.evaluate("""
             () => {
@@ -1115,6 +1092,19 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
             }
         """)
         await asyncio.sleep(0.3)
+
+        # 제출 직전 상태 확인
+        pre_submit = await page.evaluate("""
+            () => {
+                const ta = document.querySelector('textarea[name="itemMemo[Item]"]');
+                return {
+                    taValue: ta ? ta.value.slice(0,50) : 'NOT FOUND',
+                    taLen: ta ? ta.value.length : -1,
+                    itemMemoExist: window.itemMemoExist
+                };
+            }
+        """)
+        print(f"  [제출 직전] textarea값={pre_submit['taLen']}자, itemMemoExist={pre_submit['itemMemoExist']}", flush=True)
 
         # 폼 제출 — confirm 우회 후 submitController.submit() 직접 호출
         await page.evaluate("""
@@ -1308,6 +1298,7 @@ async def main():
             # 1. 도매꾹 상품 페이지에서 이미지 URL + 상세 이미지 + 카테고리 추출
             info = await get_product_info(domeggook_page, pid)
             img_url = info.get("imgUrl")
+            product["_img_url"] = img_url or ""   # register_product에서 사용
             detail_img_html = info.get("detailImgHtml", "")
             cat_from_page = info.get("categoryCode", "")
             supply_price = info.get("supplyPrice", "")
