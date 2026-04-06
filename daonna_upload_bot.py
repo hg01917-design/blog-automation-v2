@@ -421,7 +421,18 @@ def make_seo_keywords(original: str) -> list:
     n = original.lower()
     tokens = [t for t in re.split(r'[\s/,·]+', original.strip()) if len(t) >= 2][:3]
 
-    if any(k in n for k in ["타투", "문신", "스티커"]):
+    # 포장/생활용품 먼저 체크
+    if any(k in n for k in ["택배", "포장", "노루지", "유산지", "에어캡"]):
+        extra = ["포장재", "업소용포장"]
+    elif any(k in n for k in ["박스", "비닐봉투", "봉투"]):
+        extra = ["포장용품", "업소용"]
+    elif any(k in n for k in ["오링", "o링", "d고리", "버클", "구슬체인", "군번줄"]):
+        extra = ["DIY부자재", "키링재료"]
+    elif any(k in n for k in ["노트", "수첩", "줄노트", "플래너", "체크보드", "메모"]):
+        extra = ["문구용품", "사무용품"]
+    elif any(k in n for k in ["자석", "마그넷"]):
+        extra = ["냉장고자석", "인테리어소품"]
+    elif any(k in n for k in ["타투", "문신"]) or ("스티커" in n and "택배" not in n and "취급" not in n):
         extra = ["임시문신", "타투스티커"]
     elif any(k in n for k in ["헤어핀", "집게핀", "머리핀"]):
         extra = ["헤어핀", "올림머리"]
@@ -670,8 +681,9 @@ async def register_product(page, product: dict, thumb_path: Path) -> bool:
                     module.itemCountryController.validate = () => true;
                 }}
 
-                // 공급사상품코드
-                if (f.itemCode) f.itemCode.value = '{supplier_code}';
+                // 모델명 비움, 공급사상품코드 = supplier_code
+                if (f.itemCode) f.itemCode.value = '';
+                if (f.itemCustomCode) {{ f.itemCustomCode.value = '{supplier_code}'; f.itemCustomCode.dispatchEvent(new Event('change')); }}
 
                 // 제조사
                 if (f.itemCompany) f.itemCompany.value = '다온나상점';
