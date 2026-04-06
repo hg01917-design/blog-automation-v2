@@ -130,7 +130,43 @@ async def get_product_info(page, item_id: str) -> dict:
                 }
             }
 
-            return { imgUrl, detailImgHtml, categoryCode, options };
+            // 배송비 정보 추출
+            let deliInfo = { type: 'fix', amount: '3000', tiers: [] };
+            try {
+                // 배송비 텍스트 영역 찾기
+                const deliEls = [...document.querySelectorAll('*')].filter(el =>
+                    el.children.length === 0 && el.innerText && el.innerText.includes('배송비')
+                ).map(el => el.innerText.trim());
+
+                // 무료배송 여부
+                const allText = document.body.innerText;
+                if (allText.includes('무료배송') || allText.includes('배송비 무료') || allText.includes('배송비무료')) {
+                    deliInfo = { type: 'free', amount: '0', tiers: [] };
+                } else {
+                    // 수량별 차등 배송비 (예: 1~2개 3000원, 3개이상 무료 등)
+                    const tierPattern = /(\d+)[~\-개].*?(\d[\d,]+)원/g;
+                    const bodyText = document.body.innerText;
+                    const tiers = [];
+                    let m;
+                    while ((m = tierPattern.exec(bodyText)) !== null) {
+                        const qty = parseInt(m[1]);
+                        const amt = parseInt(m[2].replace(/,/g, ''));
+                        if (amt < 50000) tiers.push({ qty, amount: amt });
+                    }
+                    if (tiers.length > 1) {
+                        deliInfo = { type: 'tier', amount: String(tiers[0].amount), tiers };
+                    } else {
+                        // 고정 배송비 금액 추출
+                        const amtMatch = bodyText.match(/배송비[^\d]*(\d[\d,]+)원/);
+                        if (amtMatch) {
+                            const amt = parseInt(amtMatch[1].replace(/,/g, ''));
+                            if (amt > 0 && amt < 50000) deliInfo = { type: 'fix', amount: String(amt), tiers: [] };
+                        }
+                    }
+                }
+            } catch(e) {}
+
+            return { imgUrl, detailImgHtml, categoryCode, options, deliInfo };
         }
     """)
 
@@ -163,6 +199,7 @@ async def get_product_info(page, item_id: str) -> dict:
         "detailImgHtml": dg_info.get("detailImgHtml", ""),
         "categoryCode": dg_info.get("categoryCode", ""),
         "supplyPrice": supply_price,
+        "deliInfo": dg_info.get("deliInfo", {"type": "fix", "amount": "3000", "tiers": []}),
     }
 
 
@@ -663,6 +700,9 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
     info_duty_type = "40"  # 기타재화 — 전체 상세정보 별도표기 처리
     # 공급사 코드 (compare.json의 _supplier 필드 또는 기본값 uu)
     supplier_code = SUPPLIER_ITEM_CODE.get(product.get("_supplier", "유유팩토리"), "uu")
+    # 배송비: 원본 상품 페이지 스크랩값 우선, 없으면 3000원 기본
+    deli_info = product.get("_deli_info", {"type": "fix", "amount": "3000"})
+    deli_amount = deli_info.get("amount", "3000")
     # 재고수량: 210~311 랜덤
     import math, random
     stock_qty = str(random.randint(210, 311))
@@ -839,7 +879,7 @@ async def register_product(page, product: dict, thumb_path: Path, ctx=None) -> b
                 const deliBuyerFix = [...document.querySelectorAll('input[name="deliBuyerOpt"]')].find(r => r.value === 'fix');
                 if (deliBuyerFix) deliBuyerFix.click();
                 const deliAmtEl = document.querySelector('input[name="deliveryAmount"]');
-                if (deliAmtEl) {{ deliAmtEl.value = '3000'; deliAmtEl.dispatchEvent(new Event('change')); }}
+                if (deliAmtEl) {{ deliAmtEl.value = '{deli_amount}'; deliAmtEl.dispatchEvent(new Event('change')); }}
                 // 반품 배송비 (편도 3500원)
                 const retAmtEl = document.getElementById('lReturnAmtReal') || document.querySelector('input[name="returnDeliAmt"]');
                 if (retAmtEl) {{ retAmtEl.value = '3500'; retAmtEl.dispatchEvent(new Event('change')); }}
@@ -1277,6 +1317,10 @@ async def main():
             if supply_price:
                 product["_supply_price"] = supply_price
                 print(f"  공급가(도매가): {supply_price}원", flush=True)
+            deli_info = info.get("deliInfo", {})
+            if deli_info:
+                product["_deli_info"] = deli_info
+                print(f"  배송비: {deli_info.get('type')} {deli_info.get('amount')}원", flush=True)
             if not img_url:
                 print(f"  ❌ 이미지 URL 추출 실패 → 건너뜀", flush=True)
                 prog["failed"].append(pid)
