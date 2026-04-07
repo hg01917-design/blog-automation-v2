@@ -153,6 +153,7 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False) -> dict:
     pw, browser = _connect_cdp(on_log)
 
     try:
+        is_first = True  # 블로그당 첫 이미지만 새 채팅, 나머지는 같은 창 유지
         for info in image_infos:
             idx = info["index"]
             prompt = info["prompt"]
@@ -170,7 +171,12 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False) -> dict:
             log(f"[이미지 {idx}] 생성 시작: {prompt[:50]}...")
 
             try:
-                filepath = _generate_single(browser, prompt, filename, on_log, skip_webp=skip_webp)
+                filepath = _generate_single(
+                    browser, prompt, filename, on_log,
+                    skip_webp=skip_webp,
+                    open_new_chat=is_first,  # 첫 이미지만 새 채팅, 이후는 같은 창 유지
+                )
+                is_first = False
                 if filepath:
                     results[idx] = filepath
                     log(f"[이미지 {idx}] 저장 완료: {filepath}")
@@ -226,8 +232,12 @@ def _drag_toolbar_away(page):
         page.mouse.move(0, 0)
 
 
-def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp=False):
-    """단일 이미지 생성 → 스크린샷 캡처 → webp 변환 (skip_webp=True면 PNG 그대로)"""
+def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp=False, open_new_chat: bool = True):
+    """단일 이미지 생성 → 스크린샷 캡처 → webp 변환 (skip_webp=True면 PNG 그대로)
+
+    Args:
+        open_new_chat: True면 새 채팅 시작 (첫 이미지). False면 기존 채팅 이어서 사용 (2번째 이미지부터).
+    """
     def log(msg):
         if on_log:
             on_log(msg)
@@ -245,14 +255,15 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     except Exception:
         pass
 
-    # 새 대화 시작
-    try:
-        new_chat = page.locator('a[aria-label="새 채팅"], a[aria-label="New chat"]').first
-        if new_chat.is_visible(timeout=2000):
-            new_chat.click()
-            page.wait_for_timeout(2000)
-    except Exception:
-        pass
+    # 새 대화 시작 (첫 이미지만) — 이후는 같은 채팅창에 이어서 전송
+    if open_new_chat:
+        try:
+            new_chat_btn = page.locator('a[aria-label="새 채팅"], a[aria-label="New chat"]').first
+            if new_chat_btn.is_visible(timeout=2000):
+                new_chat_btn.click()
+                page.wait_for_timeout(2000)
+        except Exception:
+            pass
 
     # 프롬프트 입력
     input_el = page.locator('.ql-editor').first
