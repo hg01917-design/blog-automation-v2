@@ -306,9 +306,9 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
         for ek in existing_keywords:
             ek_core = set(_extract_core_words(ek))
             kw_core = set(core_words)
-            # 핵심 단어 절반 이상 겹치면 중복 (최소 3개 이상)
+            # 핵심 단어 절반 이상 겹치면 중복
             overlap = ek_core & kw_core
-            if len(overlap) >= max(3, len(kw_core) * 0.6):
+            if len(overlap) >= max(2, len(kw_core) * 0.5):
                 _log(f"[유사문서] ⚠ DB 중복 키워드: '{ek}' (겹침: {overlap})")
                 return True, ek
     except Exception as e:
