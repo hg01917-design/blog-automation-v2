@@ -113,6 +113,45 @@ def _naver_autocomplete(keyword: str) -> list:
 _SKIP = re.compile(r"(쇼핑|광고|구매|구입|가격비교|공식홈|공식사이트)")
 
 
+# ── 카테고리별 suffix ────────────────────────────────────────────────────
+
+_SUFFIX_COMMON = [
+    "안될때", "오류", "취소", "조회", "후기", "비교",
+    "방법", "기간", "이유", "해결방법", "신청", "주의사항",
+]
+
+_SUFFIX_BY_CAT = {
+    # 카테고리별 고유 suffix 먼저, 공통 suffix 뒤에
+    "IT": [
+        "안되는이유", "연동", "설정방법", "업데이트",
+        "수수료", "한도", "계좌개설", "인증오류", "앱오류",
+    ] + _SUFFIX_COMMON,
+    "살림": [
+        "직접해본후기", "추천", "효과있는", "저렴하게",
+        "셀프", "비용", "주기", "순서", "안지워질때",
+    ] + _SUFFIX_COMMON,
+    "정부지원금": [
+        "자격조건", "신청기간", "대상자", "지급일",
+        "얼마나받나", "탈락이유", "재신청", "서류",
+    ] + _SUFFIX_COMMON,
+    "여행": [
+        "혼자", "당일치기", "가족여행", "비용",
+        "숙소추천", "맛집", "코스", "주차", "시즌",
+    ] + _SUFFIX_COMMON,
+}
+
+
+def _build_suffix_seeds(base_kw: str, category: str, max_seeds: int = 5) -> list:
+    """
+    키워드 + suffix 조합 생성 (상위 max_seeds개).
+    relKeyword API 쿼리용 seed 리스트 반환.
+    """
+    suffixes = _SUFFIX_BY_CAT.get(category, _SUFFIX_COMMON)
+    # 공백 없이 붙이기 (네이버 검색광고 API는 공백 없는 쿼리로 더 잘 매칭)
+    base = base_kw.replace(" ", "")
+    return [f"{base}{s}" for s in suffixes[:max_seeds]]
+
+
 # ── 메인 함수 ─────────────────────────────────────────────────────────────
 
 _CAT_MIN_VOL = {
@@ -245,6 +284,16 @@ def expand_longtail(
 
         total_extracted += len(results_2)
         for item in results_2:
+            _save(item)
+
+        # ── 2차-suffix: seed + 카테고리별 suffix 조합 쿼리 ───────────────
+        suffix_seeds = _build_suffix_seeds(seed, category, max_seeds=5)
+        log(f"[롱테일] suffix 확장: '{seed}' + {len(suffix_seeds)}개 suffix")
+        results_sfx = get_rel_keywords(suffix_seeds, min_vol=min_vol, max_vol=max_vol, on_log=on_log)
+        time.sleep(0.5)
+
+        total_extracted += len(results_sfx)
+        for item in results_sfx:
             _save(item)
 
     log(
