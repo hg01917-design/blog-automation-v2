@@ -934,9 +934,15 @@ if __name__ == "__main__":
         save_log()
 
     # ── 판단 엔진 (라운드 시작 전 1회) ──
+    _extra_rounds = 0
     try:
-        from decision_engine import run_daily_analysis
+        from decision_engine import run_daily_analysis, get_publish_count_recommendation
         run_daily_analysis(on_log=log)
+        _rec = get_publish_count_recommendation(on_log=log)
+        _rec_count = max(_rec.values()) if _rec else 1
+        _extra_rounds = max(0, _rec_count - 3)  # 기본 3라운드 초과분
+        if _extra_rounds:
+            log(f"[판단엔진] 수익 pace 저조 → 추가 라운드 {_extra_rounds}개 실행 예정")
     except Exception as _de:
         log(f"[판단엔진] 생략: {_de}")
     save_log()
@@ -958,6 +964,13 @@ if __name__ == "__main__":
     log(f"[라운드 3] {int(delay3/3600)}시간 {int((delay3%3600)/60)}분 후 시작 예정")
     _time.sleep(delay3)
     run_one_round(3)
+
+    # ── 추가 라운드: 수익 pace 저조 시 ──
+    for _er in range(_extra_rounds):
+        _delay_ex = _random.uniform(3 * 3600, 5 * 3600)
+        log(f"[라운드 {4+_er}] (추가) {int(_delay_ex/3600)}시간 {int((_delay_ex%3600)/60)}분 후 시작 예정")
+        _time.sleep(_delay_ex)
+        run_one_round(4 + _er)
 
     log("\n" + "=" * 60)
     log("전체 완료")

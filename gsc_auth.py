@@ -41,11 +41,32 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
+def _load_env():
+    import os
+    env_path = Path(__file__).parent / ".env"
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, _, v = line.partition("=")
+                os.environ.setdefault(k.strip(), v.strip())
+
+
 def run_auth():
+    import os
     global _auth_code
-    secret = json.loads(CLIENT_SECRET_PATH.read_text())["installed"]
-    client_id = secret["client_id"]
-    client_secret = secret["client_secret"]
+    _load_env()
+
+    # .env 우선, 없으면 client_secret.json fallback
+    client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+    if not client_id and CLIENT_SECRET_PATH.exists():
+        secret = json.loads(CLIENT_SECRET_PATH.read_text())["installed"]
+        client_id = secret["client_id"]
+        client_secret = secret["client_secret"]
+    if not client_id:
+        print("오류: GOOGLE_CLIENT_ID 환경변수 또는 client_secret.json 필요")
+        return
 
     auth_url = (
         "https://accounts.google.com/o/oauth2/v2/auth?"
@@ -82,7 +103,8 @@ def run_auth():
         "redirect_uri": REDIRECT_URI,
         "grant_type": "authorization_code",
     }).encode()
-    req = urllib.request.Request(secret["token_uri"], data=data)
+    token_uri = "https://oauth2.googleapis.com/token"
+    req = urllib.request.Request(token_uri, data=data)
     try:
         raw = urllib.request.urlopen(req, timeout=10).read()
         resp = json.loads(raw)

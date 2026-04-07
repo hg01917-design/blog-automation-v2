@@ -149,7 +149,6 @@ def generate_keywords_from_gsc(on_log=None) -> int:
             blog_id = item.get("blog_id", "")
             if not keyword_exists(kw) and len(kw) >= 5:
                 # 카테고리 매핑
-                from keyword_engine.db_handler import _BLOG_CATEGORY if False else None
                 _cat_map = {
                     "goodisak": "IT", "nolja100": "여행", "triplog": "여행",
                     "salim1su": "살림", "baremi542": "정부지원금",
