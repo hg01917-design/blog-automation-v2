@@ -748,6 +748,52 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             if body_chars >= RETRY_THRESHOLD:
                 return response_text
 
+            # 그리팅 감지: 짧은 응답 + "키워드" 언급 → 프로젝트가 키워드를 별도로 요청하는 중
+            # 새 채팅 열지 말고 같은 창에서 키워드만 다시 전송
+            is_greeting = (
+                len(response_text) < 300
+                and "===제목===" not in response_text
+                and project_url is not None
+                and keyword is not None
+                and any(w in response_text for w in ["키워드", "시작할게", "알려주", "입력해", "시작하겠"])
+            )
+            if is_greeting and attempt <= MAX_RETRIES:
+                log(f"[Playwright] ⚠ 그리팅 응답 감지 — 같은 창에서 키워드 재전송")
+                page.wait_for_timeout(2000)
+                input_sel = 'div[contenteditable="true"]'
+                try:
+                    page.wait_for_selector(input_sel, state="visible", timeout=10000)
+                    page.locator(input_sel).first.click()
+                    page.wait_for_timeout(300)
+                    # 키워드만 전송 (프로젝트 지침이 형식 담당)
+                    page.evaluate("""(text) => {
+                        const el = document.querySelector('div[contenteditable="true"]');
+                        el.focus();
+                        document.execCommand('insertText', false, text);
+                    }""", keyword)
+                    page.wait_for_timeout(500)
+                    send_btn = page.locator(SEND_BTN_SEL).first
+                    if send_btn.count() > 0:
+                        send_btn.click(timeout=5000)
+                        log("[Playwright] 키워드 재전송 완료")
+                    else:
+                        page.keyboard.press("Enter")
+                    page.wait_for_timeout(2000)
+                    prev_response_count2 = page.locator(RESPONSE_SEL).count()
+                    final_len2, streamed_text2 = _wait_for_response(page, prev_response_count2, log)
+                    if streamed_text2 and "===제목===" in streamed_text2 and "===본문===" in streamed_text2:
+                        response_text = streamed_text2
+                    else:
+                        response_text = _extract_response(page, prev_response_count2, log)
+                    body_chars2 = _count_body_chars(response_text)
+                    log(f"[Playwright] 키워드 재전송 후 응답: {body_chars2}자")
+                    if body_chars2 >= RETRY_THRESHOLD:
+                        return response_text
+                except Exception as e:
+                    log(f"[Playwright] 키워드 재전송 실패: {e}")
+                page.wait_for_timeout(2000)
+                continue
+
             # 500자 미만이고 재시도 횟수 남았으면 재시도
             if attempt <= MAX_RETRIES:
                 log(f"[Playwright] ⚠ 본문 {body_chars}자 < {RETRY_THRESHOLD}자 — 재시도합니다")

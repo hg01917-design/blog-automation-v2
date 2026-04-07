@@ -619,9 +619,44 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     MIN_IMAGES = 3
 
     # 3. 글 품질 검수 (이미지 생성 전에 먼저 — Gemini 쿼터 낭비 방지)
+    MIN_BODY_CHARS = 2000  # 최소 본문 길이 (2000자 미만이면 재생성 1회 시도)
+
+    # 2000자 미만이면 재생성 1회 시도
+    if char_count < MIN_BODY_CHARS:
+        log(f"[검수] ⚠ 본문 짧음 ({char_count}자 < {MIN_BODY_CHARS}자) — 재생성 1회 시도")
+        raw2 = generate_text("", blog_id=blog_id, keyword=keyword_with_mrt, on_log=log)
+        if raw2 and "추출 실패" not in raw2:
+            body_m2 = re.search(r"===본문===\s*\n(.*?)\n*===본문끝===", raw2, re.DOTALL)
+            if body_m2:
+                body2 = body_m2.group(1).strip()
+                plain2 = re.sub(r"##.*|{{.*?}}|\[애드센스\]|\|.*", "", body2)
+                char_count2 = len(re.sub(r"\s+", "", plain2))
+                if char_count2 > char_count:
+                    log(f"[검수] 재생성 결과 더 길어짐: {char_count}자 → {char_count2}자 — 교체")
+                    raw = raw2
+                    # 파싱 다시
+                    title_m = re.search(r"===제목===\s*\n(.*?)\n*===제목끝===", raw, re.DOTALL)
+                    body_m = re.search(r"===본문===\s*\n(.*?)\n*===본문끝===", raw, re.DOTALL)
+                    tag_m = re.search(r"===태그===\s*\n(.*?)\n*===태그끝===", raw, re.DOTALL)
+                    img_m = re.search(r"===이미지===\s*\n(.*?)\n*===이미지끝===", raw, re.DOTALL)
+                    if title_m:
+                        title = _truncate_title(title_m.group(1).strip().split('\n')[0].strip(), max_len=40)
+                    body = body_m.group(1).strip() if body_m else body2
+                    if tag_m:
+                        tag_line = tag_m.group(1).strip().split('\n')[0].strip()
+                        tags = [t.strip() for t in tag_line.split(",") if t.strip()]
+                    body = re.sub(r'\n*항목기준충족.*$', '', body, flags=re.DOTALL).strip()
+                    body = re.sub(r'\n*===검수===.*?(?:===검수끝===|$)', '', body, flags=re.DOTALL).strip()
+                    body = re.sub(r'\n[✅❌☑️].{0,60}(?:\n[✅❌☑️].{0,60}){2,}', '', body).strip()
+                    body = re.sub(r'\[검증\s*필요\]|\[출처\s*필요\]|\[사실\s*확인\]|\[확인\s*필요\]', '', body).strip()
+                    plain = re.sub(r"##.*|{{.*?}}|\[애드센스\]|\|.*", "", body)
+                    char_count = len(re.sub(r"\s+", "", plain))
+                else:
+                    log(f"[검수] 재생성 결과 더 짧음 — 원본 유지")
+
     quality_ok = True
-    if char_count < 1700:
-        log(f"[검수] ❌ 본문 너무 짧음 ({char_count}자 < 1700자) — 발행 중단")
+    if char_count < MIN_BODY_CHARS:
+        log(f"[검수] ❌ 본문 너무 짧음 ({char_count}자 < {MIN_BODY_CHARS}자) — 발행 중단")
         quality_ok = False
     if not tags:
         log(f"[검수] ❌ 태그 없음 — 발행 중단")

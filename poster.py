@@ -620,14 +620,17 @@ def _post_tistory(account, title, body_html, tags=None,
             else:
                 log(f"[포스팅] 태그 {tag_ok}개 입력 완료")
 
-        # ── 카테고리 선택 (goodisak) ──
+        # ── 카테고리 선택 (nolja100 / goodisak) ──
         blog_id_local = account.get("blog", "")
-        if blog_id_local == "goodisak":
-            cat_name = _get_goodisak_category(keyword or title)
-            log(f"[포스팅] 카테고리 선택 (goodisak): {cat_name}")
+        if blog_id_local in ("nolja100", "goodisak"):
+            if blog_id_local == "nolja100":
+                cat_name = "여행"
+            else:
+                cat_name = _get_goodisak_category(keyword or title)
+            log(f"[포스팅] 카테고리 선택 ({blog_id_local}): {cat_name}")
             try:
                 # TinyMCE 카테고리 드롭다운 열기
-                cat_result = page.evaluate("""(catName) => {
+                cat_result = page.evaluate("""() => {
                     const selectTxts = [...document.querySelectorAll('i.mce-txt')];
                     const catTxt = selectTxts.find(i => i.textContent.trim() === '카테고리');
                     if (catTxt) {
@@ -635,20 +638,26 @@ def _post_tistory(account, title, body_html, tags=None,
                         if (btn) { btn.click(); return '__dropdown__'; }
                     }
                     return null;
-                }""", cat_name)
+                }""")
                 if cat_result == '__dropdown__':
                     import time as _t
                     _t.sleep(0.5)
+                    # includes() 로 부분 일치 (카테고리명에 글수 포함 시 대응)
                     selected = page.evaluate("""(catName) => {
                         const items = [...document.querySelectorAll('[role="menuitem"]')];
-                        const item = items.find(el => el.textContent.trim() === catName);
-                        if (item) { item.click(); return '카테고리:' + catName; }
-                        return null;
+                        const item = items.find(el => el.textContent.trim().includes(catName));
+                        if (item) {
+                            const actual = item.textContent.trim();
+                            item.click();
+                            return '카테고리:' + actual;
+                        }
+                        // 모든 카테고리 이름 반환 (디버그)
+                        return '없음:' + items.map(el => el.textContent.trim()).join('|');
                     }""", cat_name)
-                    if selected:
+                    if selected and selected.startswith('카테고리:'):
                         log(f"[포스팅] 카테고리 선택 완료: {selected}")
                     else:
-                        log(f"[포스팅] 카테고리 '{cat_name}' 항목 없음 — 스킵")
+                        log(f"[포스팅] 카테고리 '{cat_name}' 항목 없음. 실제 목록: {selected}")
             except Exception as e:
                 log(f"[포스팅] 카테고리 선택 오류: {e}")
 
