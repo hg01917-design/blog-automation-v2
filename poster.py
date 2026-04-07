@@ -650,31 +650,27 @@ def _post_tistory(account, title, body_html, tags=None,
                     if cat_result == '__dropdown__':
                         import time as _t
                         _t.sleep(1.0)
-                        # TinyMCE 드롭다운 여러 셀렉터 시도 (role=menuitem, mce-text, li 등)
+                        # mce-floatpanel > mce-menu-item 클릭 (span.mce-text 부모)
                         selected = page.evaluate("""(catName) => {
-                            const selectors = [
-                                '[role="menuitem"]',
-                                '.mce-menu-item',
-                                '.mce-text',
-                                'div.mce-container-body li',
-                                'ul.mce-menu-items li',
-                                '.mce-listbox-menu li'
-                            ];
-                            let allItems = [];
-                            for (const sel of selectors) {
-                                const found = [...document.querySelectorAll(sel)];
-                                if (found.length > 0) {
-                                    allItems = found;
-                                    break;
+                            const panel = document.querySelector('.mce-floatpanel.mce-menu');
+                            if (panel) {
+                                const items = [...panel.querySelectorAll('.mce-menu-item')];
+                                const item = items.find(el => el.textContent.trim().includes(catName));
+                                if (item) {
+                                    item.click();
+                                    return '카테고리:' + item.textContent.trim();
                                 }
+                                return '없음:' + items.map(el => el.textContent.trim()).join('|');
                             }
-                            const item = allItems.find(el => el.textContent.trim().includes(catName));
-                            if (item) {
-                                const actual = item.textContent.trim();
-                                item.click();
-                                return '카테고리:' + actual;
+                            // fallback: span.mce-text 부모 클릭
+                            const spans = [...document.querySelectorAll('span.mce-text')];
+                            const span = spans.find(el => el.textContent.trim().includes(catName));
+                            if (span) {
+                                const parent = span.closest('.mce-menu-item') || span.parentElement;
+                                parent.click();
+                                return '카테고리:' + span.textContent.trim();
                             }
-                            return '없음:' + allItems.map(el => el.textContent.trim()).join('|');
+                            return '없음:' + spans.map(el => el.textContent.trim()).join('|');
                         }""", cat_name)
                         if selected and selected.startswith('카테고리:'):
                             log(f"[포스팅] 카테고리 선택 완료: {selected}")
