@@ -23,16 +23,35 @@ def _save_token(token: dict):
     TOKEN_PATH.write_text(json.dumps(token, indent=2))
 
 
+def _load_client_credentials() -> tuple:
+    """client_id, client_secret 로드 (.env 우선, fallback: client_secret.json)"""
+    import os
+    env_path = Path(__file__).parent / ".env"
+    client_id, client_secret = "", ""
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("GOOGLE_CLIENT_ID="):
+                client_id = line.split("=", 1)[1].strip()
+            elif line.startswith("GOOGLE_CLIENT_SECRET="):
+                client_secret = line.split("=", 1)[1].strip()
+    if not client_id and CLIENT_SECRET_PATH.exists():
+        secret = json.loads(CLIENT_SECRET_PATH.read_text())["installed"]
+        client_id = secret["client_id"]
+        client_secret = secret["client_secret"]
+    return client_id, client_secret
+
+
 def _refresh_access_token(token: dict) -> dict:
     """refresh_token으로 새 access_token 발급"""
-    secret = json.loads(CLIENT_SECRET_PATH.read_text())["installed"]
+    client_id, client_secret = _load_client_credentials()
     data = urllib.parse.urlencode({
-        "client_id": secret["client_id"],
-        "client_secret": secret["client_secret"],
+        "client_id": client_id,
+        "client_secret": client_secret,
         "refresh_token": token["refresh_token"],
         "grant_type": "refresh_token",
     }).encode()
-    req = urllib.request.Request(secret["token_uri"], data=data)
+    req = urllib.request.Request("https://oauth2.googleapis.com/token", data=data)
     resp = urllib.request.urlopen(req, timeout=10).read()
     new_token = json.loads(resp)
     token["access_token"] = new_token["access_token"]

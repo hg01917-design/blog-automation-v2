@@ -460,6 +460,57 @@ def _truncate_title(title, max_len=40):
     return title[:max_len]
 
 
+# ─── 내부링크 삽입 ───
+_BLOG_RSS = {
+    "nolja100": ("https://issue.baremi542.com/rss", "https://issue.baremi542.com"),
+    "goodisak": ("https://welfare.baremi542.com/rss", "https://welfare.baremi542.com"),
+    "woll100":  ("https://info.baremi542.com/rss", "https://info.baremi542.com"),
+    "phn0502":  ("https://film.baremi542.com/rss", "https://film.baremi542.com"),
+    "triplog":  ("https://app.baremi542.com/feed", "https://app.baremi542.com"),
+    "baremi542": ("https://baremi542.com/feed", "https://baremi542.com"),
+}
+
+
+def _inject_internal_links(body: str, blog_id: str, on_log=None) -> str:
+    """본문 하단에 같은 블로그 최근 글 3개 내부링크 섹션 추가"""
+    if blog_id not in _BLOG_RSS:
+        return body
+    rss_url, base_url = _BLOG_RSS[blog_id]
+    try:
+        import ssl as _ssl
+        ctx = _ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = 0
+        req = urllib.request.Request(rss_url, headers={"User-Agent": "Mozilla/5.0"})
+        rss = urllib.request.urlopen(req, timeout=8, context=ctx).read().decode("utf-8", errors="ignore")
+        # 제목 + 링크 파싱
+        items = re.findall(r'<item>.*?<title><!\[CDATA\[(.*?)\]\]></title>.*?<link>(.*?)</link>.*?</item>', rss, re.DOTALL)
+        if not items:
+            items_t = re.findall(r'<title>(.*?)</title>', rss)[1:4]
+            items_l = re.findall(r'<link>(.*?)</link>', rss)[1:4]
+            items = list(zip(items_t, items_l))
+        items = [(t.strip(), l.strip()) for t, l in items[:3] if t.strip() and l.strip()]
+        if not items:
+            return body
+        links_html = '\n'.join(
+            f'<li><a href="{url}" target="_blank">{title}</a></li>'
+            for title, url in items
+        )
+        section = (
+            f'\n\n<div style="margin-top:30px;padding:16px;background:#f8f9fa;border-left:4px solid #4285f4;border-radius:4px">'
+            f'<strong>📌 함께 읽으면 좋은 글</strong>'
+            f'<ul style="margin:8px 0 0 0;padding-left:20px">{links_html}</ul>'
+            f'</div>'
+        )
+        if on_log:
+            on_log(f"[내부링크] {blog_id}: {len(items)}개 삽입")
+        return body + section
+    except Exception as e:
+        if on_log:
+            on_log(f"[내부링크] {blog_id} 실패 (무시): {e}")
+        return body
+
+
 # ─── 전체 포스팅 파이프라인 ───
 def run_posting_pipeline(blog_id, keyword, page_id=None):
     """유사문서 체크 → 글 생성 → 이미지 → 포스팅 전체 파이프라인
@@ -712,6 +763,9 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
         log(f"[검수] ❌ 이미지 부족 ({len(image_paths)}개 < {MIN_IMAGES}개) — 발행 중단")
         return False
     log(f"[검수] ✅ 이미지 {len(image_paths)}개 확인")
+
+    # 3-5. 내부링크 삽입 (같은 블로그 최근 글 3개)
+    body = _inject_internal_links(body, blog_id, log)
 
     # 4. 포스팅
     log(f"[파이프라인] 포스팅 시작: {blog_id}")

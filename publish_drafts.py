@@ -686,7 +686,11 @@ def publish_triplog_draft() -> bool:
                      data={"status": "publish", "content": updated_content},
                      auth=auth, site_url=TRIPLOG_URL)
     new_status = result.get("status", "")
+    new_link = result.get("link", "")
     _log(f"[triplog] 발행 결과: {new_status} — {title}")
+    if new_link and new_status == "publish":
+        from gsc_indexing import request_indexing
+        request_indexing(new_link)
     return new_status == "publish"
 
 
