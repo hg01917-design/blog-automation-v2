@@ -1,14 +1,14 @@
 """롱테일 키워드 확장기
-경쟁사 제목에서 뽑은 기본 키워드 → 네이버 자동완성 + 연관검색어 → 롱테일 저장
+
+seed 키워드 → 네이버 검색광고 relKeyword API → 2단계 재귀 확장 → 카테고리 분류 → DB 저장
+(relKeyword 실패 시 네이버 자동완성 폴백)
 
 흐름:
-  base_keyword (예: "속초여행")
-      ↓ 네이버 자동완성 API (HTTP)
-      ["속초여행 코스", "속초여행 1박2일 추천", ...]
-      ↓ 네이버 검색 연관검색어 (Playwright)
-      ["속초여행지 추천 코스", "속초 뚜벅이 당일치기", ...]
-      ↓ 롱테일 필터 (공백 포함 2어절 이상 + 기본 키워드보다 길게)
-      ↓ DB 저장 (upsert_keyword)
+  seed 키워드
+      ↓ 1차: relKeyword API (검색량 100~3,000)
+      ↓ 2차: 1차 결과 상위 5개 → 다시 relKeyword (재귀 2단계까지)
+      ↓ 각 키워드 카테고리 자동 분류 (또는 명시적 카테고리 사용)
+      ↓ 이미 DB에 있으면 스킵, 신규만 저장
 """
 import json
 import re
@@ -17,9 +17,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 import os
-import sys
 
-# 프로젝트 루트 기준 .env 로드
 _root = Path(os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(Path(__file__).parent.parent)))
 _env = _root / ".env"
 if _env.exists():
@@ -30,9 +28,67 @@ if _env.exists():
             os.environ.setdefault(k.strip(), v.strip())
 
 
-# ── 네이버 자동완성 API (HTTP, Playwright 불필요) ──────────────────────
-def _naver_autocomplete(keyword: str) -> list[str]:
-    """네이버 자동완성 API로 제안 키워드 수집"""
+# ── 카테고리 분류 ─────────────────────────────────────────────────────────
+
+_CAT_INCLUDE = {
+    "IT": [
+        "앱", "소프트웨어", "디지털", "스마트폰", "아이폰", "갤럭시", "노트북", "태블릿",
+        "이어폰", "스피커", "모니터", "게임", "토스", "네이버페이", "카카오페이", "토스뱅크",
+        "인터넷은행", "페이", "OTT", "넷플릭스", "유튜브", "티빙", "왓챠", "웨이브",
+        "챗GPT", "ChatGPT", "AI", "클라우드", "VPN", "블루투스", "와이파이", "공유기",
+        "케이블", "충전기", "배터리팩", "스마트TV", "셋톱박스",
+    ],
+    "정부지원금": [
+        "지원금", "보조금", "복지", "신청방법", "신청자격", "수급자", "급여", "바우처",
+        "취업지원", "실업급여", "육아휴직", "장애인", "노인혜택", "문화누리", "에너지바우처",
+        "주거급여", "긴급복지", "국민취업", "출산지원", "다자녀", "청년수당", "생계급여",
+        "의료급여", "교육급여", "한부모", "차상위", "기초생활", "근로장려금", "자녀장려금",
+        "청년도약계좌", "국민연금", "건강보험료 환급", "통신비 감면",
+    ],
+    "살림": [
+        "생활비", "절약", "청소", "정리", "수납", "살림", "꿀팁", "세탁", "주방",
+        "냉장고", "세탁기", "에어컨", "보일러", "이불", "옷장", "재활용", "식비",
+        "전기요금", "가스비", "통신비", "관리비", "수도요금", "인테리어",
+        "욕실", "베이킹소다", "구연산", "락스", "분리수거", "음식물쓰레기",
+    ],
+    "여행": [
+        "여행", "투어", "액티비티", "현지체험", "마이리얼트립", "맛집", "숙소", "항공",
+        "호텔", "펜션", "캠핑", "드라이브", "관광", "1박2일", "2박3일", "당일치기",
+        "뚜벅이", "글램핑", "리조트", "게스트하우스", "여행코스", "여행지",
+    ],
+}
+
+# 살림 카테고리 제외 단어 (금융 상품 관련)
+_CAT_EXCLUDE = {
+    "살림": ["보험", "카드", "대출", "투자", "주식", "부동산", "청약", "저축", "적금",
+             "예금", "금리", "환율", "증권"],
+}
+
+# 카테고리 우선순위: IT → 정부지원금 → 살림 → 여행
+_CAT_ORDER = ["IT", "정부지원금", "살림", "여행"]
+
+
+def _classify_category(keyword: str) -> str:
+    """
+    키워드를 카테고리로 자동 분류.
+
+    Returns:
+        "IT" | "정부지원금" | "살림" | "여행" | "unassigned"
+    """
+    for cat in _CAT_ORDER:
+        # 제외 단어 먼저 확인
+        if any(ex in keyword for ex in _CAT_EXCLUDE.get(cat, [])):
+            continue
+        # 포함 단어 확인
+        if any(inc in keyword for inc in _CAT_INCLUDE[cat]):
+            return cat
+    return "unassigned"
+
+
+# ── 네이버 자동완성 폴백 ─────────────────────────────────────────────────
+
+def _naver_autocomplete(keyword: str) -> list:
+    """네이버 자동완성 API (relKeyword 폴백용)"""
     q = urllib.parse.quote(keyword)
     url = (
         f"https://ac.search.naver.com/nx/ac"
@@ -54,200 +110,137 @@ def _naver_autocomplete(keyword: str) -> list[str]:
         return []
 
 
-# ── 네이버 연관검색어 (Playwright) ──────────────────────────────────────
-def _naver_related_search(keyword: str, on_log=None) -> list[str]:
-    """네이버 검색결과 페이지에서 연관검색어 수집 (Playwright CDP)"""
-    try:
-        sys.path.insert(0, str(_root))
-        from poster import connect_cdp
-    except ImportError:
-        return []
-
-    results = []
-    pw, browser = connect_cdp(on_log=on_log)
-    try:
-        ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-        page = ctx.new_page()
-        q = urllib.parse.quote(keyword)
-        page.goto(
-            f"https://search.naver.com/search.naver?where=nexearch&query={q}",
-            wait_until="domcontentloaded",
-            timeout=20000,
-        )
-        time.sleep(2)
-
-        # 연관검색어 셀렉터 (네이버 UI 버전별 대응)
-        raw = page.evaluate("""() => {
-            const selectors = [
-                '.related_srch .keyword',
-                '.lst_related_srch .item_keyword',
-                'a.relate_kwd',
-                '.related_keywords a',
-                '[class*=related] a',
-            ];
-            for (const sel of selectors) {
-                const items = [...document.querySelectorAll(sel)];
-                if (items.length > 0) {
-                    return items.map(el => el.innerText.trim()).filter(t => t);
-                }
-            }
-            return [];
-        }""")
-        results = raw if raw else []
-        page.close()
-    except Exception as e:
-        if on_log:
-            on_log(f"[롱테일] 연관검색어 수집 오류: {e}")
-    finally:
-        pw.stop()
-
-    return results
-
-
-# ── 롱테일 필터 ──────────────────────────────────────────────────────────
-_SKIP = re.compile(r"(쇼핑|광고|구매|구입|가격비교|사이트|앱다운|공식)")
-
-def _is_longtail(keyword: str, base: str) -> bool:
-    """롱테일 여부 판단: 기본 키워드보다 길고, 공백 포함 2어절 이상"""
-    kw = keyword.strip()
-    if len(kw) <= len(base):
-        return False
-    if len(kw.split()) < 2:
-        return False
-    if _SKIP.search(kw):
-        return False
-    return True
-
-
-def _combine_longtail(base: str, candidates: list[str], max_len: int = 30) -> list[str]:
-    """
-    자동완성/연관검색어를 자연스럽게 조합해 롱테일 키워드 생성.
-
-    전략:
-    - 후보들에서 자주 나타나는 핵심 단어(빈도순)를 추출
-    - base 뒤에 빈도 높은 단어부터 이어붙여 자연스러운 키워드 완성
-    - 예) "속초 여행" → "속초 여행코스 뚜벅이 당일치기 추천"
-    """
-    from collections import Counter
-
-    # 모든 후보에서 단어 추출 (2글자 이상, base 단어 제외)
-    base_words = set(base.split())
-    word_freq: Counter = Counter()
-    for cand in candidates:
-        for word in cand.strip().split():
-            if (len(word) >= 2
-                    and word not in base_words
-                    and not _SKIP.search(word)):
-                word_freq[word] += 1
-
-    if not word_freq:
-        return []
-
-    # 빈도 높은 단어순으로 base에 이어붙임 (중복/포함 관계 단어 제외)
-    sorted_words = [w for w, _ in word_freq.most_common(12)]
-    result = base
-    results = []
-    for word in sorted_words:
-        # 이미 result에 포함된 단어이거나, result 안의 단어가 word에 포함되면 스킵
-        if word in result:
-            continue
-        if any(w in word or word in w for w in result.split()):
-            continue
-        next_kw = result + " " + word
-        if len(next_kw) > max_len:
-            break
-        result = next_kw
-        if len(result.split()) >= 3:
-            results.append(result.strip())
-
-    # 가장 긴 것 1개만 반환 (자연스러운 긴 제목 1개)
-    return [results[-1]] if results else []
+_SKIP = re.compile(r"(쇼핑|광고|구매|구입|가격비교|공식홈|공식사이트)")
 
 
 # ── 메인 함수 ─────────────────────────────────────────────────────────────
+
 def expand_longtail(
-    base_keywords: list[str],
+    base_keywords: list,
     category: str = "",
     blog_id: str = None,
-    top_n: int = 5,
+    top_n: int = 8,
     on_log=None,
 ) -> int:
     """
-    base_keywords를 네이버 자동완성 + 연관검색어로 확장해 DB에 저장.
+    base_keywords를 relKeyword API로 2단계 재귀 확장해 DB에 저장.
+    relKeyword 결과 없으면 자동완성 폴백.
 
     Args:
-        base_keywords: 기본 키워드 목록
-        category: DB 카테고리 ('여행', '살림', '정부지원금', 'IT' 등)
+        base_keywords: seed 키워드 목록
+        category: 저장 시 카테고리 (지정 시 해당 카테고리 제외 단어만 필터, 미지정 시 자동 분류)
         blog_id: 포화 체크용 (선택)
-        top_n: 기본 키워드 중 상위 N개만 처리 (Playwright 부하 제한)
+        top_n: seed 중 상위 N개만 처리
         on_log: 로그 콜백
 
     Returns:
-        새로 저장된 롱테일 키워드 수
+        새로 저장된 키워드 수
     """
     from keyword_engine.db_handler import upsert_keyword, keyword_exists
+    from keyword_engine.rel_keyword import get_rel_keywords
 
     def log(msg):
         if on_log:
             on_log(msg)
 
     saved = 0
-    processed_bases = set()
+    total_extracted = 0
+    total_skipped_dup = 0
+    total_skipped_cat = 0
 
-    for base in base_keywords[:top_n]:
-        base = base.strip()
-        if not base or base in processed_bases:
+    def _save(item: dict):
+        """단일 키워드 항목을 검증 후 DB에 저장"""
+        nonlocal saved, total_skipped_dup, total_skipped_cat
+        kw = item["keyword"].strip()
+        if not kw:
+            return
+        # 4글자 미만 제외 (단일어/너무 짧은 키워드)
+        if len(kw.replace(" ", "")) < 4:
+            return
+        # 광고/쇼핑 관련 키워드 제외
+        if _SKIP.search(kw):
+            return
+        # 이미 DB에 있으면 스킵
+        if keyword_exists(kw):
+            total_skipped_dup += 1
+            return
+        # 카테고리 결정
+        if category:
+            # 명시적 카테고리: 해당 카테고리 제외 단어만 필터
+            if any(ex in kw for ex in _CAT_EXCLUDE.get(category, [])):
+                total_skipped_cat += 1
+                return
+            cat = category
+        else:
+            # 자동 분류
+            cat = _classify_category(kw)
+            if cat == "unassigned":
+                total_skipped_cat += 1
+                return
+        # 검색량 기반 점수 (50~80점, 0이면 50점)
+        vol = item.get("total_vol", 0)
+        score = 50.0 + (vol / 3000) * 30 if vol > 0 else 50.0
+        upsert_keyword(
+            keyword=kw,
+            score=round(score, 1),
+            volume=vol,
+            pub_count=1,
+            category=cat,
+            blog_id=blog_id,
+        )
+        saved += 1
+
+    processed_seeds = set()
+
+    for seed in base_keywords[:top_n]:
+        seed = seed.strip()
+        if not seed or seed in processed_seeds:
             continue
-        processed_bases.add(base)
+        processed_seeds.add(seed)
 
-        log(f"[롱테일] '{base}' 확장 시작")
-
-        candidates = []
-
-        # 1. 자동완성 (HTTP — 빠름)
-        ac = _naver_autocomplete(base)
-        candidates.extend(ac)
-        log(f"[롱테일] 자동완성 {len(ac)}개: {ac[:5]}")
+        # ── 1차: relKeyword API ──────────────────────────────────────────
+        log(f"[롱테일] 1차 확장: '{seed}'")
+        results_1 = get_rel_keywords([seed], on_log=on_log)
         time.sleep(0.5)
 
-        # 2. 연관검색어 (Playwright — 한 번만 실행, 부하 큰 키워드에만)
-        if len(base.split()) <= 1:  # 단어 1개짜리 기본 키워드만
-            related = _naver_related_search(base, on_log=on_log)
-            candidates.extend(related)
-            log(f"[롱테일] 연관검색어 {len(related)}개: {related[:5]}")
+        # relKeyword 결과 없으면 자동완성 폴백
+        if not results_1:
+            ac = _naver_autocomplete(seed)
+            # 자동완성 결과는 검색량 0으로 저장
+            results_1 = [
+                {"keyword": kw, "total_vol": 0, "pc_vol": 0, "mobile_vol": 0}
+                for kw in ac
+                if len(kw) > len(seed) and len(kw.split()) >= 2
+            ]
+            if ac:
+                log(f"[롱테일] 자동완성 폴백: {len(ac)}개 → 필터 후 {len(results_1)}개")
 
-        # 3. 롱테일 필터 + 중복 제거
-        longtails = []
-        seen = set()
-        for kw in candidates:
-            kw = kw.strip()
-            if kw and kw not in seen and _is_longtail(kw, base):
-                seen.add(kw)
-                longtails.append(kw)
+        total_extracted += len(results_1)
+        for item in results_1:
+            _save(item)
 
-        # 3-1. 조합 롱테일: 꼬리 단어들을 base에 붙여 더 긴 키워드 생성
-        combined = _combine_longtail(base, candidates, max_len=25)
-        for kw in combined:
-            if kw not in seen:
-                seen.add(kw)
-                longtails.append(kw)
+        # ── 2차: 1차 결과 상위 5개 → 재귀 확장 ──────────────────────────
+        # 검색량 있는 것 우선, 상위 5개 seed로 재사용
+        top5 = [x for x in results_1 if x.get("total_vol", 0) > 0][:5]
+        if not top5:
+            top5 = results_1[:5]
 
-        log(f"[롱테일] '{base}' → 롱테일 {len(longtails)}개 추출 (조합 {len(combined)}개 포함)")
+        top5_kws = [x["keyword"] for x in top5 if x["keyword"] != seed]
+        if not top5_kws:
+            continue
 
-        # 4. DB 저장 (기존 키워드 덮어쓰기 X, 신규만)
-        for kw in longtails:
-            if not keyword_exists(kw):
-                upsert_keyword(
-                    keyword=kw,
-                    score=50.0,       # 기본 점수 (경쟁사 제목 키워드와 동일 수준)
-                    volume=0,
-                    pub_count=1,
-                    category=category,
-                    blog_id=blog_id,
-                )
-                saved += 1
+        log(f"[롱테일] 2차 확장: {top5_kws[:3]}{'...' if len(top5_kws) > 3 else ''}")
+        results_2 = get_rel_keywords(top5_kws, on_log=on_log)
+        time.sleep(0.5)
 
-        time.sleep(1)
+        total_extracted += len(results_2)
+        for item in results_2:
+            _save(item)
 
-    log(f"[롱테일] 총 {saved}개 신규 롱테일 키워드 저장 완료")
+    log(
+        f"[롱테일] 완료 — 추출 {total_extracted}개 | "
+        f"저장 {saved}개 | "
+        f"중복 스킵 {total_skipped_dup}개 | "
+        f"카테고리 불일치 {total_skipped_cat}개"
+    )
     return saved

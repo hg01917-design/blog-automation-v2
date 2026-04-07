@@ -757,8 +757,10 @@ def run_one_round(round_num):
     """모든 블로그에 1편씩 포스팅 (1라운드) — 순서 랜덤. 실패 블로그는 1회 재시도."""
     import time as _time
     import random as _rand
-    BLOGS = ["nolja100", "salim1su", "baremi542", "goodisak", "triplog"]
-    _rand.shuffle(BLOGS)  # 매 라운드 랜덤 순서 (한 블로그 연달아 3개 방지)
+    # triplog는 nolja100보다 항상 먼저 — 같은 여행 카테고리에서 triplog 우선 배정
+    _non_travel = ["salim1su", "baremi542", "goodisak"]
+    _rand.shuffle(_non_travel)
+    BLOGS = ["triplog", "nolja100"] + _non_travel
     log(f"\n{'='*60}")
     log(f"[라운드 {round_num}] 시작 ({datetime.now().strftime('%H:%M')})")
     log(f"{'='*60}")
