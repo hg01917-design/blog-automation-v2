@@ -1232,6 +1232,16 @@ def _analyze_and_report(all_results: list):
 if __name__ == "__main__":
     import random
     import json as _json
+    import fcntl
+
+    # ── 중복 실행 방지 락 ──
+    _LOCK_FILE = Path("/tmp/publish_drafts.lock")
+    _lock_fd = open(_LOCK_FILE, "w")
+    try:
+        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        _log("⚠ 이미 publish_drafts.py 실행 중 — 중복 실행 방지로 종료")
+        sys.exit(0)
 
     target = sys.argv[1] if len(sys.argv) > 1 else "all"
     ROUNDS = 3
