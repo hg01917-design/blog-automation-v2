@@ -153,5 +153,80 @@
     "date": "2026-04-02",
     "comment_ok": true,
     "neighbor_ok": true
+  },
+  "todayvibe_": {
+    "date": "2026-04-03",
+    "comment_ok": true,
+    "neighbor_ok": false
+  },
+  "pashkastudio": {
+    "date": "2026-04-03",
+    "comment_ok": false,
+    "neighbor_ok": false
+  },
+  "medi_25": {
+    "date": "2026-04-03",
+    "comment_ok": true,
+    "neighbor_ok": false
+  },
+  "pnpoongnyun": {
+    "date": "2026-04-03",
+    "comment_ok": false,
+    "neighbor_ok": false
+  },
+  "luky4998": {
+    "date": "2026-04-03",
+    "comment_ok": true,
+    "neighbor_ok": false
+  },
+  "mini": {
+    "date": "2026-04-03",
+    "comment_ok": false,
+    "neighbor_ok": false
+  },
+  "lemontea13": {
+    "date": "2026-04-03",
+    "comment_ok": true,
+    "neighbor_ok": false
+  },
+  "tip": {
+    "date": "2026-04-03",
+    "comment_ok": false,
+    "neighbor_ok": false
+  },
+  "thepicks1": {
+    "date": "2026-04-03",
+    "comment_ok": false,
+    "neighbor_ok": false
+  },
+  "dailyhack_": {
+    "date": "2026-04-03",
+    "comment_ok": false,
+    "neighbor_ok": false
+  },
+  "hosepin74": {
+    "date": "2026-04-03",
+    "comment_ok": false,
+    "neighbor_ok": true
+  },
+  "reallife_note": {
+    "date": "2026-04-03",
+    "comment_ok": true,
+    "neighbor_ok": true
+  },
+  "serom200": {
+    "date": "2026-04-03",
+    "comment_ok": true,
+    "neighbor_ok": true
+  },
+  "naemamdearoao": {
+    "date": "2026-04-03",
+    "comment_ok": true,
+    "neighbor_ok": true
+  },
+  "essence0762": {
+    "date": "2026-04-03",
+    "comment_ok": true,
+    "neighbor_ok": true
   }
 }
