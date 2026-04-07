@@ -288,6 +288,8 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
                 "triplog": "여행",
                 "salim1su": "살림",
                 "baremi542": "정부지원금",
+                "woll100": "교통",
+                "phn0502": "영화",
             }
             category = _BLOG_CATEGORY.get(blog_id)
             # baremi542는 '정부지원금'+'정부지원' 두 카테고리 모두 사용
