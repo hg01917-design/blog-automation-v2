@@ -819,7 +819,7 @@ if __name__ == "__main__":
     save_log()
 
     # ── 롱테일 키워드 확장 (크롤링 직후) ──
-    # 경쟁사 제목에서 뽑은 기본 키워드 → 네이버 자동완성 + 연관검색어 → 롱테일 저장
+    # 크롤링한 경쟁사 seed → 네이버 자동완성/연관검색어 → 롱테일(4단어↑)만 저장
     _BLOG_LONGTAIL = {
         "nolja100":  "여행",
         "triplog":   "여행",
@@ -831,17 +831,35 @@ if __name__ == "__main__":
     try:
         from keyword_engine.longtail_expander import expand_longtail
         from keyword_engine.db_handler import get_top_keywords
+
+        # 각 블로그 카테고리별로 seed 구성: 크롤링 신규 키워드 우선, 없으면 DB 기존 키워드
+        _CAT_BLOG = {"여행": ["nolja100", "triplog"], "살림": ["salim1su"],
+                     "IT": ["goodisak"], "정부지원금": ["baremi542"]}
         for bid, cat in _BLOG_LONGTAIL.items():
-            # DB에서 점수 높은 기본 키워드 상위 10개 가져와서 확장
-            base_kws = [r["keyword"] for r in get_top_keywords(n=10, min_score=0)
-                        if r.get("category", "") == cat]
-            if not base_kws:
+            # 이미 다른 blog_id가 같은 카테고리를 처리했으면 스킵 (중복 확장 방지)
+            if cat in ("여행",) and bid == "triplog":
+                continue  # nolja100에서 이미 처리
+            # 1순위: 오늘 크롤링한 키워드
+            crawled_seeds = []
+            for _bid in _CAT_BLOG.get(cat, []):
+                crawled_seeds.extend(_crawled_keywords.get(_bid, []))
+            # 2순위: DB 기존 키워드 (단어 수 적은 것 — seed 역할)
+            db_seeds = [r["keyword"] for r in get_top_keywords(n=20, min_score=0)
+                        if r.get("category", "") == cat and len(r["keyword"].split()) <= 4]
+            # seed 합치기 (크롤링 우선, 중복 제거)
+            seen_seeds = set()
+            seeds = []
+            for kw in crawled_seeds + db_seeds:
+                if kw not in seen_seeds:
+                    seen_seeds.add(kw)
+                    seeds.append(kw)
+            if not seeds:
                 continue
             added = expand_longtail(
-                base_keywords=base_kws,
+                base_keywords=seeds,
                 category=cat,
                 blog_id=bid,
-                top_n=5,   # 블로그당 최대 5개 기본 키워드 확장 (부하 조절)
+                top_n=8,   # seed 최대 8개 확장 (신규 seed 많으면 더 많이)
                 on_log=log,
             )
             log(f"[롱테일] {bid}({cat}): +{added}개 롱테일 추가")
