@@ -627,39 +627,42 @@ def _post_tistory(account, title, body_html, tags=None,
                 cat_name = "여행"
             else:
                 cat_name = _get_goodisak_category(keyword or title)
-            log(f"[포스팅] 카테고리 선택 ({blog_id_local}): {cat_name}")
-            try:
-                # TinyMCE 카테고리 드롭다운 열기
-                cat_result = page.evaluate("""() => {
-                    const selectTxts = [...document.querySelectorAll('i.mce-txt')];
-                    const catTxt = selectTxts.find(i => i.textContent.trim() === '카테고리');
-                    if (catTxt) {
-                        const btn = catTxt.closest('button');
-                        if (btn) { btn.click(); return '__dropdown__'; }
-                    }
-                    return null;
-                }""")
-                if cat_result == '__dropdown__':
-                    import time as _t
-                    _t.sleep(0.5)
-                    # includes() 로 부분 일치 (카테고리명에 글수 포함 시 대응)
-                    selected = page.evaluate("""(catName) => {
-                        const items = [...document.querySelectorAll('[role="menuitem"]')];
-                        const item = items.find(el => el.textContent.trim().includes(catName));
-                        if (item) {
-                            const actual = item.textContent.trim();
-                            item.click();
-                            return '카테고리:' + actual;
+            if not cat_name:
+                log(f"[포스팅] 카테고리 없음 — 스킵 ({blog_id_local})")
+            else:
+                log(f"[포스팅] 카테고리 선택 ({blog_id_local}): {cat_name}")
+                try:
+                    # TinyMCE 카테고리 드롭다운 열기
+                    cat_result = page.evaluate("""() => {
+                        const selectTxts = [...document.querySelectorAll('i.mce-txt')];
+                        const catTxt = selectTxts.find(i => i.textContent.trim() === '카테고리');
+                        if (catTxt) {
+                            const btn = catTxt.closest('button');
+                            if (btn) { btn.click(); return '__dropdown__'; }
                         }
-                        // 모든 카테고리 이름 반환 (디버그)
-                        return '없음:' + items.map(el => el.textContent.trim()).join('|');
-                    }""", cat_name)
-                    if selected and selected.startswith('카테고리:'):
-                        log(f"[포스팅] 카테고리 선택 완료: {selected}")
-                    else:
-                        log(f"[포스팅] 카테고리 '{cat_name}' 항목 없음. 실제 목록: {selected}")
-            except Exception as e:
-                log(f"[포스팅] 카테고리 선택 오류: {e}")
+                        return null;
+                    }""")
+                    if cat_result == '__dropdown__':
+                        import time as _t
+                        _t.sleep(0.5)
+                        # includes() 로 부분 일치 (카테고리명에 글수 포함 시 대응)
+                        selected = page.evaluate("""(catName) => {
+                            const items = [...document.querySelectorAll('[role="menuitem"]')];
+                            const item = items.find(el => el.textContent.trim().includes(catName));
+                            if (item) {
+                                const actual = item.textContent.trim();
+                                item.click();
+                                return '카테고리:' + actual;
+                            }
+                            // 모든 카테고리 이름 반환 (디버그)
+                            return '없음:' + items.map(el => el.textContent.trim()).join('|');
+                        }""", cat_name)
+                        if selected and selected.startswith('카테고리:'):
+                            log(f"[포스팅] 카테고리 선택 완료: {selected}")
+                        else:
+                            log(f"[포스팅] 카테고리 '{cat_name}' 항목 없음. 실제 목록: {selected}")
+                except Exception as e:
+                    log(f"[포스팅] 카테고리 선택 오류: {e}")
 
         # ── 대표이미지 설정 (첫 번째 이미지) ──
         if image_paths:
@@ -1041,16 +1044,14 @@ _GOODISAK_IT_KEYWORDS = [
 
 def _get_goodisak_category(keyword: str) -> str:
     """키워드 기반 goodisak 블로그 카테고리 반환.
-    금융 관련 → '금융', IT 관련 → 'IT 정보', 나머지 → 'IT 정보' (기본)
+    금융 관련 → '금융', IT 관련 → '' (카테고리 없음, 실제 IT 카테고리명 미확인)
     """
     kw_flat = keyword.replace(" ", "").lower()
     for w in _GOODISAK_FINANCE_KEYWORDS:
         if w.replace(" ", "").lower() in kw_flat:
             return "금융"
-    for w in _GOODISAK_IT_KEYWORDS:
-        if w.replace(" ", "").lower() in kw_flat:
-            return "IT 정보"
-    return "IT 정보"  # 기본값
+    # IT 카테고리: 실제 Tistory 카테고리명 확인 필요 → 현재 빈 값 반환 (카테고리 없음으로 처리)
+    return ""
 
 
 # 살림1수 블로그 카테고리 판단
