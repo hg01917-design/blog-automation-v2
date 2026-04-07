@@ -220,7 +220,6 @@ def _build_post_text(title: str, hook: str, blog_id: str = "") -> str:
     emoji = emoji_map.get(blog_id, "📌")
 
     return (
-        f"{emoji} {title}\n\n"
         f"{hook}\n\n"
         f"👇 전체 내용은 댓글 링크에서 확인하세요"
     )
