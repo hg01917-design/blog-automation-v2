@@ -352,25 +352,21 @@ def filter_by_level(keywords: list, blog_id: str, on_log=None) -> list:
     info = get_blog_level(blog_id)
     level = info["level"]
 
-    if level == "초급":
-        # 롱테일 우선: 공백으로 구분된 단어가 3개 이상이거나, 연속 글자 수 6자 이상
-        filtered = []
-        excluded = []
-        for kw in keywords:
-            words = kw.split()
-            char_count = len(kw.replace(" ", ""))
-            if len(words) >= 3 or char_count >= 6:
-                filtered.append(kw)
-            else:
-                excluded.append(kw)
-        if excluded:
-            _log(f"[레벨필터] {blog_id}({level}): {len(excluded)}개 단어 제외 (롱테일 기준 미달)", on_log)
-        _log(f"[레벨필터] {blog_id}({level}): {len(filtered)}/{len(keywords)}개 통과", on_log)
-        return filtered
-
-    # 중급/고급: 현재는 전체 통과 (추후 검색량 범위 필터 추가)
-    _log(f"[레벨필터] {blog_id}({level}): 전체 {len(keywords)}개 통과 (필터 미적용)", on_log)
-    return keywords
+    # 모든 레벨: 롱테일 기준 강제 — 5단어 이상 or 순수 글자 10자 이상
+    # 3~4단어 메인키워드("부산 여행 코스" 등)는 경쟁 과다로 제외
+    filtered = []
+    excluded = []
+    for kw in keywords:
+        words = kw.split()
+        char_count = len(kw.replace(" ", ""))
+        if len(words) >= 5 or char_count >= 12:
+            filtered.append(kw)
+        else:
+            excluded.append(kw)
+    if excluded:
+        _log(f"[레벨필터] {blog_id}({level}): {len(excluded)}개 단어 제외 (롱테일 5단어/12자 미달)", on_log)
+    _log(f"[레벨필터] {blog_id}({level}): {len(filtered)}/{len(keywords)}개 통과", on_log)
+    return filtered
 
 
 def _mark_banned_in_notion(blog_id: str, on_log=None):
