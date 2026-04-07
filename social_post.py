@@ -131,9 +131,12 @@ def _get_page_token(page_id: str) -> str:
 
 def _strip_html(html: str) -> str:
     """HTML 태그 제거 후 순수 텍스트 반환."""
-    text = re.sub(r"<[^>]+>", " ", html)
+    import html as _html_mod
+    # HTML 엔티티 먼저 디코딩 (&lt; → <, &gt; → > 등)
+    text = _html_mod.unescape(html)
+    text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"&nbsp;", " ", text)
-    text = re.sub(r"&[a-z]+;", "", text)
+    text = re.sub(r"&[a-zA-Z0-9#]+;", "", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
