@@ -933,6 +933,14 @@ if __name__ == "__main__":
             log(f"[경쟁모니터] 오류: {_e}")
         save_log()
 
+    # ── 판단 엔진 (라운드 시작 전 1회) ──
+    try:
+        from decision_engine import run_daily_analysis
+        run_daily_analysis(on_log=log)
+    except Exception as _de:
+        log(f"[판단엔진] 생략: {_de}")
+    save_log()
+
     # ── 라운드 1: 0~30분 랜덤 지연 후 시작 ──
     delay1 = _random.uniform(0, 30 * 60)
     log(f"[라운드 1] {int(delay1/60)}분 후 시작 예정")

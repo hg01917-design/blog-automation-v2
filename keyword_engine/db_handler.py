@@ -60,6 +60,45 @@ def init_db():
         except Exception:
             pass
 
+        # ── analytics 테이블 (GSC + AdSense 일별 수집) ──
+        db.executescript("""
+            CREATE TABLE IF NOT EXISTS gsc_daily (
+                date       TEXT,
+                blog_id    TEXT,
+                clicks     INTEGER DEFAULT 0,
+                impressions INTEGER DEFAULT 0,
+                ctr        REAL    DEFAULT 0,
+                avg_position REAL  DEFAULT 0,
+                PRIMARY KEY (date, blog_id)
+            );
+            CREATE TABLE IF NOT EXISTS gsc_pages (
+                date       TEXT,
+                blog_id    TEXT,
+                page_url   TEXT,
+                clicks     INTEGER DEFAULT 0,
+                impressions INTEGER DEFAULT 0,
+                ctr        REAL    DEFAULT 0,
+                position   REAL    DEFAULT 0,
+                PRIMARY KEY (date, blog_id, page_url)
+            );
+            CREATE TABLE IF NOT EXISTS adsense_daily (
+                date       TEXT PRIMARY KEY,
+                earnings_krw REAL DEFAULT 0,
+                pageviews  INTEGER DEFAULT 0,
+                clicks     INTEGER DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS revenue_goals (
+                id         INTEGER PRIMARY KEY,
+                monthly_target_krw INTEGER DEFAULT 1000000,
+                updated_at TEXT
+            );
+        """)
+        # revenue_goals 기본값
+        db.execute(
+            "INSERT OR IGNORE INTO revenue_goals (id, monthly_target_krw, updated_at) VALUES (1, 1000000, ?)",
+            (datetime.now().isoformat(),)
+        )
+
 
 # 블로그별 주제 포화 임계값 (같은 지역/주제 이미 N개 이상이면 스킵)
 _TOPIC_SATURATION = 3
@@ -365,6 +404,127 @@ def get_published_keywords(blog_id: str = None) -> list:
                 "SELECT keyword FROM keywords WHERE status = 'published'"
             ).fetchall()
     return [r["keyword"] for r in rows]
+
+
+# ── Analytics 저장/조회 ──────────────────────────────────────────────────────
+
+def save_gsc_daily(date: str, blog_id: str, clicks: int, impressions: int,
+                   ctr: float, avg_position: float):
+    with _conn() as db:
+        db.execute(
+            """INSERT INTO gsc_daily (date, blog_id, clicks, impressions, ctr, avg_position)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(date, blog_id) DO UPDATE SET
+                   clicks=excluded.clicks, impressions=excluded.impressions,
+                   ctr=excluded.ctr, avg_position=excluded.avg_position""",
+            (date, blog_id, clicks, impressions, ctr, avg_position),
+        )
+
+
+def save_gsc_pages(date: str, blog_id: str, pages: list):
+    """pages: [{"url": ..., "clicks": ..., "impressions": ..., "ctr": ..., "position": ...}]"""
+    with _conn() as db:
+        for p in pages:
+            db.execute(
+                """INSERT INTO gsc_pages (date, blog_id, page_url, clicks, impressions, ctr, position)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(date, blog_id, page_url) DO UPDATE SET
+                       clicks=excluded.clicks, impressions=excluded.impressions,
+                       ctr=excluded.ctr, position=excluded.position""",
+                (date, blog_id, p["url"], p.get("clicks", 0),
+                 p.get("impressions", 0), p.get("ctr", 0), p.get("position", 0)),
+            )
+
+
+def save_adsense_daily(date: str, earnings_krw: float, pageviews: int = 0, clicks: int = 0):
+    with _conn() as db:
+        db.execute(
+            """INSERT INTO adsense_daily (date, earnings_krw, pageviews, clicks)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(date) DO UPDATE SET
+                   earnings_krw=excluded.earnings_krw,
+                   pageviews=excluded.pageviews, clicks=excluded.clicks""",
+            (date, earnings_krw, pageviews, clicks),
+        )
+
+
+def get_monthly_earnings(year: int, month: int) -> float:
+    prefix = f"{year:04d}-{month:02d}"
+    with _conn() as db:
+        row = db.execute(
+            "SELECT COALESCE(SUM(earnings_krw), 0) FROM adsense_daily WHERE date LIKE ?",
+            (f"{prefix}%",),
+        ).fetchone()
+    return row[0]
+
+
+def get_revenue_goal() -> int:
+    with _conn() as db:
+        row = db.execute("SELECT monthly_target_krw FROM revenue_goals WHERE id=1").fetchone()
+    return row[0] if row else 1_000_000
+
+
+def set_revenue_goal(monthly_target_krw: int):
+    with _conn() as db:
+        db.execute(
+            "UPDATE revenue_goals SET monthly_target_krw=?, updated_at=? WHERE id=1",
+            (monthly_target_krw, datetime.now().isoformat()),
+        )
+
+
+def get_low_ctr_pages(threshold: float = 0.01, min_impressions: int = 100,
+                      days: int = 7) -> list:
+    """노출 많은데 CTR 낮은 페이지 (제목 수정 후보)"""
+    from datetime import timedelta
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    with _conn() as db:
+        rows = db.execute(
+            """SELECT blog_id, page_url,
+                      SUM(clicks) as total_clicks,
+                      SUM(impressions) as total_impressions,
+                      CAST(SUM(clicks) AS REAL)/NULLIF(SUM(impressions),0) as avg_ctr,
+                      AVG(position) as avg_position
+               FROM gsc_pages
+               WHERE date >= ? AND impressions >= ?
+               GROUP BY blog_id, page_url
+               HAVING avg_ctr < ?
+               ORDER BY total_impressions DESC
+               LIMIT 20""",
+            (since, min_impressions, threshold),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_rising_pages(days_recent: int = 3, days_compare: int = 7) -> list:
+    """최근 N일 vs 이전 M일 대비 급상승 페이지"""
+    from datetime import timedelta
+    now = datetime.now()
+    recent_start = (now - timedelta(days=days_recent)).strftime("%Y-%m-%d")
+    compare_start = (now - timedelta(days=days_recent + days_compare)).strftime("%Y-%m-%d")
+    compare_end = (now - timedelta(days=days_recent + 1)).strftime("%Y-%m-%d")
+    with _conn() as db:
+        rows = db.execute(
+            """SELECT r.blog_id, r.page_url,
+                      r.recent_clicks, c.prev_clicks,
+                      CASE WHEN c.prev_clicks > 0
+                           THEN CAST(r.recent_clicks AS REAL)/c.prev_clicks
+                           ELSE 99 END AS growth_ratio
+               FROM (
+                   SELECT blog_id, page_url, SUM(clicks) as recent_clicks
+                   FROM gsc_pages WHERE date >= ?
+                   GROUP BY blog_id, page_url
+               ) r
+               LEFT JOIN (
+                   SELECT blog_id, page_url, SUM(clicks) as prev_clicks
+                   FROM gsc_pages WHERE date >= ? AND date <= ?
+                   GROUP BY blog_id, page_url
+               ) c USING(blog_id, page_url)
+               WHERE r.recent_clicks >= 3
+               ORDER BY growth_ratio DESC
+               LIMIT 20""",
+            (recent_start, compare_start, compare_end),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 init_db()
