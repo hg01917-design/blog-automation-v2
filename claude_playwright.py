@@ -751,11 +751,11 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             # 그리팅 감지: 짧은 응답 + "키워드" 언급 → 프로젝트가 키워드를 별도로 요청하는 중
             # 새 채팅 열지 말고 같은 창에서 키워드만 다시 전송
             is_greeting = (
-                len(response_text) < 300
+                len(response_text) < 600
                 and "===제목===" not in response_text
                 and project_url is not None
                 and keyword is not None
-                and any(w in response_text for w in ["키워드", "시작할게", "알려주", "입력해", "시작하겠"])
+                and any(w in response_text for w in ["키워드", "시작할게", "알려주", "입력해", "시작하겠", "확인했어요", "선정할게", "방향"])
             )
             if is_greeting and attempt <= MAX_RETRIES:
                 log(f"[Playwright] ⚠ 그리팅 응답 감지 — 같은 창에서 키워드 재전송")
