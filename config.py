@@ -68,7 +68,7 @@ ACCOUNTS = [
     {
         "blog": "woll100",
         "platform": "tistory",
-        "kakao_id": "baremi542",
+        "kakao_id": "wolbaeg100",
         "editor_url": "https://woll100.tistory.com/manage/newpost",
         "category": "교통정보",
     },
