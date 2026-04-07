@@ -630,11 +630,12 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     MIN_IMAGES = 3
 
     # 3. 글 품질 검수 (이미지 생성 전에 먼저 — Gemini 쿼터 낭비 방지)
-    MIN_BODY_CHARS = 2000  # 최소 본문 길이 (2000자 미만이면 재생성 1회 시도)
+    MIN_BODY_CHARS_HARD = 1700  # 절대 최소 (이 미만이면 발행 중단)
+    MIN_BODY_CHARS_SOFT = 2000  # 권고 최소 (이 미만이면 재생성 1회 시도)
 
     # 2000자 미만이면 재생성 1회 시도
-    if char_count < MIN_BODY_CHARS:
-        log(f"[검수] ⚠ 본문 짧음 ({char_count}자 < {MIN_BODY_CHARS}자) — 재생성 1회 시도")
+    if char_count < MIN_BODY_CHARS_SOFT:
+        log(f"[검수] ⚠ 본문 짧음 ({char_count}자 < {MIN_BODY_CHARS_SOFT}자) — 재생성 1회 시도")
         raw2 = generate_text("", blog_id=blog_id, keyword=keyword_with_mrt, on_log=log)
         if raw2 and "추출 실패" not in raw2:
             body_m2 = re.search(r"===본문===\s*\n(.*?)\n*===본문끝===", raw2, re.DOTALL)
@@ -666,9 +667,11 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
                     log(f"[검수] 재생성 결과 더 짧음 — 원본 유지")
 
     quality_ok = True
-    if char_count < MIN_BODY_CHARS:
-        log(f"[검수] ❌ 본문 너무 짧음 ({char_count}자 < {MIN_BODY_CHARS}자) — 발행 중단")
+    if char_count < MIN_BODY_CHARS_HARD:
+        log(f"[검수] ❌ 본문 너무 짧음 ({char_count}자 < {MIN_BODY_CHARS_HARD}자) — 발행 중단")
         quality_ok = False
+    elif char_count < MIN_BODY_CHARS_SOFT:
+        log(f"[검수] ⚠ 본문 권고치 미달 ({char_count}자 < {MIN_BODY_CHARS_SOFT}자) — 발행 진행")
     if not tags:
         log(f"[검수] ❌ 태그 없음 — 발행 중단")
         quality_ok = False
