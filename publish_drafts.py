@@ -729,27 +729,42 @@ def publish_tistory_draft(blog_id: str) -> bool:
         if not _tistory_check_and_fix(page, blog_id, draft_id):
             return False
 
-        # nolja100: 여행 주제 아닌 글은 발행 금지 (임시저장 삭제)
+        # nolja100: 여행 주제 아닌 글은 발행 금지
         if blog_id == "nolja100":
-            title_el = page.query_selector('#post-title-inp') or page.query_selector('#title')
-            title_val = title_el.input_value() if title_el else ""
+            # 여러 셀렉터 시도
+            title_val = ""
+            for sel in ['#post-title-inp', '#title', 'input[name="title"]', '.title-input']:
+                el = page.query_selector(sel)
+                if el:
+                    title_val = (el.input_value() or "").strip()
+                    if title_val:
+                        break
+            # 셀렉터 실패 시 페이지 제목에서 추출
+            if not title_val:
+                title_val = page.evaluate("() => document.title || ''")
             TRAVEL_KW = ["여행", "관광", "숙소", "호텔", "펜션", "맛집", "카페", "코스",
                          "드라이브", "당일치기", "뚜벅", "트레킹", "둘레길", "섬", "해변",
                          "온천", "리조트", "캠핑", "글램핑", "국내", "해외", "항공", "투어",
                          "페리", "지하철", "자갈치", "제주", "강릉", "부산", "경주", "강원",
                          "서울", "인천", "대전", "광주", "전주", "수원", "춘천", "속초",
                          "벚꽃", "단풍", "여의도", "한강", "공원", "축제", "주차", "명소",
-                         "나들이", "피크닉", "산책", "데이트", "야경", "뷰", "포토스팟"]
+                         "나들이", "피크닉", "산책", "데이트", "야경", "뷰", "포토스팟",
+                         "진해", "군항제", "창원", "하동", "광양", "왕십리", "경주", "안양",
+                         "봄나들이", "봄여행", "꽃구경", "명소", "주차장", "셔틀", "입장료",
+                         "통영", "여수", "거제", "남해", "순천", "전주", "군산", "목포"]
             is_travel = any(kw in title_val for kw in TRAVEL_KW)
             if not is_travel:
-                _log(f"[nolja100] ⛔ 여행 주제 아님 (제목: {title_val[:40]}) → 발행 중단 (임시저장 삭제)")
-                # 임시저장 삭제
-                page.evaluate("""() => {
-                    const btns = [...document.querySelectorAll('button')];
-                    const del = btns.find(b => b.textContent.includes('삭제'));
-                    if (del) del.click();
-                }""")
-                return False
+                if not title_val:
+                    # 제목을 못 읽은 경우 — 삭제 대신 스킵 (nolja100 봇은 여행만 씀)
+                    _log(f"[nolja100] ⚠ 제목 읽기 실패 — 여행 글로 간주하고 발행 진행")
+                else:
+                    _log(f"[nolja100] ⛔ 여행 주제 아님 (제목: {title_val[:40]}) → 발행 중단 (임시저장 삭제)")
+                    page.evaluate("""() => {
+                        const btns = [...document.querySelectorAll('button')];
+                        const del = btns.find(b => b.textContent.includes('삭제'));
+                        if (del) del.click();
+                    }""")
+                    return False
             _log(f"[nolja100] ✅ 여행 주제 확인: {title_val[:40]}")
 
         # 공개 발행
