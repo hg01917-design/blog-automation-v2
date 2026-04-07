@@ -644,18 +644,32 @@ def _post_tistory(account, title, body_html, tags=None,
                     }""")
                     if cat_result == '__dropdown__':
                         import time as _t
-                        _t.sleep(0.5)
-                        # includes() 로 부분 일치 (카테고리명에 글수 포함 시 대응)
+                        _t.sleep(1.0)
+                        # TinyMCE 드롭다운 여러 셀렉터 시도 (role=menuitem, mce-text, li 등)
                         selected = page.evaluate("""(catName) => {
-                            const items = [...document.querySelectorAll('[role="menuitem"]')];
-                            const item = items.find(el => el.textContent.trim().includes(catName));
+                            const selectors = [
+                                '[role="menuitem"]',
+                                '.mce-menu-item',
+                                '.mce-text',
+                                'div.mce-container-body li',
+                                'ul.mce-menu-items li',
+                                '.mce-listbox-menu li'
+                            ];
+                            let allItems = [];
+                            for (const sel of selectors) {
+                                const found = [...document.querySelectorAll(sel)];
+                                if (found.length > 0) {
+                                    allItems = found;
+                                    break;
+                                }
+                            }
+                            const item = allItems.find(el => el.textContent.trim().includes(catName));
                             if (item) {
                                 const actual = item.textContent.trim();
                                 item.click();
                                 return '카테고리:' + actual;
                             }
-                            // 모든 카테고리 이름 반환 (디버그)
-                            return '없음:' + items.map(el => el.textContent.trim()).join('|');
+                            return '없음:' + allItems.map(el => el.textContent.trim()).join('|');
                         }""", cat_name)
                         if selected and selected.startswith('카테고리:'):
                             log(f"[포스팅] 카테고리 선택 완료: {selected}")
