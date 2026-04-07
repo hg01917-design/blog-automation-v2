@@ -65,6 +65,20 @@ ACCOUNTS = [
         "wp_user_env": "TRIPLOG_WP_USER",
         "wp_pass_env": "TRIPLOG_WP_APP_PASSWORD",
     },
+    {
+        "blog": "woll100",
+        "platform": "tistory",
+        "kakao_id": "baremi542",
+        "editor_url": "https://woll100.tistory.com/manage/newpost",
+        "category": "교통정보",
+    },
+    {
+        "blog": "phn0502",
+        "platform": "tistory",
+        "kakao_id": "baremi542",
+        "editor_url": "https://phn0502.tistory.com/manage/newpost",
+        "category": "영화",
+    },
 ]
 
 # 계정별 빠른 조회용

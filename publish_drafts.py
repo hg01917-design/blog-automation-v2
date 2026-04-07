@@ -39,6 +39,8 @@ BLOG_DOMAIN = {
     "goodisak": "welfare.baremi542.com",
     "nolja100": "issue.baremi542.com",
     "baremi542": "baremi542.com",
+    "woll100":  "info.baremi542.com",
+    "phn0502":  "film.baremi542.com",
 }
 
 # ─── 로그 ───────────────────────────────────────

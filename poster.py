@@ -620,11 +620,16 @@ def _post_tistory(account, title, body_html, tags=None,
             else:
                 log(f"[포스팅] 태그 {tag_ok}개 입력 완료")
 
-        # ── 카테고리 선택 (nolja100 / goodisak) ──
+        # ── 카테고리 선택 (tistory 블로그) ──
         blog_id_local = account.get("blog", "")
-        if blog_id_local in ("nolja100", "goodisak"):
-            if blog_id_local == "nolja100":
-                cat_name = "여행"
+        _TISTORY_CAT = {
+            "nolja100": "여행",
+            "woll100":  "교통정보",
+            "phn0502":  "영화",
+        }
+        if blog_id_local in ("nolja100", "goodisak", "woll100", "phn0502"):
+            if blog_id_local in _TISTORY_CAT:
+                cat_name = _TISTORY_CAT[blog_id_local]
             else:
                 cat_name = _get_goodisak_category(keyword or title)
             if not cat_name:

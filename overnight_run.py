@@ -178,6 +178,12 @@ _BLOG_THEMES = {
                 "투어", "관광", "비행기", "티켓", "패키지", "배낭여행", "자유여행",
                 "가볼만한", "여행지", "추천", "코스", "일정", "경비", "항공권", "렌터카", "렌트카",
                 "당일치기", "트레킹", "등산", "바다", "계곡", "축제", "글램핑", "캠핑", "펜션"],
+    "woll100": ["공항", "공항버스", "리무진버스", "시외버스", "교통", "시간표", "요금", "소요시간",
+                "예매", "정류장", "인천공항", "김포공항", "김해공항", "제주공항", "대구공항",
+                "청주공항", "무안공항", "KTX", "공항철도", "버스", "노선", "출발", "도착"],
+    "phn0502": ["영화", "넷플릭스", "왓챠", "웨이브", "티빙", "OTT", "결말", "줄거리", "해석",
+                "쿠키영상", "등장인물", "배우", "출연작", "근황", "추천", "신작", "장르",
+                "액션", "로맨스", "스릴러", "공포", "애니", "드라마", "시리즈"],
 }
 
 
@@ -358,11 +364,13 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
         except Exception as e:
             _log(f"[유사문서] WP 검색 실패: {e}")
 
-    elif blog_id in ("nolja100", "goodisak"):
+    elif blog_id in ("nolja100", "goodisak", "woll100", "phn0502"):
         # Tistory RSS로 최근 글 확인
         TISTORY_RSS = {
             "nolja100": "https://issue.baremi542.com/rss",
             "goodisak": "https://welfare.baremi542.com/rss",
+            "woll100":  "https://info.baremi542.com/rss",
+            "phn0502":  "https://film.baremi542.com/rss",
         }
         rss_url = TISTORY_RSS.get(blog_id, "")
         if rss_url:
@@ -793,7 +801,7 @@ def run_one_round(round_num):
     import time as _time
     import random as _rand
     # triplog는 nolja100보다 항상 먼저 — 같은 여행 카테고리에서 triplog 우선 배정
-    _non_travel = ["salim1su", "baremi542", "goodisak"]
+    _non_travel = ["salim1su", "baremi542", "goodisak", "woll100", "phn0502"]
     _rand.shuffle(_non_travel)
     BLOGS = ["triplog", "nolja100"] + _non_travel
     log(f"\n{'='*60}")
@@ -863,6 +871,8 @@ if __name__ == "__main__":
         "salim1su":  "살림",
         "goodisak":  "IT",
         "baremi542": "정부지원금",
+        "woll100":   "교통",
+        "phn0502":   "영화",
     }
     log("[롱테일] 키워드 확장 시작")
     try:
@@ -871,7 +881,8 @@ if __name__ == "__main__":
 
         # 각 블로그 카테고리별로 seed 구성: 크롤링 신규 키워드 우선, 없으면 DB 기존 키워드
         _CAT_BLOG = {"여행": ["nolja100", "triplog"], "살림": ["salim1su"],
-                     "IT": ["goodisak"], "정부지원금": ["baremi542"]}
+                     "IT": ["goodisak"], "정부지원금": ["baremi542"],
+                     "교통": ["woll100"], "영화": ["phn0502"]}
         for bid, cat in _BLOG_LONGTAIL.items():
             # 이미 다른 blog_id가 같은 카테고리를 처리했으면 스킵 (중복 확장 방지)
             if cat in ("여행",) and bid == "triplog":
