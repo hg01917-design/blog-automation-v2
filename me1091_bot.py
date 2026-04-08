@@ -578,6 +578,11 @@ def run_one_product(on_log=None) -> bool:
         _log(f"[me1091] 글 생성 실패: {name[:40]}")
         return False
 
+    # 수수료 문구 맨 위 강제 삽입
+    DISCLOSURE = "※ 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.\n\n"
+    if DISCLOSURE.strip() not in content:
+        content = DISCLOSURE + content
+
     try:
         from poster import post_single
         ok = post_single(
