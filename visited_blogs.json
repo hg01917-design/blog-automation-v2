@@ -228,5 +228,30 @@
     "date": "2026-04-03",
     "comment_ok": true,
     "neighbor_ok": true
+  },
+  "home_kzhz": {
+    "date": "2026-04-08",
+    "comment_ok": true,
+    "neighbor_ok": true
+  },
+  "goodpeople486": {
+    "date": "2026-04-08",
+    "comment_ok": true,
+    "neighbor_ok": true
+  },
+  "kite_wn": {
+    "date": "2026-04-08",
+    "comment_ok": true,
+    "neighbor_ok": true
+  },
+  "sseami3004": {
+    "date": "2026-04-08",
+    "comment_ok": true,
+    "neighbor_ok": true
+  },
+  "zadusuki": {
+    "date": "2026-04-08",
+    "comment_ok": true,
+    "neighbor_ok": false
   }
 }
