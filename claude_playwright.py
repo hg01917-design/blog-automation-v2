@@ -826,6 +826,157 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         pw.stop()
 
 
+def ask_with_image(image_path: str, question: str, blog_id: str = None, on_log=None) -> str:
+    """Claude.ai에 이미지 + 질문을 보내고 응답 텍스트를 반환한다.
+
+    블로그 글 생성이 아닌 단순 질의응답용 (이미지 분석 → 짧은 텍스트 반환).
+    blog_id가 있으면 해당 프로젝트 URL로 이동.
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    from pathlib import Path as _Path
+
+    pw, browser = _connect_cdp(on_log)
+    page = get_or_create_page(browser, url_contains="claude.ai", navigate_to=CLAUDE_URL)
+
+    project_url = BLOG_PROJECT_URLS.get(blog_id) if blog_id else None
+    nav_url = project_url or f"{CLAUDE_URL}/new"
+
+    try:
+        page.goto(nav_url, wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_timeout(3000)
+
+        # 이미지 첨부
+        image_attached = False
+        if image_path and _Path(image_path).exists():
+            try:
+                attach_selectors = [
+                    'button[aria-label="Attach files"]',
+                    'button[aria-label="파일 첨부"]',
+                    'button[aria-label="Add attachment"]',
+                    'button[aria-label*="ttach"]',
+                    '[data-testid="attach-file-button"]',
+                    'label[for*="file"]',
+                ]
+                clicked = False
+                with page.expect_file_chooser(timeout=8000) as fc_info:
+                    for sel in attach_selectors:
+                        try:
+                            btn = page.locator(sel).first
+                            if btn.is_visible(timeout=1000):
+                                btn.click()
+                                clicked = True
+                                break
+                        except Exception:
+                            pass
+                    if not clicked:
+                        # 숨겨진 파일 input 직접 탐색
+                        page.evaluate("""() => {
+                            const inp = document.querySelector('input[type="file"]');
+                            if (inp) inp.click();
+                        }""")
+                if clicked or True:
+                    fc_info.value.set_files(image_path)
+                    page.wait_for_timeout(2000)
+                    image_attached = True
+                    log(f"[Claude] 이미지 첨부 완료: {_Path(image_path).name}")
+            except Exception as e:
+                log(f"[Claude] 이미지 첨부 실패 (텍스트만 전송): {e}")
+
+        # 질문 입력
+        input_sel = 'div[contenteditable="true"]'
+        page.wait_for_selector(input_sel, state="visible", timeout=30000)
+        page.locator(input_sel).first.click()
+        page.wait_for_timeout(300)
+        page.evaluate("""(text) => {
+            const el = document.querySelector('div[contenteditable="true"]');
+            el.focus();
+            document.execCommand('insertText', false, text);
+        }""", question)
+        page.wait_for_timeout(500)
+
+        # 전송
+        sent = False
+        try:
+            send_btn = page.locator(SEND_BTN_SEL).first
+            if send_btn.count() > 0:
+                send_btn.click(timeout=5000)
+                sent = True
+        except Exception:
+            pass
+        if not sent:
+            page.keyboard.press("Enter")
+        log("[Claude] 이미지+질문 전송, 응답 대기...")
+
+        # 응답 대기 (짧은 응답이라 기준 낮춤 — 최대 90초, 5초 이상 안정되면 완료)
+        prev_len = 0
+        stable_count = 0
+        for i in range(90):
+            page.wait_for_timeout(1000)
+            cur_len = 0
+            try:
+                cur_len = page.evaluate("""() => {
+                    const sels = [
+                        'div.standard-markdown',
+                        '[data-testid="assistant-message-content"]',
+                        '[class*="assistant-message"] [class*="prose"]',
+                        '[class*="message-content"]',
+                    ];
+                    for (const sel of sels) {
+                        const els = document.querySelectorAll(sel);
+                        if (els.length > 0) {
+                            const t = (els[els.length-1].innerText || '').trim();
+                            if (t.length > 10) return t.length;
+                        }
+                    }
+                    return 0;
+                }""")
+            except Exception:
+                pass
+
+            if cur_len > 10 and cur_len == prev_len:
+                stable_count += 1
+            else:
+                stable_count = 0
+            prev_len = cur_len
+
+            if stable_count >= 5 and cur_len > 20:
+                log(f"[Claude] 응답 완료 ({cur_len}자, {stable_count}초 안정)")
+                break
+
+            if i > 0 and i % 15 == 0:
+                log(f"[Claude] 대기 중... {i}초 ({cur_len}자)")
+
+        # 응답 텍스트 추출
+        response = page.evaluate("""() => {
+            const sels = [
+                'div.standard-markdown',
+                '[data-testid="assistant-message-content"]',
+                '[class*="assistant-message"] [class*="prose"]',
+                '[class*="message-content"]',
+            ];
+            for (const sel of sels) {
+                const els = document.querySelectorAll(sel);
+                if (els.length > 0) {
+                    const t = (els[els.length-1].innerText || '').trim();
+                    if (t.length > 10) return t;
+                }
+            }
+            return '';
+        }""")
+
+        log(f"[Claude] 응답 추출: {len(response)}자 | {response[:80]}...")
+        return response.strip()
+
+    except Exception as e:
+        log(f"[Claude] ask_with_image 오류: {e}")
+        return ""
+    finally:
+        pw.stop()
+
+
 def generate_text_with_fallback(prompt: str, blog_id: str = None, keyword: str = None,
                                  on_log=None, extra_context: str = None):
     """AI_PROVIDER 환경변수에 따라 Claude 또는 Gemini로 글을 생성한다.

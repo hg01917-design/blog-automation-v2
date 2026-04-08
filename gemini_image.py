@@ -309,11 +309,10 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     page.wait_for_timeout(300)
 
     if reference_image and Path(reference_image).exists():
-        # 참고 이미지 있을 때: 이미지 기반 재생성 지시
+        # 참고 이미지 있을 때: Claude가 만든 프롬프트를 Gemini 지시어로 감싸서 사용
         full_prompt = (
-            f"이 사진을 참고해서, 비슷한 분위기와 구도로 실사진 스타일의 이미지를 새로 생성해주세요. "
-            f"추가 조건: {prompt}. "
-            f"사람 얼굴 없음, 텍스트 없음, 로고 없음, 실사진 스타일."
+            f"이 사진을 참고해서 비슷한 분위기로 실사진 스타일 이미지를 새로 생성해주세요. "
+            f"프롬프트: {prompt}"
         )
     else:
         full_prompt = f"Generate an image: {prompt}"

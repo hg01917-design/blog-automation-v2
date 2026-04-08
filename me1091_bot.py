@@ -377,12 +377,50 @@ def scrape_coupang_product(link: str, on_log=None) -> dict:
 
 
 # ─── 쿠팡 이미지 참고 → Gemini 실사진 재생성 ────────────────────────────
+def _ask_claude_for_gemini_prompt(image_path: str, keyword: str) -> str:
+    """쿠팡 리뷰 이미지를 Claude.ai에 보내 Gemini 이미지 생성용 영문 프롬프트 반환.
+
+    Claude.ai(me1091 프로젝트)에 이미지를 첨부하고,
+    "이 이미지 분위기로 실사진 스타일 이미지를 Gemini에서 만들 영문 프롬프트 작성"을 요청.
+    """
+    from claude_playwright import ask_with_image
+
+    question = (
+        f"이 이미지를 참고해서, 비슷한 분위기와 구도로 실사진처럼 보이는 이미지를 Gemini로 만들기 위한 "
+        f"영문 프롬프트만 한 단락으로 작성해줘. "
+        f"제품 키워드: {keyword}. "
+        f"반드시 포함: photorealistic real photo style, no AI look, no text overlay, "
+        f"no people, no faces, no logos, no watermarks, 4K quality, Korean home/lifestyle setting. "
+        f"설명 없이 영문 프롬프트만 출력해."
+    )
+
+    log(f"[Claude] 이미지 분석 → Gemini 프롬프트 요청: {Path(image_path).name}")
+    prompt = ask_with_image(image_path, question, blog_id=BLOG_ID, on_log=log)
+
+    if not prompt or len(prompt) < 20:
+        log("[Claude] 프롬프트 생성 실패 → 기본 프롬프트 사용")
+        return (
+            f"{keyword} actual product in use, Korean home interior setting, "
+            f"photorealistic real photo style, natural window light, clean minimal background, "
+            f"no text, no faces, no logos, 4K quality"
+        )
+
+    # 코드블록/따옴표 등 불필요한 래퍼 제거
+    prompt = re.sub(r'^```[^\n]*\n?', '', prompt.strip())
+    prompt = re.sub(r'\n?```$', '', prompt.strip())
+    prompt = prompt.strip('"\'`').strip()
+
+    log(f"[Claude] 생성된 Gemini 프롬프트: {prompt[:100]}...")
+    return prompt
+
+
 def prepare_images_with_gemini(product_info: dict, keyword: str) -> tuple:
-    """쿠팡 리뷰/상품 이미지를 참고 이미지로 Gemini에 첨부 → 실사진 재생성.
+    """쿠팡 리뷰/상품 이미지 → Claude.ai 분석 → Gemini 프롬프트 생성 → Gemini 실사진 재생성.
 
     흐름:
       1. 리뷰이미지 2장 + 상품이미지 1장 선별 (최대 3장)
-      2. 각 이미지를 Gemini에 참고 첨부 → 유사한 실사진 생성 요청
+      2. 각 이미지를 Claude.ai에 보내 Gemini 프롬프트 받기
+      3. 그 프롬프트 + 참고이미지로 Gemini에서 실사진 생성
     Returns: (image_paths: {idx: path}, image_infos: [{'index', 'filename', 'alt'}])
     """
     from image_router import generate_images_for_blog
@@ -396,20 +434,17 @@ def prepare_images_with_gemini(product_info: dict, keyword: str) -> tuple:
     kw_slug = re.sub(r'[^\w]', '_', keyword[:20])
 
     if ref_images_list:
-        log(f"[이미지] 쿠팡 참고 이미지 {len(ref_images_list)}장으로 재생성")
+        log(f"[이미지] 쿠팡 참고 이미지 {len(ref_images_list)}장 → Claude 분석 → Gemini 재생성")
         for i, fpath in enumerate(ref_images_list, start=1):
-            # 참고 이미지 기반 프롬프트 (Gemini가 이미지 보고 유사하게 생성)
-            prompt = (
-                f"{keyword} actual usage scene, Korean home interior, "
-                f"photorealistic real photo style, natural lighting, no text, no faces, no logos"
-            )
+            # Claude.ai에 이미지 보내서 Gemini 프롬프트 받기
+            prompt = _ask_claude_for_gemini_prompt(fpath, keyword)
             image_infos_input.append({
                 "index": i,
                 "prompt": prompt,
                 "filename": f"me1091_{kw_slug}_{i}.jpg",
             })
             reference_images.append(fpath)
-            log(f"[이미지] [{i}] 참고: {Path(fpath).name}")
+            log(f"[이미지] [{i}] 참고: {Path(fpath).name} | 프롬프트: {prompt[:60]}...")
     else:
         log("[이미지] 쿠팡 참고 이미지 없음 — 기본 프롬프트로 생성")
         for i in range(1, 4):
