@@ -229,11 +229,16 @@ def login_naver(naver_id=None, on_log=None):
         else:
             log("[2/4] 자동완성 계정 없음")
 
-        # 기대 계정과 다를 경우 — Chrome에 저장된 daonna525 세션 필요
+        # 기대 계정과 다를 경우 — ID 필드 지우고 직접 입력 (다중 네이버 계정 지원)
         if naver_id and current_id != naver_id:
-            log(f"[2/4] ⚠ 계정 불일치: Chrome 자동완성={current_id}, 필요={naver_id}")
-            log(f"[2/4] Chrome에서 {naver_id} 계정으로 네이버 로그인 후 재시도하세요")
-            return False
+            log(f"[2/4] ⚠ 계정 불일치: 자동완성={current_id}, 필요={naver_id} — ID 직접 입력 시도")
+            id_input.triple_click()
+            _rand_delay(page, 300, 500)
+            id_input.press("Control+a")
+            id_input.press("Backspace")
+            _rand_delay(page, 200, 400)
+            id_input.type(naver_id, delay=random.randint(60, 120))
+            _rand_delay(page, 500, 800)
 
         log("[3/5] 비밀번호 자동완성 트리거...")
         pw_input = page.locator('#pw')
