@@ -588,6 +588,11 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
                     "키워드에서 가장 적합한 정부지원·복지·생활정보 1가지를 직접 선정해서 그것만 깊게 작성해.\n"
                     "예) '2026 복지 혜택 신청 방법 서민' → '주거급여' 1가지 집중\n"
                     "여러 혜택을 나열하는 글 금지. 1가지의 대상·신청절차·금액·유의사항을 구체적으로 작성해.\n"
+                    "\n[글쓰기 형식 — 필수]\n"
+                    "반드시 정보성 가이드 형식으로 작성해. 경험담/후기 형식 절대 금지.\n"
+                    "1인칭 서술('저는', '다녀왔어요', '해봤어요', '찾아봤어요') 절대 금지.\n"
+                    "독자에게 정보를 전달하는 설명체로 작성해. 예) '신청 방법은 ~입니다', '대상은 ~이에요'\n"
+                    "마치 실제 경험한 것처럼 쓰는 것 금지. 공식 정보를 정확하게 가이드하는 글로 작성해.\n"
                 )
 
             # 프로젝트 모드에도 본문 길이 + 이미지 형식 규칙 명시 (짧은 글 방지)
@@ -744,6 +749,10 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
                 except Exception:
                     pass
                 response_text = _extract_response(page, prev_response_count, log)
+                # DOM 추출 실패 시 스트리밍 중 포착된 텍스트를 폴백으로 사용
+                if "[추출 실패]" in response_text and streamed_text and "===제목===" in streamed_text and len(streamed_text) > 500:
+                    response_text = streamed_text
+                    log(f"[Playwright] DOM 추출 실패 → 스트리밍 포착 텍스트 폴백 사용 ({len(response_text)}자)")
 
             # 글자수 확인
             body_chars = _count_body_chars(response_text)

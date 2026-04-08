@@ -181,7 +181,7 @@ _BLOG_THEMES = {
                  "페이", "포인트", "캐시백", "환전", "핀테크", "은행", "증권", "보험",
                  "IT", "기술", "소프트웨어", "하드웨어", "가전", "전자"],
     "baremi542": ["지원금", "보조금", "지원사업", "복지", "수당", "혜택", "신청", "환급",
-                  "정부", "공공", "보험", "연금", "청년", "취업", "바우처", "감면"],
+                  "정부", "공공", "청년", "취업", "바우처", "감면", "지원"],
     "triplog": ["호텔", "항공", "맛집", "국내여행", "해외여행", "여행", "숙소", "리조트",
                 "투어", "관광", "비행기", "티켓", "패키지", "배낭여행", "자유여행",
                 "가볼만한", "여행지", "추천", "코스", "일정", "경비", "항공권", "렌터카", "렌트카",
@@ -197,6 +197,14 @@ _BLOG_THEMES = {
 
 def is_keyword_suitable(blog_id: str, keyword: str) -> bool:
     """키워드가 블로그 테마에 적합한지 확인"""
+    # baremi542: 법률/법령 관련 키워드 차단 (정부지원/복지만 허용)
+    if blog_id == "baremi542":
+        _LAW_BLOCK = ["법", "법률", "법령", "법조문", "조항", "형법", "민법", "상법",
+                      "고용보험법", "산재법", "근로기준법", "소득세법", "부가세법",
+                      "법안", "법원", "소송", "판결", "재판", "변호사", "법적"]
+        if any(w in keyword for w in _LAW_BLOCK):
+            return False
+
     theme_words = _BLOG_THEMES.get(blog_id)
     if not theme_words:
         return True
@@ -476,9 +484,14 @@ _BLOG_RSS = {
 }
 
 
+_TISTORY_BLOGS = {"goodisak", "nolja100", "woll100", "phn0502"}  # HTML이 에디터에서 이스케이프되므로 제외
+
 def _inject_internal_links(body: str, blog_id: str, on_log=None) -> str:
     """본문 하단에 같은 블로그 최근 글 3개 내부링크 섹션 추가"""
     if blog_id not in _BLOG_RSS:
+        return body
+    # Tistory 블로그는 에디터에서 HTML div가 이스케이프되어 raw text로 노출됨 — 주입 생략
+    if blog_id in _TISTORY_BLOGS:
         return body
     rss_url, base_url = _BLOG_RSS[blog_id]
     try:
@@ -588,7 +601,21 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
         log(f"[파이프라인] 글 생성 실패")
         return False
 
-    # 2. 파싱 — 각 섹션 정확히 분리
+    # 2. 전처리 — MRT 메타 헤더 및 백틱 마커 정규화
+    # 마이리얼트립 메타 정보 블록 제거 (═══...【메타 정보】...회차/앵글/문체 등)
+    raw = re.sub(r'(?s)[`"]*\s*[═=─]{5,}.*?마이리얼트립 여행후기 생성 결과.*?[═=─]{5,}\s*\n'
+                 r'【메타 정보】.*?(?=📌|===제목|`===제목)', '', raw).strip()
+    # 백틱으로 감싸진 마커 정규화: `===제목===` → ===제목===
+    raw = re.sub(r'`\s*(===(?:제목|본문|태그|이미지)(?:끝)?===)\s*`', r'\1', raw)
+    # 📌 제목 / 📝 본문 헤더 줄 제거
+    raw = re.sub(r'📌\s*\*?\*?제목\*?\*?\s*\n', '', raw)
+    raw = re.sub(r'📝\s*\*?\*?본문\*?\*?\s*\n', '', raw)
+    # ===본문=== 마커 없을 때 대비: 내용이 ===제목끝=== 뒤에 오면 ===본문===...===본문끝=== 추가
+    if '===제목끝===' in raw and '===본문===' not in raw:
+        raw = re.sub(r'(===제목끝===\s*\n)', r'\1===본문===\n', raw)
+        raw = raw.rstrip() + '\n===본문끝==='
+
+    # 3. 파싱 — 각 섹션 정확히 분리
     title_m = re.search(r"===제목===\s*\n(.*?)\n*===제목끝===", raw, re.DOTALL)
     body_m = re.search(r"===본문===\s*\n(.*?)\n*===본문끝===", raw, re.DOTALL)
     tag_m = re.search(r"===태그===\s*\n(.*?)\n*===태그끝===", raw, re.DOTALL)
