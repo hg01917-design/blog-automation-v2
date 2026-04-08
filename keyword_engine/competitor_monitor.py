@@ -74,6 +74,13 @@ def monitor_competitors(
     _log("  [경쟁 모니터] 신규 포스트 감지 시작")
     _log("─" * 55)
 
+    # monitored_at 컬럼 사전 보장 (SELECT 전에)
+    with db_handler._conn() as db:
+        try:
+            db.execute("ALTER TABLE sites ADD COLUMN monitored_at TEXT")
+        except Exception:
+            pass
+
     # ── 1. 모니터링 대상 사이트 결정 ──────────────────────
     if category:
         sites = db_handler.get_multidomain_sites(category, min_domains, top_owners)
