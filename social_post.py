@@ -193,6 +193,17 @@ def _extract_hook(item_elem) -> str:
     )
     text = _strip_html(desc)
 
+    # 내부 마커 패턴 제거 (생성 결과 헤더, 메타 정보 블록 등)
+    _INTERNAL_PATTERNS = [
+        r"【[^】]*】[^\n]*",            # 【메타 정보】 ~ 줄 전체
+        r"마이리얼트립[^\n]*생성[^\n]*결과[^\n]*",
+        r"[-–]\s*(앵글|문체|글자수|메인\s*키워드|카테고리|주제)\s*:",
+        r"\[검증\s*필요\]|\[출처\s*필요\]|\[수정\s*필요\]",
+    ]
+    for pat in _INTERNAL_PATTERNS:
+        text = re.sub(pat, "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+", " ", text).strip()
+
     # 의미 있는 문장만 추출 (15자 이상)
     sentences = [s.strip() for s in re.split(r"(?<=[.!?。])\s+", text) if len(s.strip()) >= 15]
 

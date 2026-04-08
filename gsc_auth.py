@@ -17,8 +17,8 @@ CLIENT_SECRET_PATH = Path(__file__).parent / "client_secret.json"
 
 SCOPES = [
     "https://www.googleapis.com/auth/indexing",
-    "https://www.googleapis.com/auth/webmasters.readonly",
-    "https://www.googleapis.com/auth/adsense.readonly",
+    "https://www.googleapis.com/auth/webmasters",
+    "https://www.googleapis.com/auth/adsense",
 ]
 
 REDIRECT_PORT = 8765

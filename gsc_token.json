@@ -1,9 +1,11 @@
 {
-  "access_token": "ya29.a0Aa7MYiraSgK61MgTEGfvQncyIgZU99lDuSrYiL_4thbglpo2wmDNV2l9WKjfbFlkOPurbRwjP_AXjGY2-qOyrx_78Wuqr-yqDw8bf8CfMdfosM7HYCC7GNW5LA6e7hXYYUjSOOLS76gWXa_v2FTvReE7v4qO7IJkf3SN0u_FirwVquPjPDbVOr447YBPs6f0eOsumByEaCgYKAcESARQSFQHGX2MisRAYLTMLh1xWyHHFDhU7_Q0207",
+  "access_token": "ya29.a0Aa7MYirroQnpHUpw-LSVQ8wg_k7_KBZwPkTuLUkLYV-gEx0YOrPM9PEAaxYpPu8f0O3tyl126b7T4DUbL_cvezyiYdnRwZZZje8MSNAKKecj-yZVVI0ejXxfFueySMN2LWGqWozpJD9G0lVs0ygc7NoLsYSVSGDBQYo_mtiQaVsLCWxbCr0ggzTUz8DK7kTMTmHVUBN-aCgYKAcYSARQSFQHGX2MiAhmlk0NysX1vLzJy1mFRMA0207",
+  "refresh_token": "1//0e_XlnALZ3Gu-CgYIARAAGA4SNwF-L9IrGU12dNa7giiSsxxJGtWF2IIaNV6mTzzKWsDaw73IKSIjG1diEIIgnekVAKSANQXfS6w",
   "expires_in": 3599,
-  "refresh_token": "1//0eUCOHbkMgJT8CgYIARAAGA4SNwF-L9Ir4nVwSC1MMB7XuY_F-i_jJ5UXTVJJrCmt-yPKbLemZGO4Em37ln8fP8oRPEIO5lxQlUM",
-  "scope": "https://www.googleapis.com/auth/indexing https://www.googleapis.com/auth/webmasters",
-  "token_type": "Bearer",
-  "refresh_token_expires_in": 604799,
-  "issued_at": 1775512910.708386
+  "issued_at": 1775684988.490496,
+  "scopes": [
+    "https://www.googleapis.com/auth/indexing",
+    "https://www.googleapis.com/auth/webmasters.readonly",
+    "https://www.googleapis.com/auth/adsense.readonly"
+  ]
 }
