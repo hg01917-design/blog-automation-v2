@@ -659,6 +659,8 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     # 노출된 HTML 블록 태그 제거 (<div>, <section>, <article> 등 — 인라인 태그는 유지)
     body = re.sub(r'</?(?:div|section|article|aside|header|footer|nav|main|figure|figcaption)(\s[^>]*)?>',
                   '', body, flags=re.IGNORECASE).strip()
+    # <br> 태그를 줄바꿈으로 변환 (핵심요약 박스 등 HTML 잔재 처리)
+    body = re.sub(r'<br\s*/?>', '\n', body, flags=re.IGNORECASE)
 
     # 태그: 첫 줄만 (여러 줄이면 첫 줄의 쉼표 구분)
     if tag_m:
@@ -756,6 +758,9 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
                     body = re.sub(r'\n*===검수===.*?(?:===검수끝===|$)', '', body, flags=re.DOTALL).strip()
                     body = re.sub(r'\n[✅❌☑️].{0,60}(?:\n[✅❌☑️].{0,60}){2,}', '', body).strip()
                     body = re.sub(r'\[검증\s*필요\]|\[출처\s*필요\]|\[사실\s*확인\]|\[확인\s*필요\]', '', body).strip()
+                    body = re.sub(r'</?(?:div|section|article|aside|header|footer|nav|main|figure|figcaption)(\s[^>]*)?>',
+                                  '', body, flags=re.IGNORECASE).strip()
+                    body = re.sub(r'<br\s*/?>', '\n', body, flags=re.IGNORECASE)
                     plain = re.sub(r"##.*|{{.*?}}|\[애드센스\]|\|.*", "", body)
                     char_count = len(re.sub(r"\s+", "", plain))
                 else:
