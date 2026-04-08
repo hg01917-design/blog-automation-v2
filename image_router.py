@@ -26,32 +26,48 @@ IMAGES_DIR = Path(__file__).parent / "images"
 IMAGES_DIR.mkdir(exist_ok=True)
 
 # ─── 블로그별 프롬프트 스타일 가이드 ────────────────────────────────────
+# DALL-E 3(Bing) 최적화: 주제 맥락 + 품질 지시어 + 분위기
 _PROMPT_STYLE = {
     "salim1su": (
-        "Korean home interior style, kitchen, living room, household items, food, "
-        "daily life objects, clean bright lighting. No people, no faces."
+        "photorealistic product/lifestyle photography, Korean home setting, "
+        "soft natural window light, shallow depth of field, clean minimal background, "
+        "sharp focus on subject, no text, no people, no faces, 4K quality"
     ),
     "nolja100": (
-        "Korean travel scenery, tourist attractions, landscapes, architecture, "
-        "nature, beautiful views. No people, no faces."
+        "photorealistic travel photography, South Korea scenic location, "
+        "golden hour lighting, wide landscape or architectural shot, "
+        "vibrant colors, professional DSLR look, no people, no faces, no text, 4K quality"
     ),
     "goodisak_IT": (
-        "laptop, smartphone, tablet, digital device, technology, screen interface, "
-        "modern office setup, clean background."
+        "photorealistic tech product photography, modern workspace, "
+        "device screen with soft glow, dark or light minimal desk setup, "
+        "professional studio lighting, no text overlay, no people, 4K quality"
     ),
     "goodisak_finance": (
-        "money, credit card, bankbook, coins, financial documents, wallet, "
-        "piggy bank, clean white background."
+        "photorealistic financial concept photography, Korean currency or credit card, "
+        "clean white or navy background, top-down flat lay composition, "
+        "professional studio lighting, no text, no people, 4K quality"
     ),
     "baremi542": (
-        "official documents, papers, pen, stamp, government forms, desk with paperwork, "
-        "clean professional setting."
+        "photorealistic documentary-style photography, Korean government or administrative setting, "
+        "official document on desk, pen and stamp, soft office lighting, "
+        "clean organized composition, no people, no faces, 4K quality"
     ),
     "triplog": (
-        "Korean travel destination, scenic landscape, pension, hotel exterior, "
-        "beautiful architecture, nature view. No people, no faces."
+        "photorealistic travel photography, South Korea tourist destination or pension or resort, "
+        "blue sky or sunset backdrop, wide establishing shot, "
+        "vibrant natural colors, professional travel magazine style, no people, no faces, 4K quality"
     ),
 }
+
+# 구도 변형자 — 같은 글 내 이미지 중복 방지 (index 기반 순환)
+_COMPOSITION_VARIANTS = [
+    "wide establishing shot, centered composition",
+    "close-up detail shot, macro perspective",
+    "overhead flat lay, top-down angle",
+    "side angle, rule of thirds composition",
+    "slightly low angle, looking up perspective",
+]
 
 # IT/금융 키워드 분류 (goodisak용)
 _GOODISAK_FINANCE_KW = {
@@ -61,22 +77,21 @@ _GOODISAK_FINANCE_KW = {
 }
 
 
-def _get_prompt_suffix(blog_id: str, prompt: str) -> str:
-    """블로그 + 프롬프트 내용에 따라 이미지 스타일 suffix 반환."""
+def _get_prompt_style(blog_id: str, prompt: str) -> str:
+    """블로그 + 프롬프트 내용에 따라 이미지 스타일 반환."""
     if blog_id == "goodisak":
-        # 프롬프트에 금융 키워드 있으면 금융 스타일
         if any(kw in prompt for kw in _GOODISAK_FINANCE_KW):
             return _PROMPT_STYLE["goodisak_finance"]
         return _PROMPT_STYLE["goodisak_IT"]
-    return _PROMPT_STYLE.get(blog_id, "")
+    return _PROMPT_STYLE.get(blog_id, "photorealistic photography, high quality, 4K")
 
 
-def _enhance_prompt(blog_id: str, prompt: str) -> str:
-    """원본 프롬프트에 블로그별 스타일 가이드를 덧붙인 영문 프롬프트 반환."""
-    suffix = _get_prompt_suffix(blog_id, prompt)
-    if suffix:
-        return f"{prompt}, {suffix}"
-    return prompt
+def _enhance_prompt(blog_id: str, prompt: str, index: int = 1) -> str:
+    """원본 프롬프트에 블로그별 스타일 + 구도 변형자를 합쳐 강화된 영문 프롬프트 반환."""
+    style = _get_prompt_style(blog_id, prompt)
+    # index 기반 구도 변형 (0-based 순환)
+    composition = _COMPOSITION_VARIANTS[(index - 1) % len(_COMPOSITION_VARIANTS)]
+    return f"{prompt}, {composition}, {style}"
 
 
 # ─── Pollinations API ────────────────────────────────────────────────────
@@ -149,11 +164,11 @@ def generate_images_for_blog(
     if not image_infos:
         return {}
 
-    # 프롬프트에 블로그별 스타일 적용
+    # 프롬프트에 블로그별 스타일 + 구도 변형 적용
     enhanced_infos = []
     for info in image_infos:
         enhanced = dict(info)
-        enhanced['prompt'] = _enhance_prompt(blog_id, info['prompt'])
+        enhanced['prompt'] = _enhance_prompt(blog_id, info['prompt'], index=info.get('index', 1))
         enhanced['filename'] = _clean_filename(info['filename'], skip_webp)
         enhanced_infos.append(enhanced)
 
