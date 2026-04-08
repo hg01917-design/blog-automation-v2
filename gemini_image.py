@@ -105,11 +105,13 @@ def _generate_via_fallback(prompt: str, filename: str, on_log=None, skip_webp=Fa
         return None
 
 
-def generate_images(image_infos: list, on_log=None, skip_webp=False) -> dict:
+def generate_images(image_infos: list, on_log=None, skip_webp=False, reference_images: list = None) -> dict:
     """이미지 프롬프트 리스트로 Gemini에서 이미지 생성 후 저장.
 
     Args:
         skip_webp: True면 webp 변환 없이 PNG 그대로 저장 (네이버 블로그용)
+        reference_images: 참고 이미지 경로 리스트. image_infos와 1:1 매칭.
+                          e.g. ['/path/review_1.jpg', '/path/review_2.jpg', None]
 
     Returns:
         {index: filepath} 딕셔너리 (성공한 것만)
@@ -171,10 +173,18 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False) -> dict:
             log(f"[이미지 {idx}] 생성 시작: {prompt[:50]}...")
 
             try:
+                # 참고 이미지 매칭 (index 기반)
+                ref_img = None
+                if reference_images:
+                    list_idx = next((j for j, inf in enumerate(image_infos) if inf["index"] == idx), None)
+                    if list_idx is not None and list_idx < len(reference_images):
+                        ref_img = reference_images[list_idx]
+
                 filepath = _generate_single(
                     browser, prompt, filename, on_log,
                     skip_webp=skip_webp,
-                    open_new_chat=is_first,  # 첫 이미지만 새 채팅, 이후는 같은 창 유지
+                    open_new_chat=is_first,
+                    reference_image=ref_img,
                 )
                 is_first = False
                 if filepath:
@@ -232,11 +242,13 @@ def _drag_toolbar_away(page):
         page.mouse.move(0, 0)
 
 
-def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp=False, open_new_chat: bool = True):
+def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp=False,
+                     open_new_chat: bool = True, reference_image: str = None):
     """단일 이미지 생성 → 스크린샷 캡처 → webp 변환 (skip_webp=True면 PNG 그대로)
 
     Args:
-        open_new_chat: True면 새 채팅 시작 (첫 이미지). False면 기존 채팅 이어서 사용 (2번째 이미지부터).
+        open_new_chat: True면 새 채팅 시작 (첫 이미지). False면 기존 채팅 이어서 사용.
+        reference_image: 참고 이미지 로컬 경로. 지정 시 Gemini에 파일 첨부 후 생성 요청.
     """
     def log(msg):
         if on_log:
@@ -265,12 +277,47 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
         except Exception:
             pass
 
+    # ── 참고 이미지 첨부 (me1091 쿠팡 리뷰 이미지 등) ─────────────
+    if reference_image and Path(reference_image).exists():
+        try:
+            log(f"[이미지] 참고 이미지 첨부: {Path(reference_image).name}")
+            # 파일 업로드 메뉴 열기 버튼 클릭
+            upload_menu_btn = page.locator(
+                'button[aria-label="파일 업로드 메뉴 열기"], button[aria-label="파일 업로드 메뉴 닫기"]'
+            ).first
+            if upload_menu_btn.is_visible(timeout=3000):
+                with page.expect_file_chooser(timeout=5000) as fc_info:
+                    upload_menu_btn.click()
+                    page.wait_for_timeout(800)
+                    # "파일 업로드" 항목 클릭
+                    file_item = page.get_by_text("파일 업로드", exact=True)
+                    if file_item.is_visible(timeout=2000):
+                        file_item.click()
+                    else:
+                        # 첫 번째 메뉴 항목 클릭
+                        page.locator('[role="menuitem"]').first.click()
+                fc = fc_info.value
+                fc.set_files(reference_image)
+                page.wait_for_timeout(2000)
+                log(f"[이미지] 참고 이미지 첨부 완료")
+        except Exception as e:
+            log(f"[이미지] 참고 이미지 첨부 실패 (무시): {e}")
+
     # 프롬프트 입력
     input_el = page.locator('.ql-editor').first
     input_el.click()
     page.wait_for_timeout(300)
 
-    full_prompt = f"Generate an image: {prompt}"
+    if reference_image and Path(reference_image).exists():
+        # 참고 이미지 있을 때: 이미지 기반 재생성 지시
+        full_prompt = (
+            f"이 사진을 참고해서, 비슷한 분위기와 구도로 실사진 스타일의 이미지를 새로 생성해주세요. "
+            f"추가 조건: {prompt}. "
+            f"사람 얼굴 없음, 텍스트 없음, 로고 없음, 실사진 스타일."
+        )
+    else:
+        full_prompt = f"Generate an image: {prompt}"
+
     page.evaluate("""(text) => {
         const el = document.querySelector(".ql-editor");
         el.focus();

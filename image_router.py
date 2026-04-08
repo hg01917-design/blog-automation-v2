@@ -150,6 +150,7 @@ def generate_images_for_blog(
     image_infos: list,
     skip_webp: bool = False,
     on_log=None,
+    reference_images: list = None,
 ) -> dict:
     """블로그 타입에 따라 이미지 생성 소스를 분기해 이미지 생성.
 
@@ -180,20 +181,21 @@ def generate_images_for_blog(
     is_naver = blog_id in ("salim1su", "me1091")
 
     if is_naver:
-        return _generate_naver(enhanced_infos, skip_webp, log)
+        return _generate_naver(enhanced_infos, skip_webp, log, reference_images=reference_images)
     else:
         return _generate_other(enhanced_infos, skip_webp, log)
 
 
-def _generate_naver(image_infos: list, skip_webp: bool, log) -> dict:
-    """Naver(salim1su): Gemini → Bing → Pollinations"""
+def _generate_naver(image_infos: list, skip_webp: bool, log, reference_images: list = None) -> dict:
+    """Naver(salim1su/me1091): Gemini → Bing → Pollinations"""
     # 1단계: Gemini
     try:
         from gemini_image import generate_images, _quota_blocked_until
         blocked = _quota_blocked_until()
         if not blocked:
             log("[Router] Naver: Gemini 시도")
-            results = generate_images(image_infos, on_log=log, skip_webp=skip_webp)
+            results = generate_images(image_infos, on_log=log, skip_webp=skip_webp,
+                                      reference_images=reference_images)
             if results:
                 log(f"[Router] Gemini 성공: {len(results)}장")
                 # 실패한 것만 폴백

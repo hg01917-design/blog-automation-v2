@@ -377,76 +377,40 @@ def scrape_coupang_product(link: str, on_log=None) -> dict:
 
 
 # ─── 쿠팡 이미지 참고 → Gemini 실사진 재생성 ────────────────────────────
-def _describe_coupang_image(fpath: str, keyword: str, index: int) -> str:
-    """쿠팡 리뷰/상품 이미지를 Gemini Vision으로 분석해 영문 프롬프트 생성."""
-    try:
-        import google.generativeai as genai
-        from dotenv import load_dotenv
-        load_dotenv(Path(__file__).parent / ".env")
-        api_key = os.getenv("GEMINI_API_KEY", "")
-        if not api_key:
-            return ""
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        import PIL.Image
-        img = PIL.Image.open(fpath)
-        resp = model.generate_content([
-            img,
-            f"This is a Coupang product/review photo for: {keyword}. "
-            "Describe in 1 concise English sentence what this photo shows (scene, setting, usage context, mood). "
-            "Focus on elements useful for recreating a similar photorealistic lifestyle photo. "
-            "Do NOT mention any text, logos, people's faces, or brand names. Keep it under 40 words."
-        ])
-        desc = resp.text.strip().replace("\n", " ")
-        log(f"[이미지분석] [{index}] {desc[:80]}")
-        return desc
-    except Exception as e:
-        log(f"[이미지분석] 실패: {e}")
-        return ""
-
-
 def prepare_images_with_gemini(product_info: dict, keyword: str) -> tuple:
-    """쿠팡 이미지 3장만 선별 → Gemini Vision으로 분석 → 실사진 스타일로 재생성.
+    """쿠팡 리뷰/상품 이미지를 참고 이미지로 Gemini에 첨부 → 실사진 재생성.
 
     흐름:
-      1. 리뷰이미지(실사용) 2장 + 상품이미지 1장 선별 (최대 3장)
-      2. 각 이미지를 Gemini Vision으로 분석 → 영문 씬 설명
-      3. 씬 설명 기반 photorealistic 프롬프트 → Gemini Image API 재생성
+      1. 리뷰이미지 2장 + 상품이미지 1장 선별 (최대 3장)
+      2. 각 이미지를 Gemini에 참고 첨부 → 유사한 실사진 생성 요청
     Returns: (image_paths: {idx: path}, image_infos: [{'index', 'filename', 'alt'}])
     """
     from image_router import generate_images_for_blog
 
-    review_imgs = product_info.get("review_images", [])[:2]  # 리뷰 이미지 최대 2장
-    product_imgs = product_info.get("images", [])[:1]         # 상품 이미지 최대 1장
-    ref_images = review_imgs + product_imgs
+    review_imgs = product_info.get("review_images", [])[:2]   # 리뷰 이미지 최대 2장
+    product_imgs = product_info.get("images", [])[:1]          # 상품 이미지 최대 1장
+    ref_images_list = review_imgs + product_imgs
 
     image_infos_input = []
+    reference_images = []
     kw_slug = re.sub(r'[^\w]', '_', keyword[:20])
 
-    for i, fpath in enumerate(ref_images, start=1):
-        # Gemini Vision으로 이미지 분석
-        desc = _describe_coupang_image(fpath, keyword, i)
-        if desc:
-            # 분석 결과 기반 실사진 프롬프트
+    if ref_images_list:
+        log(f"[이미지] 쿠팡 참고 이미지 {len(ref_images_list)}장으로 재생성")
+        for i, fpath in enumerate(ref_images_list, start=1):
+            # 참고 이미지 기반 프롬프트 (Gemini가 이미지 보고 유사하게 생성)
             prompt = (
-                f"{desc}, photorealistic lifestyle photo, Korean home interior, "
-                f"real photography style, natural lighting, no text, no faces, no logos"
+                f"{keyword} actual usage scene, Korean home interior, "
+                f"photorealistic real photo style, natural lighting, no text, no faces, no logos"
             )
-        else:
-            # 폴백: 기본 프롬프트
-            prompt = (
-                f"{keyword} real usage scene, Korean household, "
-                f"photorealistic lifestyle photography, natural lighting, no text, no faces"
-            )
-        image_infos_input.append({
-            "index": i,
-            "prompt": prompt,
-            "filename": f"me1091_{kw_slug}_{i}.jpg",
-        })
-        log(f"[이미지] [{i}] 프롬프트: {prompt[:80]}")
-
-    # 스크래핑 이미지 없으면 기본 3장 생성
-    if not image_infos_input:
+            image_infos_input.append({
+                "index": i,
+                "prompt": prompt,
+                "filename": f"me1091_{kw_slug}_{i}.jpg",
+            })
+            reference_images.append(fpath)
+            log(f"[이미지] [{i}] 참고: {Path(fpath).name}")
+    else:
         log("[이미지] 쿠팡 참고 이미지 없음 — 기본 프롬프트로 생성")
         for i in range(1, 4):
             image_infos_input.append({
@@ -457,12 +421,14 @@ def prepare_images_with_gemini(product_info: dict, keyword: str) -> tuple:
                 ),
                 "filename": f"me1091_{kw_slug}_{i}.jpg",
             })
+        reference_images = None
 
     results = generate_images_for_blog(
         blog_id=BLOG_ID,
         image_infos=image_infos_input,
         skip_webp=True,
         on_log=log,
+        reference_images=reference_images,
     )
     image_infos = [
         {"index": k, "filename": Path(v).name, "alt": f"{keyword} 실제 사용 모습 {k}"}
