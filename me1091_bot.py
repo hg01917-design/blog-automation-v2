@@ -183,18 +183,36 @@ def mark_done(name: str, link: str, blog_url: str = ""):
         c.commit()
 
 
-# ─── 쿠팡 크롤링 (urllib — Playwright 없이) ─────────────────────────────
+# ─── 쿠팡 크롤링 (Playwright CDP — 리뷰이미지/텍스트 포함) ──────────────
 def scrape_coupang_product(link: str, on_log=None) -> dict:
-    """쿠팡 상품 페이지에서 상품명/가격/이미지/스펙 크롤링 (HTTP 요청)."""
-    import ssl, html
+    """쿠팡 상품 페이지에서 상품명/가격/이미지/리뷰 크롤링.
 
-    result = {"name": "", "price": "", "original_price": "", "images": [], "spec": "", "url": ""}
+    Playwright CDP(포트 9222)로 실제 Chrome에서 크롤링:
+    - 상품 이미지 (492x492)
+    - 상품평 탭 클릭 → 리뷰 이미지 (320px) + 리뷰 텍스트
+    리뷰 이미지/텍스트는 Claude 글 생성 컨텍스트로 활용.
+    """
+    import ssl, html, asyncio
 
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    result = {
+        "name": "", "price": "", "original_price": "",
+        "images": [],        # Coupang 상품 이미지 로컬 경로
+        "review_images": [], # Coupang 리뷰 이미지 로컬 경로
+        "reviews": [],       # 리뷰 텍스트 목록
+        "spec": "", "url": "",
+    }
 
-    headers = {
+    _lg = on_log or log
+
+    COUPANG_DIR = IMAGES_DIR / "coupang_product"
+    COUPANG_DIR.mkdir(exist_ok=True)
+
+    # ── HTTP로 상품명/가격만 먼저 파싱 ──
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+
+    http_headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -202,86 +220,256 @@ def scrape_coupang_product(link: str, on_log=None) -> dict:
         "Referer": "https://www.coupang.com/",
     }
 
-    def fetch(url):
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=20, context=ctx) as r:
-            return r.read().decode("utf-8", errors="ignore"), r.url
-
     try:
-        log(f"[쿠팡] 링크 접속: {link[:60]}")
-        # 파트너스 링크 → 실제 상품 페이지 리다이렉트
-        body, final_url = fetch(link)
+        req = urllib.request.Request(link, headers=http_headers)
+        with urllib.request.urlopen(req, timeout=20, context=ssl_ctx) as r:
+            body = r.read().decode("utf-8", errors="ignore")
+            final_url = r.url
         result["url"] = final_url
-        log(f"[쿠팡] 최종 URL: {final_url[:80]}")
-
-        # 상품명
-        m = re.search(r'<title>([^<]+)</title>', body)
+        m = re.search(r'property="og:title"\s+content="([^"]+)"', body)
+        if not m:
+            m = re.search(r'<title>([^<]+)</title>', body)
         if m:
-            raw_title = html.unescape(m.group(1)).strip()
-            # "상품명 | 쿠팡" 형식에서 앞부분만
-            result["name"] = raw_title.split("|")[0].strip()[:100]
-
-        # og:title 우선
-        m2 = re.search(r'property="og:title"\s+content="([^"]+)"', body)
-        if m2:
-            result["name"] = html.unescape(m2.group(1)).strip()[:100]
-
-        # 가격 (JSON-LD 또는 meta)
+            result["name"] = html.unescape(m.group(1)).strip().split("|")[0].strip()[:100]
         price_m = re.search(r'"price"\s*:\s*"?([\d,]+)"?', body)
         if price_m:
             result["price"] = price_m.group(1).replace(",", "")
-
-        # 이미지 (coupangcdn CDN 이미지)
-        seen = set()
-        for img_m in re.finditer(r'https://[^"\'>\s]+coupangcdn\.com/image/[^"\'>\s]+\.jpg', body):
-            src = img_m.group(0)
-            # 썸네일/상세 이미지만 (배너/광고 제외)
-            if any(x in src for x in ["/affiliate/", "/vendor_inventory/", "/vendoritem/"]):
-                continue
-            if src not in seen:
-                seen.add(src)
-                result["images"].append(src)
-            if len(result["images"]) >= 3:
-                break
-
-        log(f"[쿠팡] 상품명: {result['name'][:60]}")
-        log(f"[쿠팡] 가격: {result['price']}원")
-        log(f"[쿠팡] 이미지: {len(result['images'])}장")
-
+        _lg(f"[쿠팡] 상품명: {result['name'][:60]} | 가격: {result['price']}원")
     except Exception as e:
-        log(f"[쿠팡] 크롤링 오류: {e}")
+        _lg(f"[쿠팡] HTTP 파싱 오류: {e}")
+        result["url"] = link
+
+    # ── Playwright CDP로 이미지 + 리뷰 스크래핑 ──
+    async def _pw_scrape():
+        from playwright.async_api import async_playwright
+
+        product_url = result["url"] or link
+        _lg(f"[쿠팡] Playwright CDP 접속: {product_url[:80]}")
+
+        async with async_playwright() as pw:
+            browser = await pw.chromium.connect_over_cdp("http://localhost:9222")
+            ctx = browser.contexts[0]
+
+            # 기존 쿠팡 탭 재사용 또는 새 탭
+            page = None
+            for p in ctx.pages:
+                if "coupang.com/vp/products" in p.url:
+                    # 같은 상품인지 확인
+                    if product_url.split("?")[0].split("/")[-1] in p.url:
+                        page = p
+                        _lg("[쿠팡] 기존 탭 재사용")
+                        break
+            if not page:
+                page = await ctx.new_page()
+                await page.goto(product_url, wait_until="domcontentloaded", timeout=30000)
+                await asyncio.sleep(3)
+
+            # 스크롤로 이미지 로드
+            await page.evaluate("window.scrollTo(0, 600)")
+            await asyncio.sleep(1)
+
+            content = await page.content()
+
+            # 492x492 상품 이미지 URL
+            prod_imgs = list(dict.fromkeys(re.findall(
+                r'https://thumbnail\d*\.coupangcdn\.com/thumbnails/remote/492x492[^"\'<>\s]+',
+                content
+            )))
+            if not prod_imgs:
+                prod_imgs = list(dict.fromkeys(re.findall(
+                    r'https://thumbnail\d*\.coupangcdn\.com/thumbnails/remote/292x292[^"\'<>\s]+',
+                    content
+                )))
+            _lg(f"[쿠팡] 상품 이미지 URL: {len(prod_imgs)}개")
+
+            # 상품평 탭 클릭
+            for sel in ['a:has-text("상품평")', '[data-tab-id="sdp-review"]', '.tab__item:has-text("상품평")']:
+                try:
+                    el = await page.query_selector(sel)
+                    if el:
+                        await el.click()
+                        await asyncio.sleep(2)
+                        _lg("[쿠팡] 상품평 탭 클릭 완료")
+                        break
+                except Exception:
+                    pass
+
+            await page.evaluate("window.scrollBy(0, 800)")
+            await asyncio.sleep(1)
+
+            content2 = await page.content()
+
+            # 리뷰 이미지 URL (320px)
+            review_img_urls = list(dict.fromkeys(re.findall(
+                r'https://thumbnail[^"\'<>\s]+/PRODUCTREVIEW/[^"\'<>\s]+\.(?:jpg|jpeg|png|webp)',
+                content2
+            )))
+            review_320 = [u for u in review_img_urls if '/320/' in u]
+            _lg(f"[쿠팡] 리뷰 이미지 URL: {len(review_320)}개")
+
+            # 리뷰 텍스트 수집
+            sdp_texts = await page.evaluate("""() => {
+                const sdp = document.querySelector('.sdp-review');
+                if (!sdp) return [];
+                const seen = new Set();
+                const texts = [];
+                sdp.querySelectorAll('p, span, div').forEach(el => {
+                    const t = el.textContent.trim();
+                    if (t.length > 100 && t.length < 1500 && el.querySelectorAll('p,span').length < 3 && !seen.has(t)) {
+                        seen.add(t);
+                        texts.push(t);
+                    }
+                });
+                return texts.slice(0, 10);
+            }""")
+            _lg(f"[쿠팡] 리뷰 텍스트: {len(sdp_texts)}개")
+
+            # 이미지 다운로드
+            cookies = await page.context.cookies()
+            cookie_str = '; '.join(f"{c['name']}={c['value']}" for c in cookies if 'coupang' in c.get('domain', ''))
+            dl_headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                'Referer': 'https://www.coupang.com/',
+                'Cookie': cookie_str[:500],
+            }
+
+            def _dl(url, fpath):
+                try:
+                    req = urllib.request.Request(url, headers=dl_headers)
+                    resp = urllib.request.urlopen(req, timeout=15, context=ssl_ctx)
+                    data = resp.read()
+                    if len(data) > 5000:
+                        Path(fpath).write_bytes(data)
+                        return True
+                except Exception:
+                    pass
+                return False
+
+            # 상품 이미지 최대 5장
+            for i, url in enumerate(prod_imgs[:5]):
+                fpath = COUPANG_DIR / f"product_{i+1}.jpg"
+                if _dl(url, fpath):
+                    result["images"].append(str(fpath))
+
+            # 리뷰 이미지 최대 10장
+            for i, url in enumerate(review_320[:10]):
+                fpath = COUPANG_DIR / f"review_{i+1}.jpg"
+                if _dl(url, fpath):
+                    result["review_images"].append(str(fpath))
+
+            result["reviews"] = sdp_texts
+
+            _lg(f"[쿠팡] 수집 완료 — 상품이미지:{len(result['images'])}장, 리뷰이미지:{len(result['review_images'])}장, 리뷰:{len(result['reviews'])}개")
+
+            # 탭 닫기 (새로 열었을 때만)
+            if "coupang.com/vp/products" not in (result["url"] or ""):
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+
+    try:
+        asyncio.run(_pw_scrape())
+    except Exception as e:
+        _lg(f"[쿠팡] Playwright 스크래핑 오류: {e}")
 
     return result
 
 
-# ─── 이미지 다운로드 + Gemini 재생성 ────────────────────────────────────
-def download_and_regenerate_images(product_info: dict, keyword: str) -> dict:
-    """쿠팡 이미지 다운로드 후 Gemini로 라이프스타일 이미지 재생성."""
+# ─── 쿠팡 이미지 참고 → Gemini 실사진 재생성 ────────────────────────────
+def _describe_coupang_image(fpath: str, keyword: str, index: int) -> str:
+    """쿠팡 리뷰/상품 이미지를 Gemini Vision으로 분석해 영문 프롬프트 생성."""
+    try:
+        import google.generativeai as genai
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).parent / ".env")
+        api_key = os.getenv("GEMINI_API_KEY", "")
+        if not api_key:
+            return ""
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        import PIL.Image
+        img = PIL.Image.open(fpath)
+        resp = model.generate_content([
+            img,
+            f"This is a Coupang product/review photo for: {keyword}. "
+            "Describe in 1 concise English sentence what this photo shows (scene, setting, usage context, mood). "
+            "Focus on elements useful for recreating a similar photorealistic lifestyle photo. "
+            "Do NOT mention any text, logos, people's faces, or brand names. Keep it under 40 words."
+        ])
+        desc = resp.text.strip().replace("\n", " ")
+        log(f"[이미지분석] [{index}] {desc[:80]}")
+        return desc
+    except Exception as e:
+        log(f"[이미지분석] 실패: {e}")
+        return ""
+
+
+def prepare_images_with_gemini(product_info: dict, keyword: str) -> tuple:
+    """쿠팡 이미지 3장만 선별 → Gemini Vision으로 분석 → 실사진 스타일로 재생성.
+
+    흐름:
+      1. 리뷰이미지(실사용) 2장 + 상품이미지 1장 선별 (최대 3장)
+      2. 각 이미지를 Gemini Vision으로 분석 → 영문 씬 설명
+      3. 씬 설명 기반 photorealistic 프롬프트 → Gemini Image API 재생성
+    Returns: (image_paths: {idx: path}, image_infos: [{'index', 'filename', 'alt'}])
+    """
     from image_router import generate_images_for_blog
 
-    image_infos = []
-    for i, img_url in enumerate(product_info["images"][:3], start=1):
-        filename = f"me1091_{re.sub(r'[^\\w]', '_', keyword[:20])}_{i}.jpg"
-        prompt = f"{keyword} 실제 사용 장면, 한국 가정 생활환경, 자연스러운 라이프스타일"
-        image_infos.append({
+    review_imgs = product_info.get("review_images", [])[:2]  # 리뷰 이미지 최대 2장
+    product_imgs = product_info.get("images", [])[:1]         # 상품 이미지 최대 1장
+    ref_images = review_imgs + product_imgs
+
+    image_infos_input = []
+    kw_slug = re.sub(r'[^\w]', '_', keyword[:20])
+
+    for i, fpath in enumerate(ref_images, start=1):
+        # Gemini Vision으로 이미지 분석
+        desc = _describe_coupang_image(fpath, keyword, i)
+        if desc:
+            # 분석 결과 기반 실사진 프롬프트
+            prompt = (
+                f"{desc}, photorealistic lifestyle photo, Korean home interior, "
+                f"real photography style, natural lighting, no text, no faces, no logos"
+            )
+        else:
+            # 폴백: 기본 프롬프트
+            prompt = (
+                f"{keyword} real usage scene, Korean household, "
+                f"photorealistic lifestyle photography, natural lighting, no text, no faces"
+            )
+        image_infos_input.append({
             "index": i,
             "prompt": prompt,
-            "filename": filename,
+            "filename": f"me1091_{kw_slug}_{i}.jpg",
         })
-        log(f"[이미지] [{i}] 프롬프트: {prompt[:60]}")
+        log(f"[이미지] [{i}] 프롬프트: {prompt[:80]}")
 
-    if not image_infos:
-        log("[이미지] 생성할 이미지 없음")
-        return {}
+    # 스크래핑 이미지 없으면 기본 3장 생성
+    if not image_infos_input:
+        log("[이미지] 쿠팡 참고 이미지 없음 — 기본 프롬프트로 생성")
+        for i in range(1, 4):
+            image_infos_input.append({
+                "index": i,
+                "prompt": (
+                    f"{keyword} real usage in Korean home, photorealistic lifestyle photo, "
+                    f"natural daylight, clean minimal interior, no text, no faces"
+                ),
+                "filename": f"me1091_{kw_slug}_{i}.jpg",
+            })
 
     results = generate_images_for_blog(
         blog_id=BLOG_ID,
-        image_infos=image_infos,
+        image_infos=image_infos_input,
         skip_webp=True,
         on_log=log,
     )
-    log(f"[이미지] 생성 완료: {len(results)}장")
-    return results
+    image_infos = [
+        {"index": k, "filename": Path(v).name, "alt": f"{keyword} 실제 사용 모습 {k}"}
+        for k, v in results.items()
+    ]
+    log(f"[이미지] Gemini 재생성 완료: {len(results)}장")
+    return results, image_infos
 
 
 # ─── Claude.ai 글 생성 ───────────────────────────────────────────────────
@@ -301,6 +489,14 @@ def generate_review_post(product_info: dict, coupang_link: str) -> tuple:
         if original_price and original_price != price:
             price_str += f" (정가: {original_price}원)"
 
+    # 리뷰 텍스트 → 컨텍스트 (최대 3개)
+    reviews = product_info.get("reviews", [])[:3]
+    reviews_str = ""
+    if reviews:
+        reviews_str = "\n\n[실제 구매자 리뷰 — 글 작성 참고용]\n"
+        for i, rv in enumerate(reviews, 1):
+            reviews_str += f"리뷰{i}: {rv[:300]}\n\n"
+
     # 상품 정보를 extra_context로 전달 → 노션 프로젝트 프롬프트와 합쳐짐
     extra = f"""[상품 정보]
 상품명: {name}
@@ -308,14 +504,11 @@ def generate_review_post(product_info: dict, coupang_link: str) -> tuple:
 가격: {price_str}
 스펙: {spec[:300] if spec else '없음'}
 쿠팡파트너스 링크: {coupang_link}
-
+{reviews_str}
 [링크 삽입 형식]
 본문 중간 + 말미에 아래 형식으로 자연스럽게 삽입:
 👉 [쿠팡에서 최저가 확인하기]({coupang_link})
 ※ 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 일정액의 수수료를 제공받습니다.
-
-[이미지 파일명 규칙]
-me1091_review_1.jpg, me1091_review_2.jpg, me1091_review_3.jpg 사용
 
 [출력 형식 — 반드시 아래 마커 사용]
 ===제목===
@@ -323,27 +516,12 @@ me1091_review_1.jpg, me1091_review_2.jpg, me1091_review_3.jpg 사용
 ===제목끝===
 
 ===본문===
-(1인칭 리뷰 본문 전체 — 2000자 이상)
+(1인칭 리뷰 본문 전체 — 2000자 이상, 실제 리뷰 내용 자연스럽게 참고)
 ===본문끝===
 
 ===태그===
 태그1, 태그2, 태그3, ... (10~15개)
 ===태그끝===
-
-===이미지===
-[이미지1]
-- Gemini프롬프트: (상품 실사용 이미지 영문 프롬프트)
-- 파일명: me1091_review_1.jpg
-- alt: (한국어 alt 텍스트)
-[이미지2]
-- Gemini프롬프트: ...
-- 파일명: me1091_review_2.jpg
-- alt: ...
-[이미지3]
-- Gemini프롬프트: ...
-- 파일명: me1091_review_3.jpg
-- alt: ...
-===이미지끝===
 """
 
     log(f"[Claude] {BLOG_ID} 글 생성 시작: {name[:40]}")
@@ -356,44 +534,14 @@ me1091_review_1.jpg, me1091_review_2.jpg, me1091_review_3.jpg 사용
     title_m = re.search(r"===제목===\s*\n(.*?)\n*===제목끝===", raw, re.DOTALL)
     body_m  = re.search(r"===본문===\s*\n(.*?)\n*===본문끝===",  raw, re.DOTALL)
     tag_m   = re.search(r"===태그===\s*\n(.*?)\n*===태그끝===",  raw, re.DOTALL)
-    img_m   = re.search(r"===이미지===\s*\n(.*?)\n*===이미지끝===", raw, re.DOTALL)
 
     title   = title_m.group(1).strip().split("\n")[0].strip() if title_m else name[:40]
     content = body_m.group(1).strip() if body_m else raw
     tags    = [t.strip() for t in tag_m.group(1).strip().split(",") if t.strip()] if tag_m else [name]
 
-    # 이미지 섹션 파싱 → Gemini 생성
-    image_paths = {}
-    image_infos = []
-    if img_m:
-        from image_router import generate_images_for_blog
-        img_text = img_m.group(1)
-        for block in re.findall(r"\[이미지\s*\d+\][^\[]+", img_text, re.DOTALL):
-            n_m = re.search(r"\[이미지\s*(\d+)\]", block)
-            p_m = re.search(r"Gemini프롬프트:\s*(.+)", block)
-            f_m = re.search(r"파일명:\s*(\S+)", block)
-            a_m = re.search(r"alt:\s*(.+)", block)
-            if n_m and p_m:
-                idx = int(n_m.group(1))
-                image_infos.append({
-                    "index": idx,
-                    "prompt": p_m.group(1).strip(),
-                    "filename": f_m.group(1).strip() if f_m else f"me1091_review_{idx}.jpg",
-                    "alt": a_m.group(1).strip() if a_m else name,
-                })
-        if image_infos:
-            log(f"[이미지] Gemini로 {len(image_infos)}장 생성 시작")
-            image_paths = generate_images_for_blog(
-                blog_id=BLOG_ID,
-                image_infos=image_infos,
-                skip_webp=True,
-                on_log=log,
-            )
-            log(f"[이미지] {len(image_paths)}장 생성 완료")
-
     log(f"[Claude] 제목: {title}")
-    log(f"[Claude] 본문: {len(content)}자, 태그: {len(tags)}개, 이미지: {len(image_paths)}장")
-    return title, content, tags, image_paths, image_infos
+    log(f"[Claude] 본문: {len(content)}자, 태그: {len(tags)}개")
+    return title, content, tags
 
 
 # ─── 단일 상품 처리 (overnight_run.py에서 호출) ─────────────────────────
@@ -420,20 +568,14 @@ def run_one_product(on_log=None) -> bool:
         product_info["name"] = name
 
     keyword = product_info.get("name") or name
-    # 쿠팡 이미지 재생성 (스크래핑 성공 시)
-    scraped_image_paths = download_and_regenerate_images(product_info, keyword)
 
-    title, content, tags, gen_image_paths, gen_image_infos = generate_review_post(product_info, link)
+    # 쿠팡 이미지(리뷰+상품) 참고 → Gemini 실사진 재생성
+    image_paths, image_infos_list = prepare_images_with_gemini(product_info, keyword)
+
+    title, content, tags = generate_review_post(product_info, link)
     if not title or not content:
         _log(f"[me1091] 글 생성 실패: {name[:40]}")
         return False
-
-    # 이미지: 스크래핑 이미지 우선, 없으면 Gemini 생성 이미지 사용
-    image_paths = scraped_image_paths if scraped_image_paths else gen_image_paths
-    image_infos_list = gen_image_infos if gen_image_infos else [
-        {"index": idx, "filename": Path(fp).name, "alt": f"{keyword} {idx}"}
-        for idx, fp in image_paths.items()
-    ]
 
     try:
         from poster import post_single
@@ -490,22 +632,15 @@ def run():
         if not product_info.get("name"):
             product_info["name"] = name  # fallback
 
-        # 3. 이미지 생성 (쿠팡 스크래핑 기반)
+        # 3. 쿠팡 이미지(리뷰+상품) 참고 → Gemini 실사진 재생성
         keyword = product_info.get("name") or name
-        scraped_image_paths = download_and_regenerate_images(product_info, keyword)
+        image_paths, image_infos_list = prepare_images_with_gemini(product_info, keyword)
 
-        # 4. 글 생성 (===이미지=== 섹션 포함 Gemini 생성)
-        title, content, tags, gen_image_paths, gen_image_infos = generate_review_post(product_info, link)
+        # 4. 글 생성 (리뷰 텍스트 컨텍스트 포함)
+        title, content, tags = generate_review_post(product_info, link)
         if not title or not content:
             log(f"[스킵] 글 생성 실패: {name[:40]}")
             continue
-
-        # 이미지: 스크래핑 우선, 없으면 Gemini 생성
-        image_paths = scraped_image_paths if scraped_image_paths else gen_image_paths
-        image_infos_list = gen_image_infos if gen_image_infos else [
-            {"index": idx, "filename": Path(fp).name, "alt": f"{keyword} 이미지 {idx}"}
-            for idx, fp in image_paths.items()
-        ]
 
         # 5. 네이버 임시저장
         try:
