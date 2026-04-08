@@ -730,6 +730,42 @@ def _naver_dismiss_overlays(page):
         pass
 
 
+def _naver_close_upload_panel(page):
+    """이미지 업로드 후 남아있는 라이브러리/파일선택 패널을 닫는다."""
+    try:
+        closed = page.evaluate("""() => {
+            // 라이브러리 패널 닫기 버튼들 시도
+            const closeSelectors = [
+                'button[aria-label="라이브러리 닫기"]',
+                'button[aria-label="닫기"]',
+                '.se-library-close-button',
+                '[class*="library"] button[class*="close"]',
+                '[class*="library"] button[aria-label*="닫"]',
+                '.se-dialog-close-button',
+                '[class*="close_btn__"]',
+            ];
+            for (const sel of closeSelectors) {
+                const btn = document.querySelector(sel);
+                if (btn && btn.offsetParent !== null) {
+                    btn.click();
+                    return sel;
+                }
+            }
+            return null;
+        }""")
+        if closed:
+            time.sleep(0.5)
+            return
+        # 버튼 못찾으면 Escape로 닫기 시도
+        page.keyboard.press("Escape")
+        time.sleep(0.5)
+        # 한 번 더 (중첩 다이얼로그 대비)
+        page.keyboard.press("Escape")
+        time.sleep(0.3)
+    except Exception:
+        pass
+
+
 def _naver_wait_for_image_load(page, max_retries=3):
     """업로드된 이미지가 정상 로드됐는지 확인한다."""
     for attempt in range(max_retries):
@@ -814,6 +850,9 @@ def _naver_upload_image(page, filepath, log_fn=None):
         # 이미지 로드 확인
         _naver_wait_for_image_load(page)
         _naver_remove_image_placeholders(page)
+
+        # 업로드 후 남아있는 파일선택/라이브러리 패널 닫기
+        _naver_close_upload_panel(page)
 
         # 이미지 뒤 본문 영역으로 커서 복귀
         body_ps = page.query_selector_all(
