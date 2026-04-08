@@ -868,6 +868,78 @@ def _naver_apply_subtitle_format(page):
     return False
 
 
+def _naver_set_font_color_black(page):
+    """네이버 스마트에디터 글자 색상을 검정(#000000)으로 설정한다."""
+    try:
+        # 전체 선택 후 색상 적용
+        page.keyboard.press("Control+a")
+        time.sleep(0.3)
+        # 글자색 버튼 클릭
+        color_selectors = [
+            'button[data-name="fontColor"]',
+            '.se-toolbar-item-fontColor button',
+            'button[title*="글자색"]',
+            'button[aria-label*="글자색"]',
+        ]
+        color_btn = None
+        for sel in color_selectors:
+            try:
+                el = page.query_selector(sel)
+                if el and el.is_visible(timeout=300):
+                    color_btn = el
+                    break
+            except Exception:
+                pass
+        if not color_btn:
+            return
+        color_btn.click()
+        time.sleep(0.5)
+        # 직접 입력 필드에 #000000 입력
+        hex_input_sels = [
+            'input[placeholder*="#"]',
+            'input[placeholder*="hex"]',
+            '.se-color-input input',
+            'input[maxlength="6"]',
+            'input[maxlength="7"]',
+        ]
+        hex_input = None
+        for sel in hex_input_sels:
+            try:
+                el = page.query_selector(sel)
+                if el and el.is_visible(timeout=300):
+                    hex_input = el
+                    break
+            except Exception:
+                pass
+        if hex_input:
+            hex_input.triple_click()
+            time.sleep(0.1)
+            hex_input.fill("000000")
+            page.keyboard.press("Enter")
+            time.sleep(0.3)
+        else:
+            # 폴백: 검정 색상 셀 직접 클릭
+            black_sels = [
+                '[data-color="#000000"]',
+                '[title="검정"]',
+                '[aria-label="검정"]',
+            ]
+            for sel in black_sels:
+                try:
+                    el = page.query_selector(sel)
+                    if el and el.is_visible(timeout=300):
+                        el.click()
+                        time.sleep(0.3)
+                        break
+                except Exception:
+                    pass
+        # 팝업 닫기
+        page.keyboard.press("Escape")
+        time.sleep(0.2)
+    except Exception:
+        pass
+
+
 def _naver_set_font_size(page, size: int = 19):
     """네이버 에디터 글자 크기를 설정한다."""
     try:
@@ -955,6 +1027,32 @@ def _naver_type_line_with_bold(page, line: str, chunk_size: int = 50):
             _chunked_type(page, text, chunk_size=chunk_size)
             page.keyboard.press("Control+b")
             time.sleep(0.1)
+        else:
+            _chunked_type(page, seg, chunk_size=chunk_size)
+
+
+def _naver_type_line_with_links(page, line: str, chunk_size: int = 50):
+    """[텍스트](URL) 마크다운 링크가 포함된 줄을 네이버 에디터에 입력한다.
+
+    링크 부분은 execCommand insertHTML로 <a> 태그 직접 삽입.
+    """
+    import re as _re
+    segments = _re.split(r'(\[[^\]]+\]\(https?://[^\)]+\))', line)
+    for seg in segments:
+        if not seg:
+            continue
+        link_m = _re.match(r'\[([^\]]+)\]\((https?://[^\)]+)\)', seg)
+        if link_m:
+            text = link_m.group(1)
+            url = link_m.group(2)
+            # SE2 에디터에 직접 anchor 삽입
+            safe_text = text.replace("'", "\\'")
+            safe_url = url.replace("'", "\\'")
+            page.evaluate(
+                f"() => document.execCommand('insertHTML', false, "
+                f"'<a href=\"{safe_url}\" target=\"_blank\">{safe_text}</a>')"
+            )
+            time.sleep(0.2)
         else:
             _chunked_type(page, seg, chunk_size=chunk_size)
 
@@ -1199,8 +1297,9 @@ def _post_naver(account, title, content, tags=None,
                 body_p.click()
             time.sleep(0.5)
 
-        # 본문 글자 크기 19 초기 설정
+        # 본문 글자 크기 19 + 색상 검정 초기 설정
         _naver_set_font_size(page, 19)
+        _naver_set_font_color_black(page)
 
         # ── 섹션별 입력 ──
         for si, section in enumerate(sections):
@@ -1281,8 +1380,11 @@ def _post_naver(account, title, content, tags=None,
                             page.keyboard.press("Enter")
                             time.sleep(0.2)
                             continue
+                        # [텍스트](URL) 마크다운 링크 → 하이퍼링크 삽입
+                        if re.search(r'\[.+?\]\(https?://[^\)]+\)', stripped):
+                            _naver_type_line_with_links(page, stripped)
                         # **볼드** 처리 (Ctrl+B)
-                        if '**' in stripped:
+                        elif '**' in stripped:
                             _naver_type_line_with_bold(page, stripped)
                         else:
                             _chunked_type(page, stripped, chunk_size=50)

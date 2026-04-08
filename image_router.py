@@ -177,7 +177,7 @@ def generate_images_for_blog(
         enhanced['filename'] = _clean_filename(info['filename'], skip_webp)
         enhanced_infos.append(enhanced)
 
-    is_naver = (blog_id == "salim1su")
+    is_naver = blog_id in ("salim1su", "me1091")
 
     if is_naver:
         return _generate_naver(enhanced_infos, skip_webp, log)

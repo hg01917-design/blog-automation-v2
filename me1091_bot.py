@@ -316,6 +316,34 @@ def generate_review_post(product_info: dict, coupang_link: str) -> tuple:
 
 [이미지 파일명 규칙]
 me1091_review_1.jpg, me1091_review_2.jpg, me1091_review_3.jpg 사용
+
+[출력 형식 — 반드시 아래 마커 사용]
+===제목===
+(SEO 최적화 제목 — 30~40자, 상품명 포함)
+===제목끝===
+
+===본문===
+(1인칭 리뷰 본문 전체 — 2000자 이상)
+===본문끝===
+
+===태그===
+태그1, 태그2, 태그3, ... (10~15개)
+===태그끝===
+
+===이미지===
+[이미지1]
+- Gemini프롬프트: (상품 실사용 이미지 영문 프롬프트)
+- 파일명: me1091_review_1.jpg
+- alt: (한국어 alt 텍스트)
+[이미지2]
+- Gemini프롬프트: ...
+- 파일명: me1091_review_2.jpg
+- alt: ...
+[이미지3]
+- Gemini프롬프트: ...
+- 파일명: me1091_review_3.jpg
+- alt: ...
+===이미지끝===
 """
 
     log(f"[Claude] {BLOG_ID} 글 생성 시작: {name[:40]}")
@@ -328,14 +356,44 @@ me1091_review_1.jpg, me1091_review_2.jpg, me1091_review_3.jpg 사용
     title_m = re.search(r"===제목===\s*\n(.*?)\n*===제목끝===", raw, re.DOTALL)
     body_m  = re.search(r"===본문===\s*\n(.*?)\n*===본문끝===",  raw, re.DOTALL)
     tag_m   = re.search(r"===태그===\s*\n(.*?)\n*===태그끝===",  raw, re.DOTALL)
+    img_m   = re.search(r"===이미지===\s*\n(.*?)\n*===이미지끝===", raw, re.DOTALL)
 
     title   = title_m.group(1).strip().split("\n")[0].strip() if title_m else name[:40]
     content = body_m.group(1).strip() if body_m else raw
     tags    = [t.strip() for t in tag_m.group(1).strip().split(",") if t.strip()] if tag_m else [name]
 
+    # 이미지 섹션 파싱 → Gemini 생성
+    image_paths = {}
+    image_infos = []
+    if img_m:
+        from image_router import generate_images_for_blog
+        img_text = img_m.group(1)
+        for block in re.findall(r"\[이미지\s*\d+\][^\[]+", img_text, re.DOTALL):
+            n_m = re.search(r"\[이미지\s*(\d+)\]", block)
+            p_m = re.search(r"Gemini프롬프트:\s*(.+)", block)
+            f_m = re.search(r"파일명:\s*(\S+)", block)
+            a_m = re.search(r"alt:\s*(.+)", block)
+            if n_m and p_m:
+                idx = int(n_m.group(1))
+                image_infos.append({
+                    "index": idx,
+                    "prompt": p_m.group(1).strip(),
+                    "filename": f_m.group(1).strip() if f_m else f"me1091_review_{idx}.jpg",
+                    "alt": a_m.group(1).strip() if a_m else name,
+                })
+        if image_infos:
+            log(f"[이미지] Gemini로 {len(image_infos)}장 생성 시작")
+            image_paths = generate_images_for_blog(
+                blog_id=BLOG_ID,
+                image_infos=image_infos,
+                skip_webp=True,
+                on_log=log,
+            )
+            log(f"[이미지] {len(image_paths)}장 생성 완료")
+
     log(f"[Claude] 제목: {title}")
-    log(f"[Claude] 본문: {len(content)}자, 태그: {len(tags)}개")
-    return title, content, tags
+    log(f"[Claude] 본문: {len(content)}자, 태그: {len(tags)}개, 이미지: {len(image_paths)}장")
+    return title, content, tags, image_paths, image_infos
 
 
 # ─── 단일 상품 처리 (overnight_run.py에서 호출) ─────────────────────────
@@ -362,19 +420,23 @@ def run_one_product(on_log=None) -> bool:
         product_info["name"] = name
 
     keyword = product_info.get("name") or name
-    image_paths = download_and_regenerate_images(product_info, keyword)
+    # 쿠팡 이미지 재생성 (스크래핑 성공 시)
+    scraped_image_paths = download_and_regenerate_images(product_info, keyword)
 
-    title, content, tags = generate_review_post(product_info, link)
+    title, content, tags, gen_image_paths, gen_image_infos = generate_review_post(product_info, link)
     if not title or not content:
         _log(f"[me1091] 글 생성 실패: {name[:40]}")
         return False
 
+    # 이미지: 스크래핑 이미지 우선, 없으면 Gemini 생성 이미지 사용
+    image_paths = scraped_image_paths if scraped_image_paths else gen_image_paths
+    image_infos_list = gen_image_infos if gen_image_infos else [
+        {"index": idx, "filename": Path(fp).name, "alt": f"{keyword} {idx}"}
+        for idx, fp in image_paths.items()
+    ]
+
     try:
         from poster import post_single
-        image_infos_list = [
-            {"index": idx, "filename": Path(fp).name, "alt": f"{keyword} {idx}"}
-            for idx, fp in image_paths.items()
-        ]
         ok = post_single(
             blog_id=BLOG_ID,
             title=title,
@@ -428,30 +490,25 @@ def run():
         if not product_info.get("name"):
             product_info["name"] = name  # fallback
 
-        # 3. 이미지 생성
+        # 3. 이미지 생성 (쿠팡 스크래핑 기반)
         keyword = product_info.get("name") or name
-        image_paths = download_and_regenerate_images(product_info, keyword)
+        scraped_image_paths = download_and_regenerate_images(product_info, keyword)
 
-        # 4. 글 생성
-        title, content, tags = generate_review_post(product_info, link)
+        # 4. 글 생성 (===이미지=== 섹션 포함 Gemini 생성)
+        title, content, tags, gen_image_paths, gen_image_infos = generate_review_post(product_info, link)
         if not title or not content:
             log(f"[스킵] 글 생성 실패: {name[:40]}")
             continue
 
+        # 이미지: 스크래핑 우선, 없으면 Gemini 생성
+        image_paths = scraped_image_paths if scraped_image_paths else gen_image_paths
+        image_infos_list = gen_image_infos if gen_image_infos else [
+            {"index": idx, "filename": Path(fp).name, "alt": f"{keyword} 이미지 {idx}"}
+            for idx, fp in image_paths.items()
+        ]
+
         # 5. 네이버 임시저장
         try:
-            from config import ACCOUNT_MAP
-
-            account = ACCOUNT_MAP.get(BLOG_ID)
-            if not account:
-                log(f"[오류] config에 {BLOG_ID} 없음")
-                continue
-
-            image_infos_list = [
-                {"index": idx, "filename": Path(fp).name, "alt": f"{keyword} 이미지 {idx}"}
-                for idx, fp in image_paths.items()
-            ]
-
             from poster import post_single
             log(f"[발행] me1091 네이버 임시저장 시작")
             ok = post_single(
