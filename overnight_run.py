@@ -177,7 +177,7 @@ _BLOG_THEMES = {
                  "주부", "신혼", "인테리어", "수납", "정돈", "소독", "탈취", "제거",
                  "관리비", "수도", "가습기", "건조기", "식기", "행주", "찌든"],
     "goodisak": ["아이폰", "갤럭시", "스마트폰", "노트북", "태블릿", "AI", "앱", "앱스토어",
-                 "카드", "대출", "금리", "적금", "예금", "투자", "주식", "펀드", "청약",
+                 "카드", "적금", "예금", "투자", "주식", "펀드", "청약",
                  "페이", "포인트", "캐시백", "환전", "핀테크", "은행", "증권", "보험",
                  "IT", "기술", "소프트웨어", "하드웨어", "가전", "전자"],
     "baremi542": ["지원금", "보조금", "지원사업", "복지", "수당", "혜택", "신청", "환급",
@@ -201,6 +201,12 @@ _BLOG_THEMES = {
 
 def is_keyword_suitable(blog_id: str, keyword: str) -> bool:
     """키워드가 블로그 테마에 적합한지 확인"""
+    # goodisak(Tistory): 대출 관련 키워드 차단
+    if blog_id == "goodisak":
+        _LOAN_BLOCK = ["대출", "금리", "대출비교", "신용대출", "주택담보대출", "카드론", "대출이자", "대출금리", "핀다"]
+        if any(w in keyword for w in _LOAN_BLOCK):
+            return False
+
     # baremi542: 법률/법령 관련 키워드 차단 (정부지원/복지만 허용)
     if blog_id == "baremi542":
         _LAW_BLOCK = ["법", "법률", "법령", "법조문", "조항", "형법", "민법", "상법",
@@ -717,9 +723,9 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     log(f"[파싱] 본문: {char_count}자")
     log(f"[파싱] 태그: {tags} ({len(tags)}개)")
     log(f"[파싱] 이미지: {len(images)}개")
-    if len(title) == 0:
-        log("[파싱] ⚠ 제목이 비어있음 — 키워드로 대체")
-        title = keyword
+    if len(title) == 0 or title.strip() == keyword.strip():
+        log(f"[파싱] ❌ 제목 생성 실패 (title='{title}') — 발행 중단")
+        return False
     if char_count < 100:
         log(f"[파싱] ⚠ 본문이 너무 짧음 ({char_count}자)")
     log(f"[파싱] 본문 미리보기: {body[:80]}...")
