@@ -857,6 +857,15 @@ def _hours_since_last_post(blog_id: str) -> float:
 
 def post_one_blog(blog_id):
     """한 블로그에 키워드 1개 선택 → 포스팅 (SQLite 키워드 엔진만 사용)"""
+    # me1091: Notion 상품 기반 Coupang 리뷰 파이프라인 (키워드 DB 사용 안 함)
+    if blog_id == "me1091":
+        try:
+            from me1091_bot import run_one_product
+            return run_one_product(on_log=log)
+        except Exception as e:
+            log(f"[me1091] 오류: {e}")
+            return False
+
     from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as _db_set
 
     # 최소 포스팅 간격 체크 (같은 블로그 3시간 이상 텀)

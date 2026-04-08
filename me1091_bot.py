@@ -183,67 +183,73 @@ def mark_done(name: str, link: str, blog_url: str = ""):
         c.commit()
 
 
-# ─── 쿠팡 크롤링 ─────────────────────────────────────────────────────────
+# ─── 쿠팡 크롤링 (urllib — Playwright 없이) ─────────────────────────────
 def scrape_coupang_product(link: str, on_log=None) -> dict:
-    """쿠팡 상품 페이지에서 상품명/가격/이미지/스펙 크롤링 (Playwright)."""
-    def log_(m):
-        if on_log: on_log(m)
-        log(m)
-
-    from browser import connect_cdp, get_or_create_page
-
-    pw, browser = connect_cdp(on_log)
-    page = get_or_create_page(browser)
+    """쿠팡 상품 페이지에서 상품명/가격/이미지/스펙 크롤링 (HTTP 요청)."""
+    import ssl, html
 
     result = {"name": "", "price": "", "original_price": "", "images": [], "spec": "", "url": ""}
 
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9",
+        "Referer": "https://www.coupang.com/",
+    }
+
+    def fetch(url):
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=20, context=ctx) as r:
+            return r.read().decode("utf-8", errors="ignore"), r.url
+
     try:
-        log_(f"[쿠팡] 링크 접속: {link[:60]}")
-        page.goto(link, wait_until="domcontentloaded", timeout=30000)
-        time.sleep(3)
-        result["url"] = page.url
+        log(f"[쿠팡] 링크 접속: {link[:60]}")
+        # 파트너스 링크 → 실제 상품 페이지 리다이렉트
+        body, final_url = fetch(link)
+        result["url"] = final_url
+        log(f"[쿠팡] 최종 URL: {final_url[:80]}")
 
         # 상품명
-        for sel in [".prod-buy-header__title", "h1.prod-title", "h1"]:
-            el = page.query_selector(sel)
-            if el:
-                result["name"] = el.inner_text().strip()[:100]
-                break
+        m = re.search(r'<title>([^<]+)</title>', body)
+        if m:
+            raw_title = html.unescape(m.group(1)).strip()
+            # "상품명 | 쿠팡" 형식에서 앞부분만
+            result["name"] = raw_title.split("|")[0].strip()[:100]
 
-        # 가격
-        for sel in [".final-price .price-amount", ".total-price strong", ".price-amount"]:
-            el = page.query_selector(sel)
-            if el:
-                result["price"] = el.inner_text().strip().replace(",", "")
-                break
-        for sel in [".original-price .price-amount", ".origin-price"]:
-            el = page.query_selector(sel)
-            if el:
-                result["original_price"] = el.inner_text().strip().replace(",", "")
-                break
+        # og:title 우선
+        m2 = re.search(r'property="og:title"\s+content="([^"]+)"', body)
+        if m2:
+            result["name"] = html.unescape(m2.group(1)).strip()[:100]
 
-        # 상세 이미지 (썸네일 슬라이더)
-        img_els = page.query_selector_all(".prod-image__detail img, .thumbnail-image img, img.prod-image")
+        # 가격 (JSON-LD 또는 meta)
+        price_m = re.search(r'"price"\s*:\s*"?([\d,]+)"?', body)
+        if price_m:
+            result["price"] = price_m.group(1).replace(",", "")
+
+        # 이미지 (coupangcdn CDN 이미지)
         seen = set()
-        for img in img_els[:6]:
-            src = img.get_attribute("src") or img.get_attribute("data-src") or ""
-            if src and src not in seen and "coupangcdn" in src:
+        for img_m in re.finditer(r'https://[^"\'>\s]+coupangcdn\.com/image/[^"\'>\s]+\.jpg', body):
+            src = img_m.group(0)
+            # 썸네일/상세 이미지만 (배너/광고 제외)
+            if any(x in src for x in ["/affiliate/", "/vendor_inventory/", "/vendoritem/"]):
+                continue
+            if src not in seen:
                 seen.add(src)
                 result["images"].append(src)
             if len(result["images"]) >= 3:
                 break
 
-        # 스펙 텍스트
-        spec_el = page.query_selector(".prod-attr-table, .spec-list, table.prod-spec")
-        if spec_el:
-            result["spec"] = spec_el.inner_text().strip()[:500]
-
-        log_(f"[쿠팡] 상품명: {result['name']}")
-        log_(f"[쿠팡] 가격: {result['price']}원 (정가: {result['original_price']}원)")
-        log_(f"[쿠팡] 이미지: {len(result['images'])}장")
+        log(f"[쿠팡] 상품명: {result['name'][:60]}")
+        log(f"[쿠팡] 가격: {result['price']}원")
+        log(f"[쿠팡] 이미지: {len(result['images'])}장")
 
     except Exception as e:
-        log_(f"[쿠팡] 크롤링 오류: {e}")
+        log(f"[쿠팡] 크롤링 오류: {e}")
 
     return result
 
@@ -330,6 +336,62 @@ me1091_review_1.jpg, me1091_review_2.jpg, me1091_review_3.jpg 사용
     log(f"[Claude] 제목: {title}")
     log(f"[Claude] 본문: {len(content)}자, 태그: {len(tags)}개")
     return title, content, tags
+
+
+# ─── 단일 상품 처리 (overnight_run.py에서 호출) ─────────────────────────
+def run_one_product(on_log=None) -> bool:
+    """Notion에서 미처리 상품 1개를 처리. overnight_run.py의 post_one_blog에서 호출."""
+    def _log(m):
+        if on_log: on_log(m)
+        log(m)
+
+    products = fetch_notion_products()
+    pending = [p for p in products if not is_already_done(p["name"])]
+    if not pending:
+        _log("[me1091] 처리할 Notion 상품 없음")
+        return False
+
+    product = pending[0]
+    name = product["name"]
+    link = product["link"]
+    _log(f"[me1091] 처리: {name[:50]}")
+
+    product_info = scrape_coupang_product(link, on_log=_log)
+    product_info["category"] = product.get("category", "")
+    if not product_info.get("name"):
+        product_info["name"] = name
+
+    keyword = product_info.get("name") or name
+    image_paths = download_and_regenerate_images(product_info, keyword)
+
+    title, content, tags = generate_review_post(product_info, link)
+    if not title or not content:
+        _log(f"[me1091] 글 생성 실패: {name[:40]}")
+        return False
+
+    try:
+        from poster import post_single
+        image_infos_list = [
+            {"index": idx, "filename": Path(fp).name, "alt": f"{keyword} {idx}"}
+            for idx, fp in image_paths.items()
+        ]
+        ok = post_single(
+            blog_id=BLOG_ID,
+            title=title,
+            content=content,
+            tags=tags,
+            image_paths=image_paths,
+            image_infos=image_infos_list,
+            keyword=keyword,
+            on_log=_log,
+        )
+        if ok:
+            mark_done(name, link)
+            _log(f"[me1091] ✅ 임시저장 완료: {title}")
+        return ok
+    except Exception as e:
+        _log(f"[me1091] 포스팅 오류: {e}")
+        return False
 
 
 # ─── 메인 파이프라인 ─────────────────────────────────────────────────────
