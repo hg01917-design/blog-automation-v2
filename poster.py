@@ -16,36 +16,33 @@ def _rand_delay(page, min_ms=500, max_ms=1500):
 
 
 def _chunked_type(page, text, chunk_size=50, delay_per_char=None):
-    """긴 텍스트를 chunk_size 글자씩 나눠서 keyboard.type() 한다.
+    """텍스트를 클립보드 붙여넣기 방식으로 입력한다.
 
-    네이버 에디터에서 긴 텍스트를 한번에 type()하면
-    포커스를 잃거나 중간에 누락되는 문제를 방지.
-    - 50자씩 분할
-    - 청크 사이 0.3초 대기
-    - 매 5청크마다 본문 영역 클릭으로 포커스 유지
+    keyboard.type()은 한글 IME 조합 중 글자가 뒤섞이는 문제가 있어
+    클립보드 → Cmd+V 방식으로 교체. 텍스트가 정확하게 입력됨.
     """
-    if delay_per_char is None:
-        delay_per_char = random.randint(10, 30)
-
-    chunk_count = 0
-    for i in range(0, len(text), chunk_size):
-        # 매 5청크마다 포커스 재확인
-        if chunk_count > 0 and chunk_count % 5 == 0:
-            try:
-                body_p = page.query_selector(
-                    '.se-component.se-text .se-text-paragraph'
-                )
-                if body_p:
-                    # 네이버 에디터 본문 영역 클릭으로 포커스 복구
-                    body_p.click()
-                    time.sleep(0.2)
-            except Exception:
-                pass
-
-        chunk = text[i:i + chunk_size]
-        page.keyboard.type(chunk, delay=delay_per_char)
-        chunk_count += 1
-        time.sleep(0.3)  # 청크 사이 0.3초 대기
+    import subprocess as _sp
+    try:
+        _sp.run(['pbcopy'], input=text.encode('utf-8'), check=True)
+        page.keyboard.press('Meta+v')
+        time.sleep(0.3)
+    except Exception:
+        # pbcopy 실패 시 기존 방식으로 폴백
+        if delay_per_char is None:
+            delay_per_char = random.randint(10, 30)
+        chunk_count = 0
+        for i in range(0, len(text), chunk_size):
+            if chunk_count > 0 and chunk_count % 5 == 0:
+                try:
+                    body_p = page.query_selector('.se-component.se-text .se-text-paragraph')
+                    if body_p:
+                        body_p.click()
+                        time.sleep(0.2)
+                except Exception:
+                    pass
+            page.keyboard.type(text[i:i + chunk_size], delay=delay_per_char)
+            chunk_count += 1
+            time.sleep(0.3)
 
 
 # .env 로드 (.app 번들 실행 시 프로젝트 루트 우선)
