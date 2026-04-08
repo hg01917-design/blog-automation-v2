@@ -37,13 +37,13 @@ def save_log():
 
 
 def _notify_draft_saved(blog_id: str, keyword: str):
-    """임시저장 완료 후 publish_drafts.py 직접 실행 — 중복 방지 락 적용"""
+    """임시저장 완료 후 Claude Code로 검수·발행 — 중복 방지 락 적용"""
     import subprocess as _sp
     import fcntl as _fcntl
     PROJECT_DIR = str(Path(__file__).parent)
-    PYTHON_BIN = "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3"
+    CLAUDE_BIN = "/Users/hana/.local/bin/claude"
 
-    # 이미 publish_drafts.py 실행 중이면 스킵 (락 파일 확인)
+    # 이미 claude 검수 실행 중이면 스킵 (락 파일 확인)
     lock_path = "/tmp/publish_drafts.lock"
     try:
         _lfd = open(lock_path, "w")
@@ -51,19 +51,27 @@ def _notify_draft_saved(blog_id: str, keyword: str):
         _fcntl.flock(_lfd, _fcntl.LOCK_UN)
         _lfd.close()
     except BlockingIOError:
-        log(f"[publish] publish_drafts.py 이미 실행 중 — {blog_id} 스킵")
+        log(f"[publish] Claude 검수 이미 실행 중 — {blog_id} 스킵")
         return
 
+    prompt = (
+        f"blog_id={blog_id} keyword={keyword}\n"
+        f"봇이 임시저장 완료했습니다. CLAUDE.md 발행 전 필수 체크리스트에 따라 "
+        f"{blog_id} 블로그의 임시저장 글을 검수하고 발행해줘. "
+        f"마크다운 잔재, 이미지 3장 이상, 내부마커, 주제 적합성, 1700자 이상, "
+        f"3.5시간 간격 모두 확인 후 발행. 발행 완료 후 텔레그램으로 보고."
+    )
+    log_file = PROJECT_DIR + f"/logs/claude_publish_{blog_id}.log"
     try:
         _sp.Popen(
-            [PYTHON_BIN, PROJECT_DIR + "/publish_drafts.py", blog_id],
+            [CLAUDE_BIN, "--print", prompt],
             cwd=PROJECT_DIR,
-            stdout=open(PROJECT_DIR + f"/logs/claude_publish_{blog_id}.log", "a"),
+            stdout=open(log_file, "a"),
             stderr=_sp.STDOUT,
         )
-        log(f"[publish] {blog_id} 발행 프로세스 시작됨 (키워드: {keyword})")
+        log(f"[publish] Claude Code 검수 시작 — {blog_id} (키워드: {keyword})")
     except Exception as e:
-        log(f"[publish] 실행 실패: {e}")
+        log(f"[publish] Claude Code 실행 실패: {e}")
 
 
 # ─── Notion 키워드 큐에서 대기 키워드 가져오기 ───
