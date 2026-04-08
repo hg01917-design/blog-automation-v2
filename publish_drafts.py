@@ -362,6 +362,28 @@ def _tistory_get_draft_id(page, blog_id: str) -> str | None:
     # 이미 발행된 글 목록 (중복 방지)
     published_titles = _get_published_titles(blog_id, 'tistory')
 
+    # 유사 중복 감지용 — 핵심 단어 집합으로 변환
+    def _title_core_words(t):
+        import re as _re
+        _STOP = {'방법', '하는', '하기', '위한', '이란', '이다', '그리고', '직접', '써보고', '써봤다',
+                 '느낀', '차이', '비교', '알아보자', '총정리', '정리', '추천', '꿀팁', '후기',
+                 '완벽', '완전', '정말', '진짜', '무엇인지', '알아보기', '한다면'}
+        words = _re.findall(r'[가-힣a-zA-Z0-9]+', t)
+        return {w for w in words if len(w) >= 2 and w not in _STOP}
+
+    published_core_sets = [_title_core_words(t) for t in published_titles]
+
+    def _is_similar_to_published(title):
+        """발행된 글과 핵심어 40% 이상 겹치면 중복으로 판단"""
+        core = _title_core_words(title)
+        if not core:
+            return False
+        for pub_core in published_core_sets:
+            overlap = core & pub_core
+            if len(overlap) >= max(2, len(core) * 0.4):
+                return True
+        return False
+
     # --- 1단계: 중복 드래프트 삭제 ---
     if published_titles:
         # dialog 자동 수락 핸들러 등록
@@ -396,6 +418,10 @@ def _tistory_get_draft_id(page, blog_id: str) -> str | None:
             continue
         if any(kw in title for kw in SKIP_KEYWORDS):
             continue
+        # 제목 품질 검수: 너무 짧으면 키워드만 들어간 불완전 글 → 스킵
+        if len(title) < 8:
+            _log(f"[{blog_id}] 제목 너무 짧음({len(title)}자) — 스킵: '{title}'")
+            continue
         # 내용 미리보기도 확인
         preview_el = link.evaluate_handle(
             "el => el.closest('.info_editor')?.querySelector('.inner_layer')"
@@ -408,6 +434,10 @@ def _tistory_get_draft_id(page, blog_id: str) -> str | None:
             continue
         if title in published_titles:
             continue  # 방금 삭제 못 한 경우 스킵
+        # 유사 중복 체크 (핵심어 기반)
+        if _is_similar_to_published(title):
+            _log(f"[{blog_id}] 유사 중복 감지 — 스킵: '{title}'")
+            continue
 
         _log(f"[{blog_id}] 드래프트 로드: {title}")
         link.click()

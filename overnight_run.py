@@ -964,6 +964,40 @@ if __name__ == "__main__":
     log(f"자동 실행 시작 ({datetime.now().strftime('%Y-%m-%d %H:%M')})")
     log("=" * 60)
 
+    # ── 재실행 상태 관리 ──
+    _STATE_FILE = LOG_DIR / "overnight_state.json"
+    _today_str = datetime.now().strftime("%Y-%m-%d")
+
+    def _load_state():
+        try:
+            if _STATE_FILE.exists():
+                s = json.loads(_STATE_FILE.read_text(encoding="utf-8"))
+                if s.get("run_date") == _today_str:
+                    return s
+        except Exception:
+            pass
+        return None
+
+    def _save_state(s):
+        try:
+            _STATE_FILE.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    _state = _load_state()
+    if _state:
+        log(f"[재실행] 오늘({_today_str}) 상태 복원 — 완료 라운드: {_state.get('completed_rounds', [])}")
+    else:
+        _state = {
+            "run_date": _today_str,
+            "crawling_done": False,
+            "decision_done": False,
+            "extra_rounds": 0,
+            "completed_rounds": [],
+            "next_times": {},
+        }
+        _save_state(_state)
+
     # ── 화면 잠금/슬립 방지 (macOS caffeinate) ──
     import subprocess as _sub
     try:
@@ -974,23 +1008,30 @@ if __name__ == "__main__":
         _caffeinate = None
         log(f"[시스템] caffeinate 실패: {_e}")
 
-    # ── 키워드 크롤링 (1회) ──
-    log("[크롤링] salim1su, baremi542 키워드 수집")
-    from keyword_crawler import crawl_keywords
+    # ── 키워드 크롤링 (1회, 오늘 이미 했으면 스킵) ──
     _crawled_keywords = {}
-    for bid in ["salim1su", "baremi542"]:
-        try:
-            result = crawl_keywords(blog_id=bid, on_log=log)
-            cnt = result.get(bid, 0)
-            log(f"[크롤링] {bid}: {cnt}개 저장")
-            if cnt > 0:
-                _crawled_keywords[bid] = result.get("keywords", [])
-        except Exception as e:
-            log(f"[크롤링] {bid} 오류: {e}")
-    save_log()
+    if not _state.get("crawling_done"):
+        log("[크롤링] salim1su, baremi542 키워드 수집")
+        from keyword_crawler import crawl_keywords
+        for bid in ["salim1su", "baremi542"]:
+            try:
+                result = crawl_keywords(blog_id=bid, on_log=log)
+                cnt = result.get(bid, 0)
+                log(f"[크롤링] {bid}: {cnt}개 저장")
+                if cnt > 0:
+                    _crawled_keywords[bid] = result.get("keywords", [])
+            except Exception as e:
+                log(f"[크롤링] {bid} 오류: {e}")
+        _state["crawling_done"] = True
+        _save_state(_state)
+        save_log()
+    else:
+        log("[크롤링] 오늘 이미 완료 — 스킵")
 
-    # ── 롱테일 키워드 확장 (크롤링 직후) ──
+    # ── 롱테일 키워드 확장 (크롤링 직후, 오늘 이미 했으면 스킵) ──
     # 크롤링한 경쟁사 seed → 네이버 자동완성/연관검색어 → 롱테일(4단어↑)만 저장
+    if _state.get("crawling_done") and not _crawled_keywords:
+        log("[롱테일] 크롤링 이미 완료(재실행) — 새 seed 없음, 스킵")
     _BLOG_LONGTAIL = {
         "nolja100":  "여행",
         "triplog":   "여행",
@@ -1054,44 +1095,66 @@ if __name__ == "__main__":
             log(f"[경쟁모니터] 오류: {_e}")
         save_log()
 
-    # ── 판단 엔진 (라운드 시작 전 1회) ──
-    _extra_rounds = 0
-    try:
-        from decision_engine import run_daily_analysis, get_publish_count_recommendation
-        run_daily_analysis(on_log=log)
-        _rec = get_publish_count_recommendation(on_log=log)
-        _rec_count = max(_rec.values()) if _rec else 1
-        _extra_rounds = max(0, _rec_count - 3)  # 기본 3라운드 초과분
-        if _extra_rounds:
-            log(f"[판단엔진] 수익 pace 저조 → 추가 라운드 {_extra_rounds}개 실행 예정")
-    except Exception as _de:
-        log(f"[판단엔진] 생략: {_de}")
+    # ── 판단 엔진 (라운드 시작 전 1회, 오늘 이미 했으면 스킵) ──
+    _extra_rounds = _state.get("extra_rounds", 0)
+    if not _state.get("decision_done"):
+        try:
+            from decision_engine import run_daily_analysis, get_publish_count_recommendation
+            run_daily_analysis(on_log=log)
+            _rec = get_publish_count_recommendation(on_log=log)
+            _rec_count = max(_rec.values()) if _rec else 1
+            _extra_rounds = max(0, _rec_count - 3)  # 기본 3라운드 초과분
+            if _extra_rounds:
+                log(f"[판단엔진] 수익 pace 저조 → 추가 라운드 {_extra_rounds}개 실행 예정")
+        except Exception as _de:
+            log(f"[판단엔진] 생략: {_de}")
+        _state["decision_done"] = True
+        _state["extra_rounds"] = _extra_rounds
+
+        # ── 라운드 예약 시간 사전 계산 (첫 실행 시만) ──
+        _now_ts = _time.time()
+        _d1 = _random.uniform(0, 30 * 60)
+        _d2 = _random.uniform(3 * 3600, 6 * 3600)
+        _d3 = _random.uniform(3 * 3600, 6 * 3600)
+        _state["next_times"] = {
+            "1": _now_ts + _d1,
+            "2": _now_ts + _d1 + _d2,
+            "3": _now_ts + _d1 + _d2 + _d3,
+        }
+        _prev_ts = _state["next_times"]["3"]
+        for _er in range(_extra_rounds):
+            _de = _random.uniform(3 * 3600, 5 * 3600)
+            _state["next_times"][str(4 + _er)] = _prev_ts + _de
+            _prev_ts += _de
+        log(f"[스케줄] 라운드 1: {int(_d1/60)}분 후 / 라운드 2: {int((_d1+_d2)/3600)}시간 후 / 라운드 3: {int((_d1+_d2+_d3)/3600)}시간 후")
+        _save_state(_state)
+    else:
+        log(f"[판단엔진] 오늘 이미 완료 — 스킵 (extra_rounds={_extra_rounds})")
     save_log()
 
-    # ── 라운드 1: 0~30분 랜덤 지연 후 시작 ──
-    delay1 = _random.uniform(0, 30 * 60)
-    log(f"[라운드 1] {int(delay1/60)}분 후 시작 예정")
-    _time.sleep(delay1)
-    run_one_round(1)
+    # ── 라운드 실행 (재실행 시 완료 라운드 스킵, 예약 시간 복원) ──
+    def _run_round_with_resume(round_num):
+        completed = _state.get("completed_rounds", [])
+        if round_num in completed:
+            log(f"[라운드 {round_num}] 이미 완료 — 스킵")
+            return
+        target_ts = _state.get("next_times", {}).get(str(round_num))
+        if target_ts:
+            wait = target_ts - _time.time()
+            if wait > 60:
+                log(f"[라운드 {round_num}] {int(wait/3600)}시간 {int((wait%3600)/60)}분 후 시작 예정")
+                _time.sleep(wait)
+            elif wait > 0:
+                _time.sleep(wait)
+            else:
+                log(f"[라운드 {round_num}] 예약 시간 경과({abs(int(wait/60))}분 전) — 즉시 시작")
+        run_one_round(round_num)
+        _state["completed_rounds"].append(round_num)
+        _save_state(_state)
 
-    # ── 라운드 2: 3~6시간 랜덤 대기 ──
-    delay2 = _random.uniform(3 * 3600, 6 * 3600)
-    log(f"[라운드 2] {int(delay2/3600)}시간 {int((delay2%3600)/60)}분 후 시작 예정")
-    _time.sleep(delay2)
-    run_one_round(2)
-
-    # ── 라운드 3: 3~6시간 랜덤 대기 ──
-    delay3 = _random.uniform(3 * 3600, 6 * 3600)
-    log(f"[라운드 3] {int(delay3/3600)}시간 {int((delay3%3600)/60)}분 후 시작 예정")
-    _time.sleep(delay3)
-    run_one_round(3)
-
-    # ── 추가 라운드: 수익 pace 저조 시 ──
-    for _er in range(_extra_rounds):
-        _delay_ex = _random.uniform(3 * 3600, 5 * 3600)
-        log(f"[라운드 {4+_er}] (추가) {int(_delay_ex/3600)}시간 {int((_delay_ex%3600)/60)}분 후 시작 예정")
-        _time.sleep(_delay_ex)
-        run_one_round(4 + _er)
+    _total_rounds = 3 + _extra_rounds
+    for _rn in range(1, _total_rounds + 1):
+        _run_round_with_resume(_rn)
 
     log("\n" + "=" * 60)
     log("전체 완료")
