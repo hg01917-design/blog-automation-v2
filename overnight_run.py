@@ -315,6 +315,8 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
     _log(f"[유사문서] 핵심 단어: {core_words}")
 
     # ── 1단계: SQLite DB 중복 체크 (모든 블로그 공통) ─────────────────
+    # 메인키워드 = 핵심어 중 첫 번째 (가장 주제-특정적 단어)
+    main_kw = core_words[0] if core_words else keyword.split()[0]
     try:
         from keyword_engine.db_handler import _conn
         with _conn() as db:
@@ -326,10 +328,16 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
             ).fetchall()
         existing_keywords = [r[0] for r in rows]
         for ek in existing_keywords:
-            ek_core = set(_extract_core_words(ek))
+            ek_core = _extract_core_words(ek)
+            ek_main = ek_core[0] if ek_core else ek.split()[0]
+            # ① 메인키워드 일치 → 즉시 중복 (예: "가스레인지 청소" vs "가스레인지 청소 방법")
+            if main_kw == ek_main:
+                _log(f"[유사문서] ⚠ DB 메인키워드 중복: '{ek}' (메인: '{main_kw}')")
+                return True, ek
+            # ② 핵심 단어 절반 이상 겹치면 중복
+            ek_core_set = set(ek_core)
             kw_core = set(core_words)
-            # 핵심 단어 절반 이상 겹치면 중복
-            overlap = ek_core & kw_core
+            overlap = ek_core_set & kw_core
             if len(overlap) >= max(2, len(kw_core) * 0.5):
                 _log(f"[유사문서] ⚠ DB 중복 키워드: '{ek}' (겹침: {overlap})")
                 return True, ek
