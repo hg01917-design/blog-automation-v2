@@ -53,6 +53,11 @@ _PROMPT_STYLE = {
         "official document on desk, pen and stamp, soft office lighting, "
         "clean organized composition, no people, no faces, 4K quality"
     ),
+    "me1091": (
+        "photorealistic lifestyle product photography, Korean home or daily life setting, "
+        "natural indoor lighting, clean minimal background, product in actual use context, "
+        "warm and inviting atmosphere, no text overlay, no people, no faces, 4K quality"
+    ),
     "triplog": (
         "photorealistic travel photography, South Korea tourist destination or pension or resort, "
         "blue sky or sunset backdrop, wide establishing shot, "

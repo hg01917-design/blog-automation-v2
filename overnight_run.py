@@ -192,6 +192,10 @@ _BLOG_THEMES = {
     "phn0502": ["영화", "넷플릭스", "왓챠", "웨이브", "티빙", "OTT", "결말", "줄거리", "해석",
                 "쿠키영상", "등장인물", "배우", "출연작", "근황", "추천", "신작", "장르",
                 "액션", "로맨스", "스릴러", "공포", "애니", "드라마", "시리즈"],
+    "me1091":  ["리뷰", "후기", "추천", "사용기", "써봤어요", "솔직", "장단점", "비교",
+                "구매", "쿠팡", "다이소", "생활용품", "주방용품", "청소용품", "뷰티",
+                "화장품", "스킨케어", "헤어", "건강", "건강식품", "영양제", "다이어트",
+                "가전", "소형가전", "주방가전", "가성비", "핫딜", "신상", "베스트"],
 }
 
 
@@ -773,7 +777,7 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     # 4. 이미지 생성 (블로그별 라우팅: salim1su=Gemini→Bing→Pollinations, 그 외=Bing→Pollinations)
     image_paths = {}
     if images:
-        is_naver = (blog_id == "salim1su")
+        is_naver = blog_id in ("salim1su", "me1091")
         log(f"[파이프라인] 이미지 생성 시작 (blog={blog_id}, skip_webp={is_naver})")
         image_paths = generate_images_for_blog(
             blog_id=blog_id,
@@ -901,7 +905,7 @@ def run_one_round(round_num):
     import time as _time
     import random as _rand
     # triplog는 nolja100보다 항상 먼저 — 같은 여행 카테고리에서 triplog 우선 배정
-    _non_travel = ["salim1su", "baremi542", "goodisak", "woll100", "phn0502"]
+    _non_travel = ["salim1su", "baremi542", "goodisak", "woll100", "phn0502", "me1091"]
     _rand.shuffle(_non_travel)
     BLOGS = ["triplog", "nolja100"] + _non_travel
     log(f"\n{'='*60}")
@@ -973,6 +977,7 @@ if __name__ == "__main__":
         "baremi542": "정부지원금",
         "woll100":   "교통",
         "phn0502":   "영화",
+        "me1091":    "리뷰",
     }
     log("[롱테일] 키워드 확장 시작")
     try:

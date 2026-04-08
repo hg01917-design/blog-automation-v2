@@ -52,6 +52,13 @@ ACCOUNTS = [
         "category": "살림",
     },
     {
+        "blog": "me1091",
+        "platform": "naver",
+        "naver_id": "me1091",
+        "editor_url": "https://blog.naver.com/me1091/postwrite",
+        "category": "리뷰",
+    },
+    {
         "blog": "baremi542",
         "platform": "wordpress",
         "editor_url": "https://baremi542.com/wp-admin/post-new.php",

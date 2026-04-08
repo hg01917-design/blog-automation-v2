@@ -15,6 +15,7 @@ BLOG_PROJECT_URLS = {
     "salim1su":  "https://claude.ai/project/019c8917-8337-74e8-989b-edf14e462901",
     "baremi542": "https://claude.ai/project/019d2882-7cfb-72e0-a40f-9669bc6408d6",
     "triplog": "https://claude.ai/project/019d50f9-e07f-7022-a571-4bb71bfa8361",
+    "me1091":  "https://claude.ai/project/019d50f8-d88d-7741-9dbd-b064d2e7e269",
 }
 
 # 전송 버튼 (한국어/영어 + 다양한 UI 버전 대응)

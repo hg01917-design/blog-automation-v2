@@ -1261,7 +1261,7 @@ if __name__ == "__main__":
     all_results = []
 
     for round_num in range(1, ROUNDS + 1):
-        blog_order = ["baremi542", "goodisak", "nolja100", "salim1su", "triplog"]
+        blog_order = ["baremi542", "goodisak", "nolja100", "salim1su", "me1091", "triplog", "woll100", "phn0502"]
         random.shuffle(blog_order)
         _log(f"[라운드 {round_num}] 순서: {blog_order}")
         round_results = {}
@@ -1295,6 +1295,12 @@ if __name__ == "__main__":
                 ok = publish_tistory_draft("nolja100")
             elif blog_id == "salim1su":
                 ok = publish_naver_draft("salim1su")
+            elif blog_id == "me1091":
+                ok = publish_naver_draft("me1091")
+            elif blog_id == "woll100":
+                ok = publish_tistory_draft("woll100")
+            elif blog_id == "phn0502":
+                ok = publish_tistory_draft("phn0502")
             else:
                 ok = False
 
