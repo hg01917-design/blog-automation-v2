@@ -1034,7 +1034,7 @@ def _naver_type_line_with_bold(page, line: str, chunk_size: int = 50):
 def _naver_type_line_with_links(page, line: str, chunk_size: int = 50):
     """[텍스트](URL) 마크다운 링크가 포함된 줄을 네이버 에디터에 입력한다.
 
-    링크 부분은 execCommand insertHTML로 <a> 태그 직접 삽입.
+    링크 텍스트 입력 후 Shift+ArrowLeft로 선택 → SE2 링크 버튼 클릭 → 입력창에 URL 타이핑 → 적용.
     """
     import re as _re
     segments = _re.split(r'(\[[^\]]+\]\(https?://[^\)]+\))', line)
@@ -1045,14 +1045,41 @@ def _naver_type_line_with_links(page, line: str, chunk_size: int = 50):
         if link_m:
             text = link_m.group(1)
             url = link_m.group(2)
-            # SE2 에디터에 직접 anchor 삽입
-            safe_text = text.replace("'", "\\'")
-            safe_url = url.replace("'", "\\'")
-            page.evaluate(
-                f"() => document.execCommand('insertHTML', false, "
-                f"'<a href=\"{safe_url}\" target=\"_blank\">{safe_text}</a>')"
-            )
+            # 1) 링크 텍스트 타이핑 (커서가 텍스트 끝에 위치)
+            _chunked_type(page, text, chunk_size=chunk_size)
+            time.sleep(0.3)
+            # 2) Shift+ArrowLeft로 방금 타이핑한 텍스트 전체 선택
+            for _ in range(len(text)):
+                page.keyboard.press("Shift+ArrowLeft")
             time.sleep(0.2)
+            # 3) SE2 툴바 '링크 입력' 버튼 클릭 (텍스트 링크용)
+            try:
+                page.evaluate("() => document.querySelector('.se-toolbar-item-link button')?.click()")
+            except Exception:
+                pass
+            time.sleep(0.8)
+            # 4) 패널 input(se-custom-layer-link-input)에 URL 타이핑
+            try:
+                inp = page.locator("input.se-custom-layer-link-input")
+                if inp.count() > 0 and inp.is_visible(timeout=2000):
+                    inp.click()
+                    time.sleep(0.2)
+                    inp.fill(url)
+                    time.sleep(0.2)
+                    # 5) 적용 버튼 클릭
+                    apply_btn = page.locator("button.se-custom-layer-link-apply-button")
+                    if apply_btn.count() > 0:
+                        apply_btn.click()
+                    else:
+                        page.keyboard.press("Enter")
+                    time.sleep(0.4)
+                else:
+                    # 폴백: Enter로 패널 닫기
+                    page.keyboard.press("Escape")
+                    time.sleep(0.2)
+            except Exception as e:
+                page.keyboard.press("Escape")
+                time.sleep(0.2)
         else:
             _chunked_type(page, seg, chunk_size=chunk_size)
 
