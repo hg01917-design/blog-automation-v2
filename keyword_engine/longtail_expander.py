@@ -209,6 +209,30 @@ def expand_longtail(
         # 광고/쇼핑 관련 키워드 제외
         if _SKIP.search(kw):
             return
+        # 시즌 필터: 현재 월 기준 ±2개월 벗어나는 특정 월 키워드 저장 안 함
+        from datetime import datetime as _dt
+        _cur_month = _dt.now().month
+        _MONTH_HINTS = {
+            1: ["1월", "일월", "신년", "새해"],
+            2: ["2월", "이월", "발렌타인"],
+            3: ["3월", "삼월"],
+            4: ["4월", "사월"],
+            5: ["5월", "오월", "어버이날", "어린이날"],
+            6: ["6월", "유월"],
+            7: ["7월", "칠월", "여름휴가"],
+            8: ["8월", "팔월"],
+            9: ["9월", "구월"],
+            10: ["10월", "시월", "할로윈"],
+            11: ["11월", "십일월"],
+            12: ["12월", "십이월", "크리스마스", "연말"],
+        }
+        for _m, _hints in _MONTH_HINTS.items():
+            if any(h in kw for h in _hints):
+                _diff = min(abs(_m - _cur_month), 12 - abs(_m - _cur_month))
+                if _diff > 2:
+                    total_skipped_cat += 1
+                    return
+                break
         # 이미 DB에 있으면 스킵
         if keyword_exists(kw):
             total_skipped_dup += 1
