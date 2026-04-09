@@ -386,11 +386,12 @@ def _ask_claude_for_gemini_prompt(image_path: str, keyword: str) -> str:
     from claude_playwright import ask_with_image
 
     question = (
-        f"이 이미지를 참고해서, 비슷한 분위기와 구도로 실사진처럼 보이는 이미지를 Gemini로 만들기 위한 "
+        f"이미지의 조명/배경/구도만 참고하고, 이미지에 보이는 특정 브랜드·상품은 무시해. "
+        f"핵심 주제는 반드시 '{keyword}'야. "
+        f"이 구도와 분위기로 '{keyword}' 제품을 촬영한 것처럼 실사진 스타일 이미지를 Gemini로 만들기 위한 "
         f"영문 프롬프트만 한 단락으로 작성해줘. "
-        f"제품 키워드: {keyword}. "
-        f"반드시 포함: photorealistic real photo style, no AI look, no text overlay, "
-        f"no people, no faces, no logos, no watermarks, 4K quality, Korean home/lifestyle setting. "
+        f"반드시 포함: the main subject is {keyword}, photorealistic real photo style, no AI look, "
+        f"no text overlay, no people, no faces, no brand logos, no watermarks, 4K quality, Korean home/lifestyle setting. "
         f"설명 없이 영문 프롬프트만 출력해."
     )
 
