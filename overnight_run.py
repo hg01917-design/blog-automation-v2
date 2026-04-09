@@ -265,6 +265,30 @@ _BLOG_THEMES = {
 
 def is_keyword_suitable(blog_id: str, keyword: str) -> bool:
     """키워드가 블로그 테마에 적합한지 확인"""
+    # ── 시즌 필터: 현재 월 기준 ±2개월 벗어나는 특정 월 키워드 차단 ──
+    _cur_month = datetime.now().month
+    _MONTH_KW = {
+        1: ["1월", "일월", "신년", "새해"],
+        2: ["2월", "이월", "발렌타인"],
+        3: ["3월", "삼월", "삼일절"],
+        4: ["4월", "사월", "벚꽃", "봄나들이"],
+        5: ["5월", "오월", "어버이날", "어린이날"],
+        6: ["6월", "유월", "여름시작"],
+        7: ["7월", "칠월", "여름휴가"],
+        8: ["8월", "팔월", "말복"],
+        9: ["9월", "구월", "추석", "9월축제"],
+        10: ["10월", "시월", "할로윈"],
+        11: ["11월", "십일월", "빼빼로"],
+        12: ["12월", "십이월", "크리스마스", "연말"],
+    }
+    for month, kw_list in _MONTH_KW.items():
+        if any(kw in keyword for kw in kw_list):
+            diff = min(abs(month - _cur_month), 12 - abs(month - _cur_month))
+            if diff > 2:
+                log(f"[시즌필터] '{keyword}' — {month}월 키워드, 현재 {_cur_month}월 (차이 {diff}개월) → 스킵")
+                return False
+            break
+
     # goodisak(Tistory): 대출 관련 키워드 차단
     if blog_id == "goodisak":
         _LOAN_BLOCK = ["대출", "금리", "대출비교", "신용대출", "주택담보대출", "카드론", "대출이자", "대출금리", "핀다",
@@ -486,7 +510,35 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
                     if match_count >= max(2, len(core_words) * 0.5):
                         _log(f"[유사문서] ⚠ Tistory RSS 중복: \"{t_clean}\"")
                         return True, t_clean
-                _log(f"[유사문서] Tistory RSS 확인 완료 — 중복 없음")
+                _log(f"[유사문서] Tistory RSS 확인 완료 — 중복 없음 (최근 20개)")
+                # RSS는 최근 글만 포함 → Tistory 검색 API로 전체 글 추가 확인
+                TISTORY_DOMAINS = {
+                    "nolja100": "issue.baremi542.com",
+                    "goodisak": "welfare.baremi542.com",
+                    "woll100":  "info.baremi542.com",
+                    "phn0502":  "film.baremi542.com",
+                }
+                _domain = TISTORY_DOMAINS.get(blog_id, "")
+                if _domain and core_words:
+                    try:
+                        _search_q = urllib.parse.quote(" ".join(core_words[:2]))
+                        _search_url = f"https://{_domain}/search/{_search_q}"
+                        _sreq = urllib.request.Request(_search_url, headers={"User-Agent": "Mozilla/5.0"})
+                        _shtml = urllib.request.urlopen(_sreq, timeout=10, context=_ctx2).read().decode("utf-8", errors="ignore")
+                        _stitles = re.findall(r'<h3[^>]*class="[^"]*tit[^"]*"[^>]*>(.*?)</h3>', _shtml, re.S)
+                        if not _stitles:
+                            _stitles = re.findall(r'<a[^>]+class="[^"]*link[^"]*"[^>]*>(.*?)</a>', _shtml, re.S)
+                        for _st in _stitles[:20]:
+                            _st_clean = re.sub(r'<[^>]+>', '', _st).strip()
+                            if not _st_clean:
+                                continue
+                            _mc = sum(1 for w in core_words if w in _st_clean)
+                            if _mc >= max(2, len(core_words) * 0.5):
+                                _log(f"[유사문서] ⚠ Tistory 검색 중복: \"{_st_clean}\"")
+                                return True, _st_clean
+                        _log(f"[유사문서] Tistory 검색 확인 완료 — 중복 없음")
+                    except Exception as _se:
+                        _log(f"[유사문서] Tistory 검색 실패: {_se}")
             except Exception as e:
                 _log(f"[유사문서] Tistory RSS 실패: {e}")
 
