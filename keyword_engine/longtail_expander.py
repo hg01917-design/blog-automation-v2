@@ -206,6 +206,9 @@ def expand_longtail(
         # 4글자 미만 제외 (단일어/너무 짧은 키워드)
         if len(kw.replace(" ", "")) < 4:
             return
+        # 롱테일 필수: 공백으로 구분된 단어 2개 이상 (단일 복합어 "고용유지지원금" 등 제외)
+        if len(kw.split()) < 2:
+            return
         # 광고/쇼핑 관련 키워드 제외
         if _SKIP.search(kw):
             return
