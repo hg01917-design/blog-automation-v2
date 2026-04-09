@@ -285,6 +285,14 @@ def generate_images_bing(image_infos: list, skip_webp: bool = False, on_log=None
 
             time.sleep(2)
     finally:
+        # Bing 탭 닫기 (탭 누적 방지)
+        try:
+            for ctx in browser.contexts:
+                for p in ctx.pages:
+                    if 'bing.com' in p.url:
+                        p.close()
+        except Exception:
+            pass
         pw.stop()
 
     return results
