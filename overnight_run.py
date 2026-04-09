@@ -1128,8 +1128,8 @@ if __name__ == "__main__":
         # ── 라운드 예약 시간 사전 계산 (첫 실행 시만) ──
         _now_ts = _time.time()
         _d1 = _random.uniform(0, 30 * 60)
-        _d2 = _random.uniform(3 * 3600, 6 * 3600)
-        _d3 = _random.uniform(3 * 3600, 6 * 3600)
+        _d2 = _random.uniform(4 * 3600, 5 * 3600)   # R2 목표: 7시 기준 11시30분~12시
+        _d3 = _random.uniform(4 * 3600, 4.5 * 3600) # R3 목표: R2 기준 4시간 후 → 4시~4시30분
         _state["next_times"] = {
             "1": _now_ts + _d1,
             "2": _now_ts + _d1 + _d2,
