@@ -852,6 +852,15 @@ def _naver_upload_image(page, filepath, log_fn=None):
         file_chooser = fc_info.value
         file_chooser.set_files(filepath)
         time.sleep(4)
+        # macOS 파일 피커(Finder) 자동 닫기
+        try:
+            import subprocess as _sp3
+            _sp3.run(
+                ["osascript", "-e", 'tell application "Finder" to close every window'],
+                capture_output=True, timeout=3
+            )
+        except Exception:
+            pass
 
         # 이미지 로드 확인
         _naver_wait_for_image_load(page)
