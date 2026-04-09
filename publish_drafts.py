@@ -983,7 +983,7 @@ def _naver_check_editor_content(page) -> dict:
     return result or {}
 
 
-def _naver_publish_public(page) -> bool:
+def _naver_publish_public(page, category: str = None) -> bool:
     """Naver Smart Editor에서 공개 발행."""
     # 발행 버튼 클릭
     clicked = page.evaluate("""() => {
@@ -1030,6 +1030,39 @@ def _naver_publish_public(page) -> bool:
         }
     }""")
     time.sleep(1)
+
+    # 카테고리 선택 (me1091: 리뷰 등)
+    if category:
+        cat_set = page.evaluate("""(catName) => {
+            const allEls = [...document.querySelectorAll(
+                '[class*="layer_publish"] li, [class*="isShow__"] li, [class*="is_show__"] li, ' +
+                '[class*="layer_publish"] a, [class*="isShow__"] a, ' +
+                '[class*="layer_publish"] button, [class*="isShow__"] button'
+            )];
+            for (const el of allEls) {
+                if (el.textContent.trim() === catName) {
+                    el.click();
+                    return 'clicked:' + catName;
+                }
+            }
+            // select 드롭다운 시도
+            const sel = document.querySelector('[class*="layer_publish"] select, [class*="isShow__"] select');
+            if (sel) {
+                for (const opt of sel.options) {
+                    if (opt.text.trim() === catName || opt.text.includes(catName)) {
+                        sel.value = opt.value;
+                        sel.dispatchEvent(new Event('change', {bubbles: true}));
+                        return 'select:' + opt.text;
+                    }
+                }
+            }
+            return null;
+        }""", category)
+        if cat_set:
+            _log(f"[Naver] 카테고리 설정: {cat_set}")
+            time.sleep(0.5)
+        else:
+            _log(f"[Naver] 카테고리 '{category}' 항목 없음 — 스킵")
 
     # 발행 확인 버튼 (confirm_btn__* 우선, 메인 publish_btn 제외)
     confirmed = page.evaluate("""() => {
@@ -1097,8 +1130,9 @@ def publish_naver_draft(blog_id="salim1su") -> bool:
             _log(f"[{blog_id}] 글자수 부족({info.get('length')}자) — 스킵")
             return False
 
-        # 공개 발행
-        ok = _naver_publish_public(page)
+        # 공개 발행 (me1091은 리뷰 카테고리)
+        cat = "리뷰" if blog_id == "me1091" else None
+        ok = _naver_publish_public(page, category=cat)
         if ok:
             _log(f"[{blog_id}] ✓ 공개 발행 완료")
             # 색인 요청: 발행 후 URL 캡처

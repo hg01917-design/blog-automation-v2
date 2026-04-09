@@ -1070,9 +1070,11 @@ def _naver_type_line_with_bold(page, line: str, chunk_size: int = 50):
 def _naver_type_line_with_links(page, line: str, chunk_size: int = 50):
     """[텍스트](URL) 마크다운 링크가 포함된 줄을 네이버 에디터에 입력한다.
 
-    링크 텍스트 입력 후 Shift+ArrowLeft로 선택 → SE2 링크 버튼 클릭 → 입력창에 URL 타이핑 → 적용.
+    링크 텍스트는 볼드로 입력 후 Enter → raw URL 붙여넣기 → Enter.
+    SE2는 URL 단독 줄 입력 시 OGP 미리보기 카드로 자동 변환한다.
     """
     import re as _re
+    import subprocess as _sp
     segments = _re.split(r'(\[[^\]]+\]\(https?://[^\)]+\))', line)
     for seg in segments:
         if not seg:
@@ -1081,41 +1083,25 @@ def _naver_type_line_with_links(page, line: str, chunk_size: int = 50):
         if link_m:
             text = link_m.group(1)
             url = link_m.group(2)
-            # 1) 링크 텍스트 타이핑 (커서가 텍스트 끝에 위치)
+            # 1) 링크 텍스트를 볼드로 입력
+            page.keyboard.press("Meta+b")
+            time.sleep(0.15)
             _chunked_type(page, text, chunk_size=chunk_size)
-            time.sleep(0.3)
-            # 2) Shift+ArrowLeft로 방금 타이핑한 텍스트 전체 선택
-            for _ in range(len(text)):
-                page.keyboard.press("Shift+ArrowLeft")
             time.sleep(0.2)
-            # 3) SE2 툴바 '링크 입력' 버튼 클릭 (텍스트 링크용)
+            page.keyboard.press("Meta+b")  # 볼드 해제
+            time.sleep(0.15)
+            # 2) Enter 후 raw URL 붙여넣기 → SE2가 OGP 미리보기로 자동 변환
+            page.keyboard.press("Enter")
+            time.sleep(0.2)
             try:
-                page.evaluate("() => document.querySelector('.se-toolbar-item-link button')?.click()")
+                _sp.run(['pbcopy'], input=url.encode('utf-8'), check=True)
+                page.keyboard.press("Meta+v")
+                time.sleep(0.3)
             except Exception:
-                pass
-            time.sleep(0.8)
-            # 4) 패널 input(se-custom-layer-link-input)에 URL 타이핑
-            try:
-                inp = page.locator("input.se-custom-layer-link-input")
-                if inp.count() > 0 and inp.is_visible(timeout=2000):
-                    inp.click()
-                    time.sleep(0.2)
-                    inp.fill(url)
-                    time.sleep(0.2)
-                    # 5) 적용 버튼 클릭
-                    apply_btn = page.locator("button.se-custom-layer-link-apply-button")
-                    if apply_btn.count() > 0:
-                        apply_btn.click()
-                    else:
-                        page.keyboard.press("Enter")
-                    time.sleep(0.4)
-                else:
-                    # 폴백: Enter로 패널 닫기
-                    page.keyboard.press("Escape")
-                    time.sleep(0.2)
-            except Exception as e:
-                page.keyboard.press("Escape")
-                time.sleep(0.2)
+                _chunked_type(page, url, chunk_size=chunk_size)
+            # 3) Enter 한 번 더 → OGP 카드 변환 트리거
+            page.keyboard.press("Enter")
+            time.sleep(3)  # OGP 로딩 대기
         else:
             _chunked_type(page, seg, chunk_size=chunk_size)
 
