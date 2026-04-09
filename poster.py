@@ -1859,6 +1859,16 @@ def _post_wordpress(account, title, content, tags=None,
         "Content-Type": "application/json",
     }
 
+    # 0. 제목/본문 정리 — Claude 생성물에 포함된 내부 마커/프롬프트 제거
+    title = re.sub(r'^\*\*', '', title).strip()  # 제목 앞 ** 제거
+    title = re.sub(r'\*\*$', '', title).strip()  # 제목 뒤 ** 제거
+    # ===이미지=== ... ===이미지끝=== 섹션 (Gemini 프롬프트 포함) 제거
+    content = re.sub(r'===이미지===.*?===이미지끝===', '', content, flags=re.DOTALL)
+    # ═══...═══ 품질 체크 블록 제거
+    content = re.sub(r'═{3,}.*?═{3,}', '', content, flags=re.DOTALL)
+    # {{마이리얼트립링크}} 등 미치환 플레이스홀더 제거 ({{이미지N}}은 나중에 처리하므로 제외)
+    content = re.sub(r'\{\{(?!이미지\d+\}\})[^}]+\}\}', '', content)
+
     # 1. [애드센스] 마커가 없으면 H2 기준 자동 삽입
     if "[애드센스]" not in content:
         md_lines = content.split("\n")
