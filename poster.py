@@ -977,40 +977,45 @@ def _naver_set_font_color_black(page):
 
 
 def _naver_set_font_size(page, size: int = 19):
-    """네이버 에디터 글자 크기를 설정한다."""
+    """네이버 SE2 에디터 전체 본문 글자 크기를 설정한다.
+    1차: Ctrl+A → 툴바 드롭다운 클릭 → 숫자 선택
+    2차: JS DOM으로 se-fsN 클래스 직접 교체 (폴백)
+    """
     try:
-        # 글자 크기 입력 필드 찾기 (여러 selector 시도)
-        selectors = [
-            'input[data-name="fontSize"]',
-            '.se-fontSize-input input',
-            '.se-toolbar-item-fontSize input',
-            'input[class*="fontSize"]',
-            '.se-toolbar input[type="text"]',
-            'input.se-input-text',
-            # SmartEditor One 추가 셀렉터
-            'button[data-name="fontSize"] + * input',
-            '[class*="size"] input[type="number"]',
-            '[class*="size"] input[type="text"]',
-        ]
-        size_input = None
-        for sel in selectors:
-            try:
-                el = page.query_selector(sel)
-                if el and el.is_visible(timeout=300):
-                    size_input = el
-                    break
-            except Exception:
-                pass
-
-        if size_input:
-            size_input.triple_click()
-            time.sleep(0.15)
-            size_input.fill(str(size))
-            page.keyboard.press("Enter")
+        # 1차: 전체 선택 후 툴바 드롭다운으로 변경
+        page.keyboard.press("Meta+a")
+        time.sleep(0.3)
+        fs_btn = page.query_selector('.se-font-size-code-toolbar-button')
+        if fs_btn:
+            fs_btn.click()
+            time.sleep(0.4)
+            # 드롭다운 옵션에서 size 값 선택
+            clicked = page.evaluate(f"""(targetSize) => {{
+                const allEls = document.querySelectorAll(
+                    '[class*="option"] *, [class*="dropdown"] *, [class*="layer"] *'
+                );
+                let found = false;
+                allEls.forEach(el => {{
+                    if (el.textContent.trim() === String(targetSize) && el.offsetParent !== null) {{
+                        el.click();
+                        found = true;
+                    }}
+                }});
+                return found;
+            }}""", size)
             time.sleep(0.3)
-        else:
-            # 폴백: Ctrl+A로 전체 선택 후 글자 크기 단축키 없으므로 무시
-            pass
+            if clicked:
+                return
+        # 2차 폴백: JS DOM 클래스 교체
+        page.evaluate(f"""(targetSize) => {{
+            const spans = document.querySelectorAll('span[class*="se-fs"]');
+            spans.forEach(sp => {{
+                const toRemove = [...sp.classList].filter(c => /^se-fs\\d+$/.test(c));
+                toRemove.forEach(c => sp.classList.remove(c));
+                sp.classList.add('se-fs' + targetSize);
+            }});
+        }}""", size)
+        time.sleep(0.2)
     except Exception:
         pass
 
