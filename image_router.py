@@ -23,10 +23,8 @@ import urllib.parse
 from pathlib import Path
 
 
-def add_title_overlay(img_path: str, title: str, on_log=None) -> bool:
-    """첫 번째 이미지(썸네일)에 제목 텍스트 오버레이 추가.
-    이미지 하단에 반투명 바 + 흰 글씨로 제목 삽입.
-    """
+def add_title_overlay(img_path: str, title: str, blog_id: str = "", on_log=None) -> bool:
+    """썸네일에 블로그별 특색 텍스트 오버레이 추가."""
     def log(msg):
         if on_log:
             on_log(msg)
@@ -35,57 +33,200 @@ def add_title_overlay(img_path: str, title: str, on_log=None) -> bool:
         from PIL import Image, ImageDraw, ImageFont
         import textwrap
 
-        FONT_CANDIDATES = [
-            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+        _FONT_PATH = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
+        _FONT_FALLBACKS = [
             "/Library/Fonts/NanumGothicBold.ttf",
-            "/Library/Fonts/NanumGothic.ttf",
             "/System/Library/Fonts/Supplemental/Arial.ttf",
         ]
 
+        def _font(size, bold=True):
+            idx = 6 if bold else 0
+            try:
+                return ImageFont.truetype(_FONT_PATH, size, index=idx)
+            except Exception:
+                for fp in _FONT_FALLBACKS:
+                    try:
+                        return ImageFont.truetype(fp, size)
+                    except Exception:
+                        continue
+            return ImageFont.load_default()
+
+        def _extract_core(t, max_len=18):
+            core = re.split(r'[—·｜]', t)[0].strip()
+            if len(core) <= max_len:
+                return core
+            words = core.split()
+            r = ""
+            for w in words:
+                if len(r) + len(w) + 1 <= max_len:
+                    r = (r + " " + w).strip()
+                else:
+                    break
+            return r or core[:max_len]
+
+        def _shadow(draw, pos, text, font, fill=(255,255,255,255), shadow=(0,0,0,160)):
+            draw.text((pos[0]+2, pos[1]+2), text, font=font, fill=shadow)
+            draw.text(pos, text, font=font, fill=fill)
+
+        def _draw_lines(draw, wrapped, font, W, y_start, gap=12, fill=(255,255,255,255)):
+            y = y_start
+            for line in wrapped:
+                bb = draw.textbbox((0, 0), line, font=font)
+                lw = bb[2] - bb[0]; lh = bb[3] - bb[1]
+                _shadow(draw, ((W - lw) // 2, y), line, font, fill=fill)
+                y += lh + gap
+
         img = Image.open(img_path).convert("RGBA")
         W, H = img.size
+        core = _extract_core(title)
 
-        # 폰트 크기: 이미지 너비 기준 자동 계산
-        font_size = max(24, int(W * 0.045))
-        font = None
-        for fp in FONT_CANDIDATES:
-            try:
-                font = ImageFont.truetype(fp, font_size)
-                break
-            except Exception:
-                continue
-        if font is None:
-            font = ImageFont.load_default()
+        # ── 블로그별 스타일 ──────────────────────────────────────────
+        if blog_id == "baremi542":
+            # 하단 그라디언트 + 왼쪽 정렬 (뉴스/정보)
+            font = _font(max(52, int(W * .082)))
+            ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
+            d = ImageDraw.Draw(ov)
+            for i in range(H // 2):
+                d.line([(0, H//2+i),(W, H//2+i)], fill=(10,10,30,int(210*(i/(H//2))**1.4)))
+            merged = Image.alpha_composite(img, ov)
+            draw = ImageDraw.Draw(merged)
+            wrapped = textwrap.wrap(core, width=13)[:2]
+            pad = int(W * .07); y = H - pad
+            for line in reversed(wrapped):
+                bb = draw.textbbox((0,0), line, font=font); lh = bb[3]-bb[1]; y -= lh+10
+                _shadow(draw, (pad, y), line, font)
 
-        # 제목 줄바꿈 (최대 2줄, 한 줄 20자 기준)
-        wrapped = textwrap.wrap(title, width=20)[:2]
+        elif blog_id == "triplog":
+            # 상단 그린 배너 + ✈ 태그 (여행 워드프레스)
+            font = _font(max(62, int(W * .098))); tf = _font(max(26, int(W * .036)), bold=False)
+            wrapped = textwrap.wrap(core, width=10)[:2]
+            pv = int(H * .055)
+            d0 = ImageDraw.Draw(img)
+            lhs = [d0.textbbox((0,0),l,font=font)[3] for l in wrapped]
+            total_h = sum(lhs) + (len(wrapped)-1)*12 + pv*2 + 38
+            ov = Image.new("RGBA", img.size, (0,0,0,0))
+            ImageDraw.Draw(ov).rectangle([(0,0),(W,total_h)], fill=(0,100,80,185))
+            merged = Image.alpha_composite(img, ov)
+            draw = ImageDraw.Draw(merged)
+            draw.text((int(W*.06), int(pv*.5)), "✈  여행 코스", font=tf, fill=(200,255,230,240))
+            y = pv + 34
+            for line in wrapped:
+                bb = draw.textbbox((0,0),line,font=font); lw=bb[2]-bb[0]; lh=bb[3]-bb[1]
+                _shadow(draw, ((W-lw)//2, y), line, font); y += lh+12
 
-        # 텍스트 영역 높이 계산 (줄별 합산)
-        dummy = ImageDraw.Draw(img)
-        pad_v = int(H * 0.04)
-        line_heights = [dummy.textbbox((0, 0), line, font=font)[3] for line in wrapped]
-        total_text_h = sum(line_heights) + (len(wrapped) - 1) * 6
-        bar_h = total_text_h + pad_v * 2
+        elif blog_id == "goodisak":
+            # 우측 네이비 세로 배너 (IT/금융)
+            font = _font(max(46, int(W * .072)))
+            bw = int(W * .40)
+            ov = Image.new("RGBA", img.size, (0,0,0,0))
+            ImageDraw.Draw(ov).rectangle([(W-bw,0),(W,H)], fill=(20,25,55,210))
+            merged = Image.alpha_composite(img, ov)
+            draw = ImageDraw.Draw(merged)
+            wrapped = textwrap.wrap(_extract_core(title, 14), width=6)[:3]
+            lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
+            total_h = sum(lhs)+(len(wrapped)-1)*12; y=(H-total_h)//2
+            for line in wrapped:
+                bb=draw.textbbox((0,0),line,font=font); lw=bb[2]-bb[0]; lh=bb[3]-bb[1]
+                _shadow(draw, (W-bw+(bw-lw)//2, y), line, font, fill=(180,210,255,255)); y+=lh+12
 
-        # 반투명 어두운 바 (하단)
-        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        bar = ImageDraw.Draw(overlay)
-        bar.rectangle([(0, H - bar_h), (W, H)], fill=(0, 0, 0, 170))
+        elif blog_id == "me1091":
+            # 중앙 레드 원형 배지 (리뷰)
+            font = _font(max(48, int(W * .074))); sf = _font(max(24, int(W * .034)))
+            ov = Image.new("RGBA", img.size, (0,0,0,80))
+            merged = Image.alpha_composite(img, ov)
+            r = int(W * .31); cx, cy = W//2, H//2
+            badge = Image.new("RGBA", img.size, (0,0,0,0))
+            ImageDraw.Draw(badge).ellipse([(cx-r,cy-r),(cx+r,cy+r)], fill=(200,40,20,225))
+            merged = Image.alpha_composite(merged, badge)
+            draw = ImageDraw.Draw(merged)
+            wrapped = textwrap.wrap(_extract_core(title, 14), width=7)[:2]
+            lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
+            total_h = sum(lhs)+(len(wrapped)-1)*10; y=cy-total_h//2
+            for line in wrapped:
+                bb=draw.textbbox((0,0),line,font=font); lw=bb[2]-bb[0]; lh=bb[3]-bb[1]
+                _shadow(draw, ((W-lw)//2, y), line, font); y+=lh+10
+            draw.text((W//2, cy+r-int(r*.28)), "리뷰", font=sf, fill=(255,220,200,210), anchor="mm")
 
-        merged = Image.alpha_composite(img, overlay)
-        draw = ImageDraw.Draw(merged)
+        elif blog_id == "nolja100":
+            # 하단 퍼플 그라디언트 + #여행일기 태그
+            font = _font(max(52, int(W * .082))); sf = _font(max(24, int(W * .032)), bold=False)
+            ov = Image.new("RGBA", img.size, (0,0,0,0)); d = ImageDraw.Draw(ov)
+            for i in range(H//2):
+                d.line([(0,H//2+i),(W,H//2+i)], fill=(30,20,60,int(200*(i/(H//2))**1.5)))
+            merged = Image.alpha_composite(img, ov)
+            draw = ImageDraw.Draw(merged)
+            draw.text((W//2, H-int(H*.20)), "# 여행일기", font=sf, fill=(180,200,255,210), anchor="mm")
+            wrapped = textwrap.wrap(core, width=12)[:2]
+            lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
+            total_h = sum(lhs)+(len(wrapped)-1)*10; y=H-int(H*.16)-total_h
+            _draw_lines(draw, wrapped, font, W, y, gap=10)
 
-        # 흰 글씨 (각 줄 개별 중앙 정렬)
-        pad_v = int(H * 0.04)
-        y = H - bar_h + pad_v
-        for line in wrapped:
-            bbox2 = draw.textbbox((0, 0), line, font=font)
-            line_w = bbox2[2] - bbox2[0]
-            line_h = bbox2[3] - bbox2[1]
-            draw.text(((W - line_w) // 2, y), line, font=font, fill=(255, 255, 255, 255))
-            y += line_h + 6
+        elif blog_id == "salim1su":
+            # 상단 핑크 리본 + ✨살림정보 태그
+            font = _font(max(52, int(W * .082))); tf = _font(max(24, int(W * .032)))
+            ov = Image.new("RGBA", img.size, (0,0,0,0))
+            rh = int(H * .09)
+            ImageDraw.Draw(ov).rectangle([(0,0),(W,rh)], fill=(220,100,110,225))
+            for i in range(H//3):
+                ImageDraw.Draw(ov).line([(0,H-H//3+i),(W,H-H//3+i)], fill=(120,40,50,int(170*(i/(H//3))**1.2)))
+            merged = Image.alpha_composite(img, ov)
+            draw = ImageDraw.Draw(merged)
+            draw.text((W//2, rh//2), "✨ 살림정보", font=tf, fill=(255,240,240,255), anchor="mm")
+            wrapped = textwrap.wrap(core, width=12)[:2]
+            lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
+            total_h = sum(lhs)+(len(wrapped)-1)*10; y=H-int(H*.07)-total_h
+            _draw_lines(draw, wrapped, font, W, y, gap=10)
 
-        # 원본 포맷 유지하여 저장
+        elif blog_id == "woll100":
+            # 도로 표지판 스타일 (교통정보)
+            font = _font(max(50, int(W * .078))); sf = _font(max(22, int(W * .030)))
+            ov = Image.new("RGBA", img.size, (0,0,0,80))
+            merged = Image.alpha_composite(img, ov)
+            draw = ImageDraw.Draw(merged)
+            wrapped = textwrap.wrap(_extract_core(title, 14), width=10)[:2]
+            lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
+            total_h = sum(lhs)+(len(wrapped)-1)*12
+            sw=int(W*.84); sh=total_h+int(H*.14); sx=(W-sw)//2; sy=(H-sh)//2
+            draw.rectangle([(sx-5,sy-5),(sx+sw+5,sy+sh+5)], fill=(255,255,255,255))
+            draw.rectangle([(sx,sy),(sx+sw,sy+sh)], fill=(30,110,50,240))
+            y = sy+(sh-total_h)//2
+            for line in wrapped:
+                bb=draw.textbbox((0,0),line,font=font); lw=bb[2]-bb[0]; lh=bb[3]-bb[1]
+                _shadow(draw, ((W-lw)//2, y), line, font, shadow=(0,60,20,160)); y+=lh+12
+            draw.text((W//2, sy+sh-int(sh*.18)), "교통정보", font=sf, fill=(180,230,180,210), anchor="mm")
+
+        elif blog_id == "phn0502":
+            # 영화 포스터 — 클래퍼보드 + 황금 글씨
+            font = _font(max(60, int(W * .092))); sf = _font(max(26, int(W * .034)))
+            ov = Image.new("RGBA", img.size, (5,5,15,165))
+            merged = Image.alpha_composite(img, ov)
+            draw = ImageDraw.Draw(merged)
+            sh = int(H * .055)
+            for i in range(9):
+                draw.rectangle([(i*sh,0),((i+1)*sh,sh)], fill=(0,0,0,235) if i%2==0 else (255,255,255,235))
+            wrapped = textwrap.wrap(_extract_core(title, 16), width=10)[:2]
+            lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
+            total_h = sum(lhs)+(len(wrapped)-1)*14; y=(H-total_h)//2+int(H*.04)
+            for line in wrapped:
+                bb=draw.textbbox((0,0),line,font=font); lw=bb[2]-bb[0]; lh=bb[3]-bb[1]
+                _shadow(draw, ((W-lw)//2, y), line, font, fill=(255,210,50,255)); y+=lh+14
+            draw.text((W//2, H-int(H*.07)), "★ 영화리뷰", font=sf, fill=(200,170,50,215), anchor="mm")
+
+        else:
+            # 기본: 하단 반투명 바 + 흰 글씨
+            font = _font(max(44, int(W * .068)))
+            wrapped = textwrap.wrap(core, width=14)[:2]
+            pv = int(H * .05)
+            d0 = ImageDraw.Draw(img)
+            lhs = [d0.textbbox((0,0),l,font=font)[3] for l in wrapped]
+            total_h = sum(lhs)+(len(wrapped)-1)*10; bar_h=total_h+pv*2
+            ov = Image.new("RGBA", img.size, (0,0,0,0))
+            ImageDraw.Draw(ov).rectangle([(0,H-bar_h),(W,H)], fill=(0,0,0,185))
+            merged = Image.alpha_composite(img, ov)
+            draw = ImageDraw.Draw(merged)
+            _draw_lines(draw, wrapped, font, W, H-bar_h+pv, gap=10)
+
+        # 저장
         p = Path(img_path)
         fmt = "JPEG" if p.suffix.lower() in (".jpg", ".jpeg") else \
               "WEBP" if p.suffix.lower() == ".webp" else "PNG"
@@ -94,7 +235,7 @@ def add_title_overlay(img_path: str, title: str, on_log=None) -> bool:
         else:
             merged.save(img_path, fmt, quality=90)
 
-        log(f"[썸네일] 텍스트 오버레이 완료: {p.name}")
+        log(f"[썸네일] {blog_id} 오버레이 완료: {p.name}")
         return True
 
     except Exception as e:
@@ -271,7 +412,7 @@ def generate_images_for_blog(
         first_key = min(results.keys())
         first_path = results[first_key]
         if first_path and Path(first_path).exists():
-            add_title_overlay(first_path, title, on_log=log)
+            add_title_overlay(first_path, title, blog_id=blog_id, on_log=log)
 
     return results
 
