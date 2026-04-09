@@ -2,6 +2,7 @@
 네이버 블로그 서로이웃 + 댓글 자동화 v4 (최종)
 - 서로이웃: _addBuddyPop 클릭 → BuddyAdd 팝업 → 서로이웃 선택 → 메시지 → 신청
 - 댓글: floating 버튼 JS 클릭 → contenteditable 입력 → 등록
+- 계정: python3 neighbor_automation.py [salim1su|me1091]  (기본값: salim1su)
 """
 import sys
 sys.path.insert(0, '/Users/hana/Downloads/blog-automation-v2')
@@ -10,11 +11,24 @@ from browser import connect_cdp
 import re, random, time, json, os
 from datetime import date
 
-DAILY_LIMIT = 5
-VISITED_FILE = os.path.join(os.path.dirname(__file__), 'visited_blogs.json')
-DISCOVERED_FILE = os.path.join(os.path.dirname(__file__), 'discovered_blogs.json')
+# 실행 계정 결정 (인수 없으면 salim1su)
+ACCOUNT = sys.argv[1] if len(sys.argv) > 1 else "salim1su"
+assert ACCOUNT in ("salim1su", "me1091"), f"알 수 없는 계정: {ACCOUNT}"
+print(f"[이웃추가] 계정: {ACCOUNT}")
 
+DAILY_LIMIT = 5
+_base = os.path.dirname(__file__)
+VISITED_FILE    = os.path.join(_base, f'visited_blogs_{ACCOUNT}.json')
+DISCOVERED_FILE = os.path.join(_base, f'discovered_blogs_{ACCOUNT}.json')
+
+# salim1su: 살림/절약 관련 블로거
 SEARCH_KEYWORDS = ["살림 노하우", "절약 생활", "가계부 공유", "주부 일상", "국내 여행 후기", "정부지원금 정보"]
+
+# me1091: 제품 리뷰 관련 블로거
+SEARCH_KEYWORDS_ME1091 = [
+    "쿠팡 제품 후기", "생활용품 리뷰", "가성비 추천", "육아용품 후기",
+    "주방용품 추천", "인테리어 소품 리뷰", "다이소 추천", "생필품 추천"
+]
 
 
 def load_discovered():
@@ -33,11 +47,13 @@ def discover_blogs(page, count=20):
     """네이버 블로그 검색으로 새 블로그 ID 발굴"""
     visited = load_visited()
     discovered = {b['blog_id'] for b in load_discovered()}
-    hardcoded = {b['blog_id'] for b in TARGET_BLOGS}
+    target_list = TARGET_BLOGS_ME1091 if ACCOUNT == "me1091" else TARGET_BLOGS
+    hardcoded = {b['blog_id'] for b in target_list}
     already_known = visited.keys() | discovered | hardcoded
 
     new_blogs = []
-    kw = random.choice(SEARCH_KEYWORDS)
+    kw_list = SEARCH_KEYWORDS_ME1091 if ACCOUNT == "me1091" else SEARCH_KEYWORDS
+    kw = random.choice(kw_list)
     print(f"[발굴] 검색 키워드: {kw}")
     try:
         search_url = f"https://search.naver.com/search.naver?where=blog&query={kw}"
@@ -103,6 +119,19 @@ TARGET_BLOGS = [
     # 나머지는 discovered_blogs.json에서 자동 공급
 ]
 
+# me1091: 리뷰 블로그 독자 타깃 (제품 리뷰/가성비/쿠팡 관련 블로거)
+TARGET_BLOGS_ME1091 = [
+    {"blog_id": "seon0425",        "name": "소소한 리뷰일기",        "keyword": "생활용품/리뷰"},
+    {"blog_id": "hyun4236",        "name": "현실 살림 리뷰",          "keyword": "가성비/리뷰"},
+    {"blog_id": "reviewking2",     "name": "리뷰킹2",                "keyword": "제품리뷰"},
+    {"blog_id": "daily_review99",  "name": "데일리리뷰",              "keyword": "일상리뷰"},
+    {"blog_id": "coupang_jjang",   "name": "쿠팡짱",                 "keyword": "쿠팡리뷰"},
+    {"blog_id": "lifewithitem",    "name": "아이템으로 사는 삶",      "keyword": "리뷰/추천"},
+    {"blog_id": "happyhome24",     "name": "해피홈24",               "keyword": "인테리어/리뷰"},
+    {"blog_id": "bestbuy_kr",      "name": "베스트바이코리아",        "keyword": "가성비추천"},
+    # 나머지는 discovered_blogs_me1091.json에서 자동 공급
+]
+
 def gen_comment(post_title, body, name):
     lines = [l.strip() for l in body.split('\n') if 15 < len(l.strip()) < 70]
     key1 = lines[0] if len(lines) > 0 else post_title[:30]
@@ -145,6 +174,25 @@ def gen_neighbor_msg(name, keyword, post_title="", body_snippet=""):
         f'안녕하세요! 오늘 방문해서 글 읽다가 "{content_ref}" 이 부분에서 저랑 비슷한 고민 하고 계신 것 같아서 반가웠어요. 저도 비슷한 주제로 블로그 하고 있는데 서로이웃 신청해도 될까요? 잘 부탁드려요 😊',
         f'안녕하세요~ 글 읽다가 {content_ref} — 이 내용이 딱 제가 찾던 거라서 저도 모르게 이웃신청 누르게 됐어요 ㅎㅎ 저도 살림/절약 관련 글 쓰는데 앞으로 좋은 정보 나눠요! 잘 부탁드립니다 :)',
         f'오늘 처음 방문했는데 "{content_ref}" 이 글 보고 완전 공감해서 댓글도 남기고 이웃신청도 드려요. 같은 관심사를 가진 분들끼리 소통하면 좋을 것 같아서요. 맞이해주시면 감사해요 💕',
+    ]
+    return random.choice(options)
+
+def gen_neighbor_msg_me1091(name, keyword, post_title="", body_snippet=""):
+    """me1091 리뷰 블로그 계정용 이웃신청 메시지"""
+    content_ref = ""
+    if body_snippet:
+        lines = [l.strip() for l in body_snippet.split('\n') if 15 < len(l.strip()) < 60]
+        if lines:
+            content_ref = lines[0][:40]
+    if not content_ref and post_title:
+        content_ref = post_title[:30]
+    if not content_ref:
+        content_ref = keyword
+
+    options = [
+        f'안녕하세요! "{content_ref}" 글 읽다가 저도 비슷한 제품 써봤던 기억이 나서 공감하면서 읽었어요. 저도 일상용품·생활템 위주로 직접 써보고 후기 남기는 블로그 운영 중인데 서로이웃 신청 드려도 될까요? 좋은 리뷰 정보 나눠요 😊',
+        f'안녕하세요~ 오늘 우연히 방문했는데 {content_ref} 이 부분에서 딱 멈췄어요. 저도 이 제품 찾아보던 중이었거든요 ㅎㅎ 솔직한 후기 정말 도움됐어요. 저도 리뷰 블로그 운영 중인데 서로이웃 해요! 잘 부탁드려요 :)',
+        f'글 읽다가 "{content_ref}" 이 리뷰가 너무 현실적이어서 바로 이웃신청 드려요. 광고 없이 솔직하게 쓰신 거 느껴졌어요. 저도 가성비 제품 위주로 써보고 후기 남기는데, 앞으로 좋은 정보 나눠요 💕',
     ]
     return random.choice(options)
 
@@ -239,9 +287,12 @@ def do_comment(page, blog_id, log_no, comment_text):
         print("  등록 버튼 없음")
         return False, title, body
 
-def do_neighbor(page, blog_id, blog_name, keyword, post_title="", body_snippet=""):
+def do_neighbor(page, blog_id, blog_name, keyword, post_title="", body_snippet="", account="salim1su"):
     """서로이웃 신청"""
-    msg = gen_neighbor_msg(blog_name, keyword, post_title=post_title, body_snippet=body_snippet)
+    if account == "me1091":
+        msg = gen_neighbor_msg_me1091(blog_name, keyword, post_title=post_title, body_snippet=body_snippet)
+    else:
+        msg = gen_neighbor_msg(blog_name, keyword, post_title=post_title, body_snippet=body_snippet)
 
     # 기존 BuddyAdd 페이지 닫기
     for p in page.context.pages:
@@ -346,23 +397,35 @@ print(f"오늘({today}) 방문: {today_total}개 (서로이웃 성공: {today_co
 pw, browser = connect_cdp()
 ctx = browser.contexts[0]
 page = ctx.new_page()
-page.goto('https://blog.naver.com', wait_until='domcontentloaded', timeout=10000)
+
+# 계정 로그인 확인 (me1091은 별도 로그인 필요)
+if ACCOUNT == "me1091":
+    from login_playwright import login_naver
+    print("[이웃추가] me1091 네이버 로그인 확인 중...")
+    login_naver(naver_id="me1091")  # 내부적으로 CDP 재연결 + 계정 전환 처리
+    # 로그인 후 새 세션용 페이지 초기화
+    page.goto('https://blog.naver.com/me1091', wait_until='domcontentloaded', timeout=15000)
+else:
+    page.goto('https://blog.naver.com', wait_until='domcontentloaded', timeout=10000)
 time.sleep(1)
+
+# 계정별 타깃 목록 선택
+target_list = TARGET_BLOGS_ME1091 if ACCOUNT == "me1091" else TARGET_BLOGS
 
 results = []
 
 try:
-    # TARGET_BLOGS + discovered 블로그 합치기
+    # 타깃 + discovered 블로그 합치기
     discovered_blogs = load_discovered()
-    all_blogs = TARGET_BLOGS + [b for b in discovered_blogs if b['blog_id'] not in {x['blog_id'] for x in TARGET_BLOGS}]
+    all_blogs = target_list + [b for b in discovered_blogs if b['blog_id'] not in {x['blog_id'] for x in target_list}]
 
     # 모든 블로그 처리 전에 발굴 부족하면 먼저 발굴
     if today_count < DAILY_LIMIT:
         remaining = [b for b in all_blogs if b['blog_id'] not in visited]
         if len(remaining) < (DAILY_LIMIT - today_count) * 2:
             print("[발굴] 후보 부족 — 새 블로그 탐색 중...")
-            new = discover_blogs(page, count=30)
-            all_blogs = TARGET_BLOGS + [b for b in load_discovered() if b['blog_id'] not in {x['blog_id'] for x in TARGET_BLOGS}]
+            discover_blogs(page, count=30)
+            all_blogs = target_list + [b for b in load_discovered() if b['blog_id'] not in {x['blog_id'] for x in target_list}]
 
     for blog in all_blogs:
         if today_count >= DAILY_LIMIT:
@@ -399,7 +462,8 @@ try:
         # 3. 서로이웃 신청
         try:
             neighbor_ok = do_neighbor(page, blog_id, blog['name'], blog['keyword'],
-                                      post_title=post_title, body_snippet=body)
+                                      post_title=post_title, body_snippet=body,
+                                      account=ACCOUNT)
         except Exception as e:
             print(f"  서로이웃 오류: {e}")
             neighbor_ok = False
