@@ -22,6 +22,85 @@ import urllib.request
 import urllib.parse
 from pathlib import Path
 
+
+def add_title_overlay(img_path: str, title: str, on_log=None) -> bool:
+    """첫 번째 이미지(썸네일)에 제목 텍스트 오버레이 추가.
+    이미지 하단에 반투명 바 + 흰 글씨로 제목 삽입.
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import textwrap
+
+        FONT_CANDIDATES = [
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+            "/Library/Fonts/NanumGothicBold.ttf",
+            "/Library/Fonts/NanumGothic.ttf",
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+        ]
+
+        img = Image.open(img_path).convert("RGBA")
+        W, H = img.size
+
+        # 폰트 크기: 이미지 너비 기준 자동 계산
+        font_size = max(24, int(W * 0.045))
+        font = None
+        for fp in FONT_CANDIDATES:
+            try:
+                font = ImageFont.truetype(fp, font_size)
+                break
+            except Exception:
+                continue
+        if font is None:
+            font = ImageFont.load_default()
+
+        # 제목 줄바꿈 (최대 2줄, 한 줄 20자 기준)
+        wrapped = textwrap.wrap(title, width=20)[:2]
+
+        # 텍스트 영역 높이 계산 (줄별 합산)
+        dummy = ImageDraw.Draw(img)
+        pad_v = int(H * 0.04)
+        line_heights = [dummy.textbbox((0, 0), line, font=font)[3] for line in wrapped]
+        total_text_h = sum(line_heights) + (len(wrapped) - 1) * 6
+        bar_h = total_text_h + pad_v * 2
+
+        # 반투명 어두운 바 (하단)
+        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        bar = ImageDraw.Draw(overlay)
+        bar.rectangle([(0, H - bar_h), (W, H)], fill=(0, 0, 0, 170))
+
+        merged = Image.alpha_composite(img, overlay)
+        draw = ImageDraw.Draw(merged)
+
+        # 흰 글씨 (각 줄 개별 중앙 정렬)
+        pad_v = int(H * 0.04)
+        y = H - bar_h + pad_v
+        for line in wrapped:
+            bbox2 = draw.textbbox((0, 0), line, font=font)
+            line_w = bbox2[2] - bbox2[0]
+            line_h = bbox2[3] - bbox2[1]
+            draw.text(((W - line_w) // 2, y), line, font=font, fill=(255, 255, 255, 255))
+            y += line_h + 6
+
+        # 원본 포맷 유지하여 저장
+        p = Path(img_path)
+        fmt = "JPEG" if p.suffix.lower() in (".jpg", ".jpeg") else \
+              "WEBP" if p.suffix.lower() == ".webp" else "PNG"
+        if fmt == "JPEG":
+            merged.convert("RGB").save(img_path, "JPEG", quality=92)
+        else:
+            merged.save(img_path, fmt, quality=90)
+
+        log(f"[썸네일] 텍스트 오버레이 완료: {p.name}")
+        return True
+
+    except Exception as e:
+        log(f"[썸네일] 텍스트 오버레이 실패: {e}")
+        return False
+
 IMAGES_DIR = Path(__file__).parent / "images"
 IMAGES_DIR.mkdir(exist_ok=True)
 
@@ -151,6 +230,7 @@ def generate_images_for_blog(
     skip_webp: bool = False,
     on_log=None,
     reference_images: list = None,
+    title: str = "",
 ) -> dict:
     """블로그 타입에 따라 이미지 생성 소스를 분기해 이미지 생성.
 
@@ -159,6 +239,7 @@ def generate_images_for_blog(
         image_infos: [{'index': int, 'prompt': str, 'filename': str}, ...]
         skip_webp:   True면 .jpg 저장 (Naver용)
         on_log:      로그 콜백
+        title:       글 제목 — 첫 번째 이미지(썸네일)에 텍스트 오버레이로 삽입
 
     Returns:
         {index: filepath} 딕셔너리 (성공한 것만)
@@ -181,9 +262,18 @@ def generate_images_for_blog(
     is_naver = blog_id in ("salim1su", "me1091")
 
     if is_naver:
-        return _generate_naver(enhanced_infos, skip_webp, log, reference_images=reference_images)
+        results = _generate_naver(enhanced_infos, skip_webp, log, reference_images=reference_images)
     else:
-        return _generate_other(enhanced_infos, skip_webp, log)
+        results = _generate_other(enhanced_infos, skip_webp, log)
+
+    # 첫 번째 이미지(썸네일)에 제목 텍스트 오버레이
+    if title and results:
+        first_key = min(results.keys())
+        first_path = results[first_key]
+        if first_path and Path(first_path).exists():
+            add_title_overlay(first_path, title, on_log=log)
+
+    return results
 
 
 def _generate_naver(image_infos: list, skip_webp: bool, log, reference_images: list = None) -> dict:

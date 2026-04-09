@@ -75,7 +75,7 @@ def run(keyword: str, on_log=None, on_status=None):
     image_paths = {}
     if result["images"]:
         log(f"[작성] 이미지 {len(result['images'])}개 생성 시작 (nolja100: Bing→Pollinations)")
-        image_paths = _img_router("nolja100", result["images"], skip_webp=False, on_log=log)
+        image_paths = _img_router("nolja100", result["images"], skip_webp=False, on_log=log, title=result.get("title", ""))
         log(f"[작성] 이미지 {len(image_paths)}개 생성 완료")
 
         # 생성 실패한 이미지 제거 + 본문 마커 정리

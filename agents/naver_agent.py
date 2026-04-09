@@ -65,7 +65,7 @@ def run(keyword: str, on_log=None, on_status=None):
     image_paths = {}
     if result["images"]:
         log(f"[작성] 이미지 {len(result['images'])}개 생성 시작 (salim1su: Gemini→Bing→Pollinations)")
-        image_paths = _img_router(BLOG_ID, result["images"], skip_webp=True, on_log=log)
+        image_paths = _img_router(BLOG_ID, result["images"], skip_webp=True, on_log=log, title=result.get("title", ""))
         log(f"[작성] 이미지 {len(image_paths)}개 생성 완료")
 
     result["image_paths"] = image_paths

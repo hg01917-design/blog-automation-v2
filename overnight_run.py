@@ -809,6 +809,7 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
             image_infos=images,
             skip_webp=is_naver,
             on_log=log,
+            title=title,
         )
         log(f"[파이프라인] 이미지 {len(image_paths)}개 생성 완료")
 

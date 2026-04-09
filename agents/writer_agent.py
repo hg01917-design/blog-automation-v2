@@ -59,7 +59,7 @@ def run(blog_id: str, keyword: str, on_log=None, on_status=None):
     if result["images"]:
         is_naver = (blog_id == "salim1su")
         log(f"[작성] 이미지 {len(result['images'])}개 생성 시작 (blog={blog_id})")
-        image_paths = _img_router(blog_id, result["images"], skip_webp=is_naver, on_log=log)
+        image_paths = _img_router(blog_id, result["images"], skip_webp=is_naver, on_log=log, title=result.get("title", ""))
         log(f"[작성] 이미지 {len(image_paths)}개 생성 완료")
 
         # 생성 실패한 이미지 제거 + 본문 마커 정리
