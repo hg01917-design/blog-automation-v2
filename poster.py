@@ -166,6 +166,15 @@ def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int =
             # 3. input#openFile 에 파일 직접 설정 (Playwright는 hidden input도 처리)
             page.locator('#openFile').set_input_files(filepath)
             time.sleep(4)
+            # macOS 파일 피커(Finder) 자동 닫기
+            try:
+                import subprocess as _sp2
+                _sp2.run(
+                    ["osascript", "-e", 'tell application "Finder" to close every window'],
+                    capture_output=True, timeout=3
+                )
+            except Exception:
+                pass
             _log(f"[이미지업로드] 업로드 완료 (시도 {attempt})")
             return True
 
