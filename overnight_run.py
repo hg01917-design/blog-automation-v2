@@ -83,6 +83,53 @@ def _notify_draft_saved(blog_id: str, keyword: str):
         log(f"[publish] Claude Code 실행 실패: {e}")
 
 
+def _claude_error_intervention(blog_id: str, keyword: str, error_msg: str, tb: str):
+    """포스팅 오류 발생 시 Claude Code를 blocking으로 호출해 수정 요청.
+    Claude가 종료될 때까지 overnight_run.py는 대기한다."""
+    import subprocess as _sp
+    import json as _json
+
+    PROJECT_DIR = str(Path(__file__).parent)
+    CLAUDE_BIN = "/Users/hana/.local/bin/claude"
+    ERROR_FILE = Path(PROJECT_DIR) / "logs" / "overnight_error.json"
+
+    # 오류 내용 파일로 저장 (Claude가 읽을 수 있도록)
+    error_info = {
+        "blog_id": blog_id,
+        "keyword": keyword,
+        "error": error_msg,
+        "traceback": tb,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    try:
+        ERROR_FILE.write_text(_json.dumps(error_info, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+    prompt = (
+        f"overnight_run.py 자동 포스팅 중 오류 발생.\n\n"
+        f"블로그: {blog_id}\n"
+        f"키워드: {keyword}\n"
+        f"오류: {error_msg}\n\n"
+        f"트레이스백:\n{tb}\n\n"
+        f"원인 파악 후 수정해줘. 수정 완료되면 봇이 {blog_id} 재시도함.\n"
+        f"텔레그램(chat_id=8674424194)으로 수정 결과 보고."
+    )
+    log(f"[오류개입] Claude Code 호출 (blocking) — {blog_id}: {error_msg[:80]}")
+    try:
+        log_file = Path(PROJECT_DIR) / "logs" / f"claude_fix_{blog_id}.log"
+        with open(log_file, "a") as _fh:
+            _sp.run(
+                [CLAUDE_BIN, "--print", prompt],
+                cwd=PROJECT_DIR,
+                stdout=_fh,
+                stderr=_sp.STDOUT,
+            )
+        log(f"[오류개입] Claude Code 수정 완료 — {blog_id} 재시도 진행")
+    except Exception as e:
+        log(f"[오류개입] Claude Code 실행 실패: {e}")
+
+
 # ─── Notion 키워드 큐에서 대기 키워드 가져오기 ───
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
 NOTION_API = "https://api.notion.com/v1"
@@ -930,8 +977,12 @@ def post_one_blog(blog_id):
             _db_set(kw, "failed", blog_id=blog_id)
         return ok
     except Exception as e:
+        import traceback as _tb
+        tb_str = _tb.format_exc()
         log(f"[{blog_id}] 오류: {e}")
         _db_set(kw, "failed", blog_id=blog_id)
+        # Claude Code에 오류 수정 요청 (blocking — 수정 완료까지 대기)
+        _claude_error_intervention(blog_id, kw, str(e), tb_str)
         return False
 
 
