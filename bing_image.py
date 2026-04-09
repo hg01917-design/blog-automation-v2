@@ -63,7 +63,7 @@ def _download_image(url: str, filepath: str, on_log=None) -> bool:
         return False
 
 
-def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_log=None) -> str | None:
+def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_log=None, session_used: set = None) -> str | None:
     """Bing Image Creator에서 이미지 1장 생성 후 저장. 경로 반환."""
     def log(msg):
         if on_log:
@@ -123,14 +123,15 @@ def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_
         except Exception:
             return None
 
-    # ★ 제출 전에 현재 OIG 이미지 목록 캡처 (이전 결과 제외용)
-    # 페이지 현재 OIG + 이전 세션에서 사용한 OIG 모두 제외
+    # ★ 제출 전에 현재 OIG 이미지 목록 캡처
+    # session_used: 이번 generate_images_bing 호출에서 이미 생성된 OIG ID 세트 (세션 내 중복 방지)
+    if session_used is None:
+        session_used = set()
     page_oig = _safe_get_oig()
-    used_oig_ids = _load_used_oig()
-    prev_urls = page_oig | {u for u in page_oig if _extract_oig_id(u) in used_oig_ids}
-    # used_oig_ids를 URL 형태로도 포함 (전체 URL 저장된 경우)
-    prev_urls |= used_oig_ids
-    log(f"[Bing] 이전 캐시 OIG 수: {len(page_oig)} (누적 제외: {len(used_oig_ids)})")
+    # 페이지에 있던 것 + 이번 세션에서 이미 생성한 것 모두 제외
+    exclude_oigs = page_oig | {u for u in page_oig if _extract_oig_id(u) in {_extract_oig_id(s) for s in session_used}}
+    exclude_oigs |= session_used
+    log(f"[Bing] 제출 전 페이지 OIG 수: {len(page_oig)}, 세션 생성됨: {len(session_used)}")
 
     # Image Creator 전용 입력창: #gi_form_q (TEXTAREA, class="b_searchbox gi_sb")
     inp = page.query_selector('#gi_form_q')
@@ -196,11 +197,8 @@ def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_
     for i in range(30):
         page.wait_for_timeout(1000)
         urls = _safe_get_oig()
-        # prev_urls(전체 URL) + used_oig_ids(OIG ID 문자열) 모두 제외
-        new_urls = [
-            u for u in urls
-            if u not in prev_urls and _extract_oig_id(u) not in used_oig_ids
-        ]
+        # 페이지 기존 + 세션 내 이미 생성된 OIG 모두 제외
+        new_urls = [u for u in urls if u not in exclude_oigs and _extract_oig_id(u) not in {_extract_oig_id(s) for s in session_used}]
         result = new_urls[0] if new_urls else None
 
         if result:
@@ -221,8 +219,9 @@ def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_
         log("[Bing] 이미지 URL 감지 실패 (60초 초과)")
         return None
 
-    # 사용된 OIG ID 기록 (다음 호출 시 중복 방지)
+    # 사용된 OIG ID 기록 (세션 내 + 파일 영구 기록)
     oig_id = _extract_oig_id(img_url)
+    session_used.add(img_url)  # 세션 내 중복 방지
     _save_used_oig(oig_id)
     log(f"[Bing] OIG ID 기록: {oig_id}")
 
@@ -265,6 +264,7 @@ def generate_images_bing(image_infos: list, skip_webp: bool = False, on_log=None
         return {}
 
     results = {}
+    session_used: set = set()  # 이번 호출에서 이미 생성된 이미지 URL 추적 (세션 내 중복 방지)
     pw, browser = connect_cdp()
     try:
         page = get_or_create_page(browser, url_contains="bing.com", navigate_to=BING_URL)
@@ -276,7 +276,7 @@ def generate_images_bing(image_infos: list, skip_webp: bool = False, on_log=None
             filename = info['filename']
 
             log(f"[Bing] [{idx}] 생성 중: {prompt[:60]}")
-            path = _generate_one(page, prompt, filename, skip_webp, on_log)
+            path = _generate_one(page, prompt, filename, skip_webp, on_log, session_used)
             if path:
                 results[idx] = path
                 log(f"[Bing] [{idx}] ✓ 저장: {path}")
