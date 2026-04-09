@@ -70,13 +70,15 @@ def _notify_draft_saved(blog_id: str, keyword: str):
     )
     log_file = PROJECT_DIR + f"/logs/claude_publish_{blog_id}.log"
     try:
-        _sp.Popen(
+        _fh = open(log_file, "a")
+        proc = _sp.Popen(
             [CLAUDE_BIN, "--print", prompt],
             cwd=PROJECT_DIR,
-            stdout=open(log_file, "a"),
+            stdout=_fh,
             stderr=_sp.STDOUT,
         )
-        log(f"[publish] Claude Code 검수 시작 — {blog_id} (키워드: {keyword})")
+        _fh.close()  # 부모 프로세스에서 핸들 닫기 (자식은 독립적으로 유지)
+        log(f"[publish] Claude Code 검수 시작 — {blog_id} (키워드: {keyword}, pid={proc.pid})")
     except Exception as e:
         log(f"[publish] Claude Code 실행 실패: {e}")
 
@@ -788,18 +790,14 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
                 else:
                     log(f"[검수] 재생성 결과 더 짧음 — 원본 유지")
 
-    quality_ok = True
     if char_count < MIN_BODY_CHARS_HARD:
-        log(f"[검수] ❌ 본문 너무 짧음 ({char_count}자 < {MIN_BODY_CHARS_HARD}자) — 발행 중단")
-        quality_ok = False
+        log(f"[검수] ⚠ 본문 짧음 ({char_count}자 < {MIN_BODY_CHARS_HARD}자) — 임시저장 후 클로드코드 보완 예정")
     elif char_count < MIN_BODY_CHARS_SOFT:
-        log(f"[검수] ⚠ 본문 권고치 미달 ({char_count}자 < {MIN_BODY_CHARS_SOFT}자) — 발행 진행")
+        log(f"[검수] ⚠ 본문 권고치 미달 ({char_count}자 < {MIN_BODY_CHARS_SOFT}자) — 임시저장 진행")
     if not tags:
-        log(f"[검수] ❌ 태그 없음 — 발행 중단")
-        quality_ok = False
-    if not quality_ok:
-        return False
-    log(f"[검수] ✅ 글 품질 통과 — 본문 {char_count}자, 태그 {len(tags)}개")
+        log(f"[검수] ⚠ 태그 없음 — 기본 태그로 대체")
+        tags = [keyword]  # 최소 키워드라도 태그로 사용
+    log(f"[검수] 글 품질 기록 — 본문 {char_count}자, 태그 {len(tags)}개 → 임시저장 진행")
 
     # 4. 이미지 생성 (블로그별 라우팅: salim1su=Gemini→Bing→Pollinations, 그 외=Bing→Pollinations)
     image_paths = {}
@@ -831,9 +829,9 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
         log(f"[파이프라인] 이미지 보충 후 총 {len(image_paths)}개")
 
     if len(image_paths) < MIN_IMAGES:
-        log(f"[검수] ❌ 이미지 부족 ({len(image_paths)}개 < {MIN_IMAGES}개) — 발행 중단")
-        return False
-    log(f"[검수] ✅ 이미지 {len(image_paths)}개 확인")
+        log(f"[검수] ⚠ 이미지 부족 ({len(image_paths)}개 < {MIN_IMAGES}개) — 임시저장 후 클로드코드 보완 예정")
+    else:
+        log(f"[검수] ✅ 이미지 {len(image_paths)}개 확인")
 
     # 3-5. 내부링크 삽입 (같은 블로그 최근 글 3개)
     body = _inject_internal_links(body, blog_id, log)

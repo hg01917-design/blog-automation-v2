@@ -876,26 +876,42 @@ def _naver_upload_image(page, filepath, log_fn=None):
 def _naver_apply_subtitle_format(page):
     """현재 줄에 소제목 서식을 적용한다."""
     _naver_dismiss_overlays(page)
-    fmt_btn = page.query_selector('.se-text-format-toolbar-button')
-    if not fmt_btn:
-        fmt_btn = page.query_selector('button[data-name="text-format"]')
+
+    # 서식 버튼 찾기 (여러 셀렉터 시도)
+    fmt_btn = None
+    for sel in [
+        '.se-text-format-toolbar-button',
+        'button[data-name="text-format"]',
+        'button[class*="text-format"]',
+        '.se-toolbar-item-textformat button',
+    ]:
+        el = page.query_selector(sel)
+        if el and el.is_visible(timeout=500):
+            fmt_btn = el
+            break
+
     if not fmt_btn:
         return False
 
     for attempt in range(3):
         try:
             fmt_btn.click()
-            time.sleep(0.5)  # 드롭다운 열림 대기 (기존 0.2 → 0.5)
-            # 소제목 버튼 폴링 (최대 3초)
-            for _ in range(15):
+            time.sleep(0.7)  # 드롭다운 열림 대기
+
+            # 소제목 버튼 폴링 (최대 4초) — 여러 셀렉터 시도
+            for _ in range(20):
                 time.sleep(0.2)
-                sub_btn = page.query_selector(
-                    'button.se-toolbar-option-text-format-sectionTitle-button'
-                )
-                if sub_btn and sub_btn.is_visible():
-                    sub_btn.click()
-                    time.sleep(0.4)
-                    return True
+                for sub_sel in [
+                    'button.se-toolbar-option-text-format-sectionTitle-button',
+                    'button[data-type="sectionTitle"]',
+                    'button[class*="sectionTitle"]',
+                    'li[data-type="sectionTitle"] button',
+                ]:
+                    sub_btn = page.query_selector(sub_sel)
+                    if sub_btn and sub_btn.is_visible(timeout=200):
+                        sub_btn.click()
+                        time.sleep(0.4)
+                        return True
             # 드롭다운 미열림 → Escape 후 재시도
             page.keyboard.press("Escape")
             time.sleep(0.5)
@@ -1180,6 +1196,12 @@ def _parse_naver_sections(content):
         current_text_lines.append(stripped)
 
     flush_text()
+
+    # 도입부 규칙: 글 첫 번째 요소가 소제목이면 일반 텍스트로 변환
+    # (도입부에는 소제목 없이 본문 텍스트로 시작해야 함)
+    if sections and sections[0]["type"] == "heading":
+        sections[0] = {"type": "text", "body": sections[0]["text"]}
+
     return sections
 
 
@@ -1387,7 +1409,11 @@ def _post_naver(account, title, content, tags=None,
                     except Exception:
                         pass
 
-                _naver_apply_subtitle_format(page)
+                fmt_ok = _naver_apply_subtitle_format(page)
+                if not fmt_ok:
+                    log(f"[포스팅] ⚠ 소제목 서식 적용 실패 — 일반 텍스트로 진행: {heading[:20]}")
+                else:
+                    log(f"[포스팅] ✅ 소제목 서식 적용 완료")
                 page.keyboard.press("End")
                 page.keyboard.press("Enter")
                 time.sleep(0.5)
