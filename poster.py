@@ -1370,25 +1370,35 @@ def _post_naver(account, title, content, tags=None,
                     page.keyboard.press("Enter")
                     time.sleep(0.05)
 
-                # 소제목 서식 적용 → 타이핑 → Enter → 본문 서식 복원
-                _naver_apply_subtitle_format(page)
+                # 텍스트 먼저 입력 → ElementHandle.click()으로 포커스 이동 → 서식 적용
                 _chunked_type(page, heading, chunk_size=50)
+                time.sleep(0.3)
+
+                # 방금 입력한 소제목 텍스트 paragraph를 ElementHandle.click()으로 클릭
+                # (JS click은 SE3 포커스 이동 안 됨 → ElementHandle 필수)
+                para_els = page.query_selector_all('.se-text-paragraph')
+                for el in para_els:
+                    try:
+                        if el.text_content().strip() == heading:
+                            el.scroll_into_view_if_needed()
+                            el.click()
+                            time.sleep(0.3)
+                            break
+                    except Exception:
+                        pass
+
+                _naver_apply_subtitle_format(page)
+                page.keyboard.press("End")
                 page.keyboard.press("Enter")
                 time.sleep(0.5)
                 _naver_restore_body_format(page)
                 time.sleep(0.3)
 
                 # 소제목 후 본문 영역 재클릭으로 포커스 확보
-                body_p = page.query_selector(
-                    '.se-component.se-text .se-text-paragraph'
-                )
-                if body_p:
-                    body_ps = page.query_selector_all(
-                        '.se-component.se-text .se-text-paragraph'
-                    )
-                    if body_ps:
-                        body_ps[-1].click()
-                        time.sleep(0.3)
+                body_ps = page.query_selector_all('.se-component.se-text .se-text-paragraph')
+                if body_ps:
+                    body_ps[-1].click()
+                    time.sleep(0.3)
                 page.keyboard.press("Enter")
                 time.sleep(0.3)
 
