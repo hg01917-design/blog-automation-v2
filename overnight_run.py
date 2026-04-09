@@ -265,30 +265,6 @@ _BLOG_THEMES = {
 
 def is_keyword_suitable(blog_id: str, keyword: str) -> bool:
     """키워드가 블로그 테마에 적합한지 확인"""
-    # ── 시즌 필터: 현재 월 기준 ±2개월 벗어나는 특정 월 키워드 차단 ──
-    _cur_month = datetime.now().month
-    _MONTH_KW = {
-        1: ["1월", "일월", "신년", "새해"],
-        2: ["2월", "이월", "발렌타인"],
-        3: ["3월", "삼월", "삼일절"],
-        4: ["4월", "사월", "벚꽃", "봄나들이"],
-        5: ["5월", "오월", "어버이날", "어린이날"],
-        6: ["6월", "유월", "여름시작"],
-        7: ["7월", "칠월", "여름휴가"],
-        8: ["8월", "팔월", "말복"],
-        9: ["9월", "구월", "추석", "9월축제"],
-        10: ["10월", "시월", "할로윈"],
-        11: ["11월", "십일월", "빼빼로"],
-        12: ["12월", "십이월", "크리스마스", "연말"],
-    }
-    for month, kw_list in _MONTH_KW.items():
-        if any(kw in keyword for kw in kw_list):
-            diff = min(abs(month - _cur_month), 12 - abs(month - _cur_month))
-            if diff > 2:
-                log(f"[시즌필터] '{keyword}' — {month}월 키워드, 현재 {_cur_month}월 (차이 {diff}개월) → 스킵")
-                return False
-            break
-
     # goodisak(Tistory): 대출 관련 키워드 차단
     if blog_id == "goodisak":
         _LOAN_BLOCK = ["대출", "금리", "대출비교", "신용대출", "주택담보대출", "카드론", "대출이자", "대출금리", "핀다",
@@ -729,8 +705,28 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
             log(f"[파이프라인] MRT 조회 실패 (무시): {e}")
 
     # 1. Claude.ai 글 생성
+    # 시즌 키워드 감지: 현재 월과 다른 월 키워드면 미리 준비 관점 컨텍스트 추가
+    _cur_month = datetime.now().month
+    _SEASON_HINTS = {
+        1: "1월", 2: "2월", 3: "3월", 4: "4월", 5: "5월", 6: "6월",
+        7: "7월", 8: "8월", 9: "9월", 10: "10월", 11: "11월", 12: "12월",
+    }
+    _season_ctx = ""
+    for _sm, _sh in _SEASON_HINTS.items():
+        if _sh in keyword_with_mrt and _sm != _cur_month:
+            _diff = min(abs(_sm - _cur_month), 12 - abs(_sm - _cur_month))
+            if _diff >= 2:
+                _season_ctx = (
+                    f"\n\n[작성 지침] 현재 {_cur_month}월 기준으로 작성. "
+                    f"'{_sh}' 시즌 키워드이므로 '미리 알아두면 좋은', '지금부터 준비하면' 등 "
+                    f"현재 시점에서 자연스럽게 연결되도록 작성할 것."
+                )
+                log(f"[파이프라인] 시즌 키워드 감지 ({_sh}) → 현재 시점 연결 컨텍스트 추가")
+            break
+    keyword_final = keyword_with_mrt + _season_ctx
+
     log(f"[파이프라인] {blog_id} / '{keyword}' — Claude.ai 글 생성 시작")
-    raw = generate_text("", blog_id=blog_id, keyword=keyword_with_mrt, on_log=log)
+    raw = generate_text("", blog_id=blog_id, keyword=keyword_final, on_log=log)
 
     if not raw or "추출 실패" in raw:
         log(f"[파이프라인] 글 생성 실패")
