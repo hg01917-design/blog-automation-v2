@@ -155,18 +155,18 @@ def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int =
             }""")
             time.sleep(0.8)
 
-            # 2. "사진" 서브메뉴 클릭
-            page.evaluate("""() => {
-                const items = [...document.querySelectorAll('.mce-tistory-attach-item')];
-                const el = items.find(e => e.textContent.trim() === '사진');
-                if (el) el.click();
-            }""")
-            time.sleep(0.5)
-
-            # 3. input#openFile 에 파일 직접 설정 (Playwright는 hidden input도 처리)
-            page.locator('#openFile').set_input_files(filepath)
+            # 2. "사진" 서브메뉴 클릭 — expect_file_chooser로 파일 피커 인터셉트
+            # (Finder가 뜨기 전에 가로채므로 OS 파일 다이얼로그가 열리지 않음)
+            with page.expect_file_chooser(timeout=5000) as fc_info:
+                page.evaluate("""() => {
+                    const items = [...document.querySelectorAll('.mce-tistory-attach-item')];
+                    const el = items.find(e => e.textContent.trim() === '사진');
+                    if (el) el.click();
+                }""")
+            file_chooser = fc_info.value
+            file_chooser.set_files(filepath)
             time.sleep(4)
-            # macOS 파일 피커(Finder) 자동 닫기
+            # 혹시 남은 Finder 창 닫기 (보험용)
             try:
                 import subprocess as _sp2
                 _sp2.run(
