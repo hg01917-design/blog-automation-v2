@@ -294,6 +294,15 @@ def generate_images_bing(image_infos: list, skip_webp: bool = False, on_log=None
         except Exception:
             pass
         pw.stop()
+        # macOS Finder 창 자동 닫기 (이미지 저장 시 열리는 창)
+        try:
+            import subprocess as _sp
+            _sp.run(
+                ["osascript", "-e", 'tell application "Finder" to close every window'],
+                capture_output=True, timeout=3
+            )
+        except Exception:
+            pass
 
     return results
 
