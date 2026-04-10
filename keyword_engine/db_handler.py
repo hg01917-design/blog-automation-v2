@@ -30,6 +30,7 @@ def init_db():
                 keyword    TEXT,
                 blog_id    TEXT,
                 status     TEXT DEFAULT 'pending',
+                title      TEXT DEFAULT '',
                 updated_at TEXT,
                 PRIMARY KEY (keyword, blog_id)
             );
@@ -57,6 +58,10 @@ def init_db():
                 pass
         try:
             db.execute("ALTER TABLE sites ADD COLUMN category TEXT DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            db.execute("ALTER TABLE keyword_blog_status ADD COLUMN title TEXT DEFAULT ''")
         except Exception:
             pass
 
@@ -212,23 +217,25 @@ def delete_keyword(keyword: str):
         db.execute("DELETE FROM keywords WHERE keyword = ?", (keyword,))
 
 
-def set_keyword_status(keyword: str, status: str, blog_id: str = None):
+def set_keyword_status(keyword: str, status: str, blog_id: str = None, title: str = ""):
     """키워드 상태 변경.
     blog_id 있으면 keyword_blog_status에 per-blog 기록 (글로벌 상태 유지).
     blog_id 없으면 keywords 테이블의 글로벌 status 변경 (하위 호환).
     published 상태가 되면 keywords 테이블에서 삭제 (큐 정리).
+    title: draft_saved 저장 시 생성된 글 제목 기록 (발행 후 정확한 매칭에 사용).
     """
     with _conn() as db:
         if blog_id:
             db.execute(
                 """
-                INSERT INTO keyword_blog_status (keyword, blog_id, status, updated_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO keyword_blog_status (keyword, blog_id, status, title, updated_at)
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(keyword, blog_id) DO UPDATE SET
                     status = excluded.status,
+                    title = CASE WHEN excluded.title != '' THEN excluded.title ELSE keyword_blog_status.title END,
                     updated_at = excluded.updated_at
                 """,
-                (keyword, blog_id, status, datetime.now().isoformat()),
+                (keyword, blog_id, status, title, datetime.now().isoformat()),
             )
             # published → keywords 테이블에서 삭제 (큐 정리)
             if status == "published":

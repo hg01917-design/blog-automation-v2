@@ -441,7 +441,10 @@ def _clear_text_buffer(blog_id: str):
 
 # ─── 전체 포스팅 파이프라인 ───
 def run_posting_pipeline(blog_id, keyword, _resume=None):
-    """유사문서 체크 → 글 생성 → 이미지 → 포스팅 전체 파이프라인"""
+    """유사문서 체크 → 글 생성 → 이미지 → 포스팅 전체 파이프라인
+
+    Returns: (ok: bool, title: str)
+    """
     from claude_playwright import generate_text
     from image_router import generate_images_for_blog
     from poster import post_single
@@ -454,15 +457,15 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
         tags   = _resume["tags"]
         images = _resume["images"]
         log(f"[파이프라인] 텍스트 버퍼 복원: '{title}' ({len(body)}자) — 이미지/포스팅만 실행")
-        # 이미지 생성 단계로 바로 이동 (아래 goto_images 레이블 역할)
-        return _run_image_and_post(blog_id, keyword, title, body, tags, images)
+        ok = _run_image_and_post(blog_id, keyword, title, body, tags, images)
+        return (ok, title)
 
     # 0-2. 유사문서 체크 (블로그 내 기존 글)
     log(f"[파이프라인] {blog_id} / '{keyword}' — 유사문서 체크")
     is_dup, matched = check_duplicate_post(blog_id, keyword, on_log=log)
     if is_dup:
         log(f"[파이프라인] ⚠ 유사문서 발견 — 키워드 '{keyword}' 건너뜀")
-        return False
+        return False, ""
 
     # 1. triplog: MRT 제휴 링크 조회 후 프롬프트에 포함
     keyword_with_mrt = keyword
@@ -706,7 +709,8 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
     # 텍스트 체크포인트 저장 — 이미지/Playwright 실패 시 다음 라운드에서 재사용
     _save_text_buffer(blog_id, keyword, title, body, tags, images)
 
-    return _run_image_and_post(blog_id, keyword, title, body, tags, images)
+    ok = _run_image_and_post(blog_id, keyword, title, body, tags, images)
+    return (ok, title) if ok else (False, title)
 
 
 def _run_image_and_post(blog_id, keyword, title, body, tags, images):
@@ -878,9 +882,9 @@ def _post_one_blog_inner(blog_id):
     if buf:
         log(f"[{blog_id}] 텍스트 버퍼 발견 ('{buf['keyword']}') — 이미지/포스팅만 재시도")
         try:
-            ok = run_posting_pipeline(blog_id, buf["keyword"], _resume=buf)
+            ok, saved_title = run_posting_pipeline(blog_id, buf["keyword"], _resume=buf)
             if ok:
-                _db_set(buf["keyword"], "draft_saved", blog_id=blog_id)
+                _db_set(buf["keyword"], "draft_saved", blog_id=blog_id, title=saved_title)
                 return True
         except Exception as e:
             log(f"[{blog_id}] 버퍼 재시도 실패: {e}")
@@ -904,10 +908,10 @@ def _post_one_blog_inner(blog_id):
     log(f"[{blog_id}] 키워드: {kw}")
     _db_set(kw, "in_progress", blog_id=blog_id)
     try:
-        ok = run_posting_pipeline(blog_id, kw)
+        ok, saved_title = run_posting_pipeline(blog_id, kw)
         if ok:
             # 모든 블로그 임시저장 → draft_saved (Claude Code가 검수 후 발행)
-            _db_set(kw, "draft_saved", blog_id=blog_id)
+            _db_set(kw, "draft_saved", blog_id=blog_id, title=saved_title)
         else:
             _db_set(kw, "failed", blog_id=blog_id)
         return ok

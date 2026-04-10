@@ -250,7 +250,7 @@ def read_naver_drafts(blog_id: str):
         from keyword_engine.db_handler import _conn
         with _conn() as db:
             rows = db.execute(
-                "SELECT keyword, updated_at FROM keyword_blog_status "
+                "SELECT keyword, title, updated_at FROM keyword_blog_status "
                 "WHERE blog_id=? AND status='draft_saved' ORDER BY updated_at DESC LIMIT 5",
                 (blog_id,)
             ).fetchall()
@@ -258,9 +258,10 @@ def read_naver_drafts(blog_id: str):
             _log(f"[{blog_id}] draft_saved 없음")
             return []
         drafts = []
-        for kw, updated_at in rows:
-            _log(f"  [{blog_id}] draft_saved: '{kw}' ({updated_at})")
-            drafts.append({"keyword": kw, "updated_at": updated_at,
+        for kw, saved_title, updated_at in rows:
+            display = f"'{saved_title}'" if saved_title else f"키워드: '{kw}'"
+            _log(f"  [{blog_id}] draft_saved: {display} ({updated_at})")
+            drafts.append({"keyword": kw, "title": saved_title or "", "updated_at": updated_at,
                            "note": "네이버는 publish_drafts.py로 직접 검수 필요"})
         return drafts
     except Exception as e:

@@ -45,27 +45,45 @@ BLOG_DOMAIN = {
 
 # ─── DB 상태 업데이트 ──────────────────────────
 def _mark_keyword_published(blog_id: str, title: str):
-    """발행 성공 후 keyword_blog_status 테이블을 draft_saved → published 로 업데이트."""
+    """발행 성공 후 keyword_blog_status 테이블을 draft_saved → published 로 업데이트.
+
+    매칭 우선순위:
+    1. DB에 저장된 title과 발행 제목이 정확히 일치하는 키워드
+    2. DB title이 발행 제목에 포함되거나 발행 제목이 DB title에 포함
+    3. 키워드 자체가 발행 제목에 포함
+    4. 가장 최근 draft_saved 키워드 (최후 폴백)
+    """
     try:
-        import sqlite3 as _sqlite3
-        _db_path = Path(__file__).parent / "keyword_engine" / "engine.db"
-        db = _sqlite3.connect(str(_db_path))
-        rows = db.execute(
-            "SELECT keyword FROM keyword_blog_status WHERE blog_id=? AND status='draft_saved'",
-            (blog_id,)
-        ).fetchall()
-        db.close()
+        from keyword_engine.db_handler import _conn, set_keyword_status
+        with _conn() as db:
+            rows = db.execute(
+                "SELECT keyword, title FROM keyword_blog_status "
+                "WHERE blog_id=? AND status='draft_saved' ORDER BY updated_at DESC",
+                (blog_id,)
+            ).fetchall()
         if not rows:
             return
-        # 제목에 포함된 키워드 우선 매칭
         matched = None
-        for (kw,) in rows:
-            if kw and kw in title:
+        # 1순위: DB 저장 title과 발행 제목 정확히 일치
+        for kw, saved_title in rows:
+            if saved_title and saved_title.strip() == title.strip():
                 matched = kw
                 break
+        # 2순위: 부분 포함
         if not matched:
-            matched = rows[0][0]  # 첫 번째 draft_saved 키워드로 폴백
-        from keyword_engine.db_handler import set_keyword_status
+            for kw, saved_title in rows:
+                if saved_title and (saved_title in title or title in saved_title):
+                    matched = kw
+                    break
+        # 3순위: 키워드가 제목에 포함
+        if not matched:
+            for kw, _ in rows:
+                if kw and kw in title:
+                    matched = kw
+                    break
+        # 최후 폴백: 가장 최근 draft_saved
+        if not matched:
+            matched = rows[0][0]
         set_keyword_status(matched, "published", blog_id)
         _log(f"[{blog_id}] DB 업데이트: '{matched}' → published")
     except Exception as e:
