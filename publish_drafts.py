@@ -1184,6 +1184,7 @@ def _naver_get_draft(page, blog_id: str) -> bool:
             if (!titleEl) continue;
             var title = titleEl.textContent.trim();
             if (!title || skipSet.includes(title) || publishedSet.includes(title)) continue;
+            if (title.length < 10) continue;  // 제목 너무 짧으면 스킵
             var clickable = lis[i].querySelector('[class*="article_button"]') || lis[i];
             clickable.click();
             return title;
