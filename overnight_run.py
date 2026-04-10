@@ -951,6 +951,30 @@ def _hours_since_last_post(blog_id: str) -> float:
 
 def post_one_blog(blog_id):
     """한 블로그에 키워드 1개 선택 → 포스팅 (SQLite 키워드 엔진만 사용)"""
+    import fcntl as _fcntl
+
+    # 블로그별 락 파일 — 동일 블로그에 동시 2개 프로세스 방지 (이미지/텍스트 버퍼 충돌 방지)
+    _lock_path = LOG_DIR / f"{blog_id}.lock"
+    try:
+        _lock_fh = open(_lock_path, "w")
+        _fcntl.flock(_lock_fh, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+    except OSError:
+        log(f"[{blog_id}] ⚠ 다른 프로세스가 이미 실행 중 (락 파일 있음) — 스킵")
+        return False
+
+    try:
+        return _post_one_blog_inner(blog_id)
+    finally:
+        _fcntl.flock(_lock_fh, _fcntl.LOCK_UN)
+        _lock_fh.close()
+        try:
+            _lock_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def _post_one_blog_inner(blog_id):
+    """post_one_blog 실제 로직 (락 획득 후 호출)"""
     # me1091: Notion 상품 기반 Coupang 리뷰 파이프라인 (키워드 DB 사용 안 함)
     if blog_id == "me1091":
         try:

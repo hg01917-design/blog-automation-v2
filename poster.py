@@ -1432,6 +1432,22 @@ def _post_naver(account, title, content, tags=None,
         _naver_set_font_size(page, 19)
         _naver_set_font_color_black(page)
 
+        # 기존 본문 내용 감지 → 전체 삭제 (이전 세션 자동복원으로 잘못된 이미지 재사용 방지)
+        body_comp_count = page.evaluate("""() => {
+            return document.querySelectorAll('.se-component').length;
+        }""")
+        if body_comp_count > 1:
+            log(f"[포스팅] 기존 본문 컴포넌트 {body_comp_count}개 감지 — 전체 삭제 후 새로 작성")
+            page.keyboard.press("Meta+a")
+            time.sleep(0.3)
+            page.keyboard.press("Delete")
+            time.sleep(0.8)
+            # 삭제 후 본문 재클릭
+            body_p2 = page.query_selector('.se-component.se-text .se-text-paragraph')
+            if body_p2:
+                body_p2.click()
+            time.sleep(0.5)
+
         # ── 섹션별 입력 ──
         for si, section in enumerate(sections):
             stype = section["type"]
