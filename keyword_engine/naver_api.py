@@ -66,6 +66,22 @@ BLOG_QUERIES = {
         "에너지 바우처", "문화누리카드", "의료급여",
         "주거급여 신청", "교육급여", "청년도약계좌",
     ],
+    "woll100": [
+        # 공항버스 / 교통 정보
+        "인천공항 버스 시간표", "인천공항 리무진버스", "김포공항 버스",
+        "공항버스 요금", "공항철도 소요시간", "공항버스 예매",
+        "시외버스 요금표", "고속버스 예매", "KTX 요금",
+        "김해공항 버스", "제주공항 교통", "청주공항 버스",
+        "공항 주차장 요금", "공항 셔틀버스", "출국 준비",
+    ],
+    "phn0502": [
+        # 영화 / OTT 정보
+        "영화 추천 2025", "넷플릭스 신작", "OTT 추천",
+        "영화 결말 해석", "영화 줄거리 정리", "드라마 추천",
+        "넷플릭스 드라마", "티빙 신작", "왓챠 추천",
+        "공포 영화 추천", "로맨스 영화 추천", "액션 영화 추천",
+        "쿠키영상 있는 영화", "숨겨진 명작 영화", "Netflix 영화",
+    ],
 }
 
 # 폴백용 통합 쿼리
@@ -81,8 +97,8 @@ def _search(endpoint: str, query: str, display: int = 10) -> dict:
             "X-Naver-Client-Secret": CLIENT_SECRET,
         },
     )
-    resp = urllib.request.urlopen(req, timeout=10, context=_ssl_ctx())
-    return json.loads(resp.read())
+    with urllib.request.urlopen(req, timeout=10, context=_ssl_ctx()) as resp:
+        return json.loads(resp.read())
 
 
 def _extract_tistory_root(url: str):
@@ -204,8 +220,8 @@ def get_autocomplete(keyword: str, max_results: int = 10) -> list:
             f"https://ac.search.naver.com/nx/ac?{params}",
             headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.naver.com"},
         )
-        resp = urllib.request.urlopen(req, timeout=5)
-        data = json.loads(resp.read().decode("utf-8"))
+        with urllib.request.urlopen(req, timeout=5, context=_ssl_ctx()) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
         items = data.get("items", [[]])[0]
         return [item[0] for item in items[:max_results] if item]
     except Exception:
@@ -224,8 +240,8 @@ def get_related_searches(keyword: str, max_results: int = 10) -> list:
             f"https://search.naver.com/search.naver?{params}",
             headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"},
         )
-        resp = urllib.request.urlopen(req, timeout=8)
-        html = resp.read().decode("utf-8")
+        with urllib.request.urlopen(req, timeout=8, context=_ssl_ctx()) as resp:
+            html = resp.read().decode("utf-8")
         # 연관검색어 패턴
         matches = re.findall(r'"query":"([^"]+)"', html)
         seen = set()

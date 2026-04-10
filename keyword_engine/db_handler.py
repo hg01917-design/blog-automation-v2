@@ -108,6 +108,19 @@ def init_db():
 # 블로그별 주제 포화 임계값 (같은 지역/주제 이미 N개 이상이면 스킵)
 _TOPIC_SATURATION = 3
 
+# 블로그 → 키워드 카테고리 매핑 (fetch_next_pending 카테고리 필터용)
+# me1091은 쿠팡파트너스 제휴 블로그 — 키워드 엔진 미사용 (None으로 처리)
+_BLOG_CATEGORY = {
+    "goodisak": "IT",
+    "nolja100": "여행",
+    "triplog": "여행",
+    "salim1su": "살림",
+    "baremi542": "정부지원금",
+    "woll100": "교통",
+    "phn0502": "영화",
+    "me1091": None,  # 제휴 블로그 — 키워드 엔진 미사용
+}
+
 # 여행 블로그 지역 키워드 목록 (nolja100/triplog)
 _TRAVEL_LOCATIONS = [
     "제주", "부산", "서울", "강릉", "속초", "여수", "통영", "경주", "전주",
@@ -324,19 +337,14 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
     """상태가 pending인 키워드 중 점수 높은 것 1개 반환. 없으면 None.
 
     blog_id 지정 시: 해당 블로그 카테고리에 맞는 키워드만 반환.
+    me1091은 키워드 엔진 미사용 → 항상 None 반환.
     """
+    # 제휴 블로그는 키워드 엔진 미사용
+    if blog_id == "me1091":
+        return None
+
     with _conn() as db:
         if blog_id:
-            # 블로그 카테고리 매핑
-            _BLOG_CATEGORY = {
-                "goodisak": "IT",
-                "nolja100": "여행",
-                "triplog": "여행",
-                "salim1su": "살림",
-                "baremi542": "정부지원금",
-                "woll100": "교통",
-                "phn0502": "영화",
-            }
             category = _BLOG_CATEGORY.get(blog_id)
             # baremi542는 '정부지원금'+'정부지원' 두 카테고리 모두 사용
             extra_category = "정부지원" if blog_id == "baremi542" else None
