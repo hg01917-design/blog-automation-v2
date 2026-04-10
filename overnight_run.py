@@ -546,8 +546,38 @@ def _inject_internal_links(body: str, blog_id: str, on_log=None) -> str:
         return body
 
 
+# ─── 텍스트 버퍼 (이미지/포스팅 실패 시 텍스트 재사용) ───
+_TEXT_BUFFER_DIR = LOG_DIR / "text_buffers"
+
+def _save_text_buffer(blog_id: str, keyword: str, title: str, body: str, tags: list, images: list):
+    """텍스트 생성 완료 후 버퍼 저장 — 이미지/Playwright 실패해도 텍스트 보존"""
+    _TEXT_BUFFER_DIR.mkdir(parents=True, exist_ok=True)
+    buf = {"keyword": keyword, "title": title, "body": body, "tags": tags, "images": images,
+           "saved_at": datetime.now().isoformat()}
+    (_TEXT_BUFFER_DIR / f"{blog_id}.json").write_text(
+        json.dumps(buf, ensure_ascii=False, indent=2), encoding="utf-8")
+    log(f"[버퍼] {blog_id} 텍스트 저장 완료 ('{title}')")
+
+def _load_text_buffer(blog_id: str):
+    """저장된 텍스트 버퍼 로드. 없거나 파손 시 None 반환."""
+    p = _TEXT_BUFFER_DIR / f"{blog_id}.json"
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        p.unlink(missing_ok=True)
+        return None
+
+def _clear_text_buffer(blog_id: str):
+    """텍스트 버퍼 삭제 (포스팅 성공 후 정리)"""
+    p = _TEXT_BUFFER_DIR / f"{blog_id}.json"
+    if p.exists():
+        p.unlink()
+
+
 # ─── 전체 포스팅 파이프라인 ───
-def run_posting_pipeline(blog_id, keyword, page_id=None):
+def run_posting_pipeline(blog_id, keyword, page_id=None, _resume=None):
     """유사문서 체크 → 글 생성 → 이미지 → 포스팅 전체 파이프라인
 
     page_id가 주어지면 유사문서 발견 시 Notion 상태를 '실패'로 변경.
@@ -556,6 +586,16 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     from image_router import generate_images_for_blog
     from poster import post_single
     from public_api import fetch_context_for_blog
+
+    # 버퍼 복원 경로: 텍스트는 이미 있고 이미지/포스팅만 재시도
+    if _resume:
+        title  = _resume["title"]
+        body   = _resume["body"]
+        tags   = _resume["tags"]
+        images = _resume["images"]
+        log(f"[파이프라인] 텍스트 버퍼 복원: '{title}' ({len(body)}자) — 이미지/포스팅만 실행")
+        # 이미지 생성 단계로 바로 이동 (아래 goto_images 레이블 역할)
+        return _run_image_and_post(blog_id, keyword, title, body, tags, images)
 
     # 0-2. 유사문서 체크 (블로그 내 기존 글)
     log(f"[파이프라인] {blog_id} / '{keyword}' — 유사문서 체크")
@@ -780,7 +820,7 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
                     img_m = re.search(r"===이미지===\s*\n(.*?)\n*===이미지끝===", raw, re.DOTALL)
                     if title_m:
                         title = _truncate_title(title_m.group(1).strip().split('\n')[0].strip(), max_len=40)
-                    body = body_m.group(1).strip() if body_m else body2
+                    body = body_m.group(1).strip() if body_m else body  # body2 미정의 방지
                     if tag_m:
                         tag_line = tag_m.group(1).strip().split('\n')[0].strip()
                         tags = [t.strip() for t in tag_line.split(",") if t.strip()]
@@ -805,7 +845,20 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
         tags = [keyword]  # 최소 키워드라도 태그로 사용
     log(f"[검수] 글 품질 기록 — 본문 {char_count}자, 태그 {len(tags)}개 → 임시저장 진행")
 
-    # 4. 이미지 생성 (블로그별 라우팅: salim1su=Gemini→Bing→Pollinations, 그 외=Bing→Pollinations)
+    # 텍스트 체크포인트 저장 — 이미지/Playwright 실패 시 다음 라운드에서 재사용
+    _save_text_buffer(blog_id, keyword, title, body, tags, images)
+
+    return _run_image_and_post(blog_id, keyword, title, body, tags, images)
+
+
+def _run_image_and_post(blog_id, keyword, title, body, tags, images):
+    """이미지 생성 → 내부링크 → 임시저장 (텍스트 생성 이후 단계만)"""
+    from image_router import generate_images_for_blog
+    from poster import post_single
+
+    MIN_IMAGES = 3
+
+    # 이미지 생성
     image_paths = {}
     if images:
         is_naver = blog_id in ("salim1su", "me1091")
@@ -819,7 +872,7 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
         )
         log(f"[파이프라인] 이미지 {len(image_paths)}개 생성 완료")
 
-    # 4-1. 이미지 최소 3장 보장 — 부족하면 Pollinations 폴백 보충
+    # 이미지 최소 3장 보장 — 부족하면 Pollinations 폴백 보충
     if len(image_paths) < MIN_IMAGES:
         log(f"[파이프라인] ⚠ 이미지 {len(image_paths)}개 < 최소 {MIN_IMAGES}개 — Pollinations 폴백 보충")
         from image_router import _pollinations_image, _enhance_prompt, IMAGES_DIR as _IMG_DIR
@@ -842,25 +895,33 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     else:
         log(f"[검수] ✅ 이미지 {len(image_paths)}개 확인")
 
-    # 3-5. 내부링크 삽입 (같은 블로그 최근 글 3개)
+    # 내부링크 삽입
     body = _inject_internal_links(body, blog_id, log)
 
-    # 4. 포스팅
+    # 임시저장 (Playwright) — 실패 시 최대 2회 재시도
     log(f"[파이프라인] 포스팅 시작: {blog_id}")
-    ok = post_single(
-        blog_id=blog_id,
-        title=title,
-        content=body,
-        tags=tags,
-        image_paths=image_paths,
-        image_infos=images,
-        on_log=log,
-    )
+    ok = False
+    for _attempt in range(3):
+        ok = post_single(
+            blog_id=blog_id,
+            title=title,
+            content=body,
+            tags=tags,
+            image_paths=image_paths,
+            image_infos=images,
+            on_log=log,
+        )
+        if ok:
+            break
+        if _attempt < 2:
+            log(f"[파이프라인] 포스팅 실패 (시도 {_attempt+1}/3) — 30초 후 재시도")
+            time.sleep(30)
 
     if ok:
         log(f"[파이프라인] {blog_id} / '{keyword}' 임시저장완료 ✅")
+        _clear_text_buffer(blog_id)  # 성공 시 버퍼 정리
     else:
-        log(f"[파이프라인] {blog_id} / '{keyword}' 포스팅 실패 ⚠")
+        log(f"[파이프라인] {blog_id} / '{keyword}' 포스팅 실패 ⚠ (텍스트 버퍼 보존 — 다음 라운드 재시도)")
     return ok
 
 
@@ -911,6 +972,20 @@ def post_one_blog(blog_id):
     if elapsed < MIN_POST_GAP_HOURS:
         log(f"[{blog_id}] 마지막 포스팅 {elapsed:.1f}시간 전 — 최소 {MIN_POST_GAP_HOURS}시간 필요, 스킵")
         return False
+
+    # 이전 텍스트 버퍼 확인 — 이미지/Playwright만 실패했다면 텍스트 재생성 없이 재시도
+    buf = _load_text_buffer(blog_id)
+    if buf:
+        log(f"[{blog_id}] 텍스트 버퍼 발견 ('{buf['keyword']}') — 이미지/포스팅만 재시도")
+        try:
+            ok = run_posting_pipeline(blog_id, buf["keyword"], _resume=buf)
+            if ok:
+                _db_set(buf["keyword"], "draft_saved", blog_id=blog_id)
+                return True
+        except Exception as e:
+            log(f"[{blog_id}] 버퍼 재시도 실패: {e}")
+        log(f"[{blog_id}] 버퍼 재시도도 실패 — 버퍼 제거 후 새로 생성")
+        _clear_text_buffer(blog_id)
 
     # 테마 부적합 키워드는 스킵하고 다음 키워드 재시도 (최대 5회)
     kw = None

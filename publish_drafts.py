@@ -184,7 +184,7 @@ def publish_wp_draft():
         _log("[WP] 이미지 없음 → 생성 중...")
         slug = re.sub(r'[^\w가-힣]', '-', title.strip()).strip('-')[:40]
         for i in range(1, 3):
-            fp = _make_image(title, f"{slug}-img{i}.jpg", blog_id=blog_id, title=title if i == 1 else "")
+            fp = _make_image(title, f"{slug}-img{i}.jpg", blog_id="baremi542", title=title if i == 1 else "")
             if fp:
                 img_url, media_id = _wp_upload_image_with_id(
                     SITE_URL, auth, fp, alt=title, on_log=_log
@@ -586,7 +586,7 @@ def _tistory_get_draft_id(page, blog_id: str) -> str | None:
                         ).as_element()
                         if del_btn:
                             _log(f"[{blog_id}] 중복 삭제: '{title}'")
-                            del_btn.evaluate("el => el.click()")
+                            del_btn.click()
                             time.sleep(1.5)
                 except Exception:
                     pass
