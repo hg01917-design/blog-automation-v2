@@ -419,16 +419,6 @@ def generate_images_for_blog(
         if first_path and Path(first_path).exists():
             add_title_overlay(first_path, title, blog_id=blog_id, on_log=log)
 
-    # macOS Finder 창 자동 닫기 (이미지 저장 시 열리는 창)
-    try:
-        import subprocess as _sp
-        _sp.run(
-            ["osascript", "-e", "tell application \"Finder\" to close every window"],
-            capture_output=True, timeout=3
-        )
-    except Exception:
-        pass
-
     return results
 
 
