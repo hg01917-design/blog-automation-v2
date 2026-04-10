@@ -49,32 +49,25 @@ def _log(msg):
     print(f"[{ts}] {msg}", flush=True)
 
 
-# ─── 이미지 생성 (picsum.photos) ──────────────────
-def _make_image(prompt: str, filename: str) -> str | None:
-    """picsum.photos 스톡 이미지 다운로드 → images/ 에 저장. 경로 반환."""
-    import random as _random
-    seed = abs(hash(prompt)) % 1000
-    url = f"https://picsum.photos/seed/{seed}/1024/768"
-
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+# ─── 이미지 생성 (image_router: Bing → Pollinations) ──────────────────
+def _make_image(prompt: str, filename: str, blog_id: str = "", title: str = "") -> str | None:
+    """image_router로 이미지 생성 (Bing → Pollinations). 썸네일은 title 오버레이 적용."""
     try:
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "Mozilla/5.0"}
+        from image_router import generate_images_for_blog
+        index = 0  # 썸네일(첫 번째 이미지)로 사용될 경우 오버레이 적용
+        results = generate_images_for_blog(
+            blog_id=blog_id or "goodisak",
+            image_infos=[{"index": index, "prompt": prompt, "filename": filename}],
+            skip_webp=False,
+            on_log=_log,
+            title=title if title else None,
         )
-        resp = urllib.request.urlopen(req, timeout=30, context=ctx)
-        data = resp.read()
-        ext = ".jpg"
-        if not filename.endswith(ext):
-            filename = Path(filename).stem + ext
-        out = IMAGES_DIR / filename
-        out.write_bytes(data)
-        _log(f"[이미지] picsum.photos → {filename}")
-        return str(out)
+        if results and index in results:
+            _log(f"[이미지] 생성 완료 → {Path(results[index]).name}")
+            return results[index]
     except Exception as e:
-        _log(f"[이미지] 다운로드 실패: {e}")
-        return None
+        _log(f"[이미지] image_router 실패: {e}")
+    return None
 
 
 # ══════════════════════════════════════════════
@@ -155,6 +148,12 @@ def publish_wp_draft():
     _log(f"[WP] 선택된 드래프트: [{post_id}] {title}")
     _log(f"[WP] 콘텐츠 길이: {len(content_html)}자")
 
+    # ── 품질 검수 게이트 ──
+    wp_issues = _content_quality_gate(content_html, title, "baremi542")
+    if wp_issues:
+        _log("[WP] ⛔ 품질 검수 실패 — 발행 중단 (수동 확인 필요)")
+        return False
+
     # 이미지 체크
     has_images = bool(re.search(r'<img\s', content_html))
     _log(f"[WP] 이미지 있음: {has_images}")
@@ -172,7 +171,7 @@ def publish_wp_draft():
         _log("[WP] 이미지 없음 → 생성 중...")
         slug = re.sub(r'[^\w가-힣]', '-', title.strip()).strip('-')[:40]
         for i in range(1, 3):
-            fp = _make_image(title, f"{slug}-img{i}.jpg")
+            fp = _make_image(title, f"{slug}-img{i}.jpg", blog_id=blog_id, title=title if i == 1 else "")
             if fp:
                 img_url, media_id = _wp_upload_image_with_id(
                     SITE_URL, auth, fp, alt=title, on_log=_log
@@ -253,6 +252,61 @@ def _get_published_titles(blog_id: str, blog_type: str = 'tistory') -> set:
     except Exception as e:
         _log(f"[{blog_id}] RSS 조회 실패: {e}")
         return set()
+
+
+# ══════════════════════════════════════════════
+# 콘텐츠 품질 검수 게이트 (모든 블로그 공통)
+# ══════════════════════════════════════════════
+def _content_quality_gate(content: str, title: str, blog_id: str) -> list:
+    """발행 전 콘텐츠 품질 검수. 문제 목록 반환 (빈 리스트 = 통과).
+
+    검사 항목:
+    1. 템플릿 마커 잔재 (===본문===, Gemini프롬프트: 등)
+    2. 본문 길이 너무 짧음 (500자 미만)
+    3. 제목이 키워드 수준으로 짧음 (10자 미만)
+    4. 동일 이미지 중복 삽입
+    """
+    issues = []
+
+    # 1. 템플릿 마커 잔재 체크
+    BAD_MARKERS = [
+        '===본문===', '===이미지===', '===태그===', '===태그끝===',
+        '===이미지끝===', 'Gemini프롬프트:', '- 파일명:', '- alt:',
+        '===본문끝===', '===제목끝===', '{{이미지1}}', '{{이미지2}}', '{{이미지3}}',
+    ]
+    for marker in BAD_MARKERS:
+        if marker in content:
+            issues.append(f"템플릿 마커 노출: '{marker}'")
+            break  # 첫 번째만 보고해도 충분
+
+    # 2. 본문 길이 체크 (HTML 태그 제거 후 순수 텍스트)
+    plain = re.sub(r'<[^>]+>', ' ', content)
+    plain = re.sub(r'\s+', ' ', plain).strip()
+    if len(plain) < 500:
+        issues.append(f"본문 너무 짧음 ({len(plain)}자 < 500자) — 키워드만 있는 글일 가능성")
+
+    # 3. 제목 길이 체크
+    if len(title.strip()) < 10:
+        issues.append(f"제목 너무 짧음 ({len(title.strip())}자): '{title}'")
+
+    # 4. 중복 이미지 체크
+    img_srcs = re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', content, re.IGNORECASE)
+    if len(img_srcs) > 1:
+        seen = set()
+        for src in img_srcs:
+            base = src.split('?')[0]  # 쿼리스트링 제거 후 비교
+            if base in seen:
+                issues.append(f"중복 이미지 발견: {base[-40:]}")
+                break
+            seen.add(base)
+
+    if issues:
+        _log(f"[{blog_id}] ❌ 품질 검수 실패:")
+        for issue in issues:
+            _log(f"[{blog_id}]   - {issue}")
+    else:
+        _log(f"[{blog_id}] ✅ 품질 검수 통과")
+    return issues
 
 
 # ══════════════════════════════════════════════
@@ -474,6 +528,12 @@ def _tistory_check_and_fix(page, blog_id: str, post_id: str):
     _log(f"[{blog_id}] 제목: {title}")
     _log(f"[{blog_id}] 콘텐츠 길이: {len(content)}자")
 
+    # ── 품질 검수 게이트 ──
+    issues = _content_quality_gate(content, title, blog_id)
+    if issues:
+        _log(f"[{blog_id}] ⛔ 품질 검수 실패 — 발행 중단 (수동 확인 필요)")
+        return False
+
     # 이미지 체크 (Tistory [##_Image 형식 포함)
     has_images = '<img' in content or '[##_Image' in content
     _log(f"[{blog_id}] 이미지 있음: {has_images}")
@@ -490,7 +550,7 @@ def _tistory_check_and_fix(page, blog_id: str, post_id: str):
         slug = re.sub(r'[^\w가-힣]', '-', title.strip()).strip('-')[:30]
         uploaded = 0
         for i in range(1, 4):
-            fp = _make_image(title, f"{blog_id}-{slug}-{i}.jpg")
+            fp = _make_image(title, f"{blog_id}-{slug}-{i}.jpg", blog_id=blog_id, title=title if i == 1 else "")
             if fp:
                 if i == 1:
                     page.evaluate("""() => {
@@ -511,10 +571,20 @@ def _tistory_check_and_fix(page, blog_id: str, post_id: str):
     if not has_adsense:
         _log(f"[{blog_id}] 애드센스 없음 → 서식 삽입 중...")
         # 에디터 중간 위치로 커서 이동 후 삽입
+        # 이미지 직후 빈 p 제외, 텍스트가 있는 단락 기준으로 중간 선택
         page.evaluate("""() => {
             const ed = tinymce.activeEditor;
             const body = ed.getBody();
-            const paras = body.querySelectorAll('p, h2, h3');
+            const allParas = [...body.querySelectorAll('p, h2, h3')];
+            // 텍스트가 있고, 바로 앞 형제가 figure/이미지가 아닌 단락만 추출
+            const textParas = allParas.filter(el => {
+                const txt = el.innerText.trim();
+                if (txt.length < 10) return false;  // 빈 단락 제외
+                const prev = el.previousElementSibling;
+                if (prev && (prev.tagName === 'FIGURE' || prev.querySelector('img'))) return false;  // 이미지 직후 제외
+                return true;
+            });
+            const paras = textParas.length >= 3 ? textParas : allParas;
             if (paras.length > 2) {
                 const mid = Math.floor(paras.length / 2);
                 ed.selection.select(paras[mid], true);
@@ -699,7 +769,7 @@ def publish_triplog_draft() -> bool:
         _log("[triplog] 이미지 없음 → loremflickr 생성 중...")
         slug = re.sub(r'[^\w가-힣]', '-', title.strip()).strip('-')[:40]
         for i in range(1, 3):
-            fp = _make_image(title, f"{slug}-img{i}.jpg")
+            fp = _make_image(title, f"{slug}-img{i}.jpg", blog_id="triplog", title=title if i == 1 else "")
             if fp:
                 img_url, _ = _wp_upload_image_with_id(TRIPLOG_URL, auth, fp, alt=title, on_log=_log)
                 if img_url:
@@ -1122,8 +1192,16 @@ def publish_naver_draft(blog_id="salim1su") -> bool:
 
         # 콘텐츠 확인
         info = _naver_check_editor_content(page)
-        _log(f"[{blog_id}] 제목: {info.get('title','?')}")
+        naver_title = info.get('title', '')
+        _log(f"[{blog_id}] 제목: {naver_title}")
         _log(f"[{blog_id}] 이미지: {info.get('hasImages')}, 글자수: {info.get('length','?')}")
+
+        # 에디터 텍스트에서도 품질 검수 (마커 잔재 등)
+        naver_text = page.evaluate("() => document.body.innerText || ''")
+        issues = _content_quality_gate(naver_text, naver_title, blog_id)
+        if issues:
+            _log(f"[{blog_id}] ⛔ 품질 검수 실패 — 발행 중단 (수동 확인 필요)")
+            return False
 
         # 글자수 체크
         if info.get('length', 0) < 1700:
