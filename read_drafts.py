@@ -153,6 +153,8 @@ def read_tistory_drafts(blog_id: str, max_drafts: int = 3):
                 'tags': tag_val,
                 'quality': quality,
                 'issues': issues,
+                'content_html': content,       # 전체 HTML (Claude Code 검수용)
+                'content_text': clean_text,    # 전체 텍스트
                 'preview': clean_text[:800],
             }
             drafts.append(draft_info)
@@ -170,29 +172,143 @@ def read_tistory_drafts(blog_id: str, max_drafts: int = 3):
         pw.stop()
 
 
+def read_wp_drafts(blog_id: str):
+    """WordPress(baremi542, triplog) REST API로 draft 읽기"""
+    import urllib.request, ssl, base64
+    from dotenv import load_dotenv
+    import os
+    load_dotenv(Path(__file__).parent / ".env")
+
+    site_map = {
+        "baremi542": ("https://baremi542.com", "WP_USER", "WP_APP_PASSWORD"),
+        "triplog":   ("https://app.baremi542.com", "TRIPLOG_WP_USER", "TRIPLOG_WP_APP_PASSWORD"),
+    }
+    site_url, user_env, pass_env = site_map[blog_id]
+    user = os.getenv(user_env, "")
+    pw   = os.getenv(pass_env, "")
+    if not user or not pw:
+        _log(f"[{blog_id}] WP 인증 정보 없음")
+        return []
+
+    token = base64.b64encode(f"{user}:{pw}".encode()).decode()
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+    try:
+        req = urllib.request.Request(
+            f"{site_url}/wp-json/wp/v2/posts?status=draft&per_page=5&orderby=modified&order=desc",
+            headers={"Authorization": f"Basic {token}", "User-Agent": "Mozilla/5.0"}
+        )
+        data = json.loads(urllib.request.urlopen(req, timeout=15, context=ctx).read())
+    except Exception as e:
+        _log(f"[{blog_id}] WP API 오류: {e}")
+        return []
+
+    drafts = []
+    for post in data:
+        content_html = post.get("content", {}).get("rendered", "")
+        clean_text = re.sub(r'<[^>]+>', '', content_html)
+        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+        char_count  = len(clean_text)
+        img_count   = len(re.findall(r'<img\s', content_html))
+        title       = post.get("title", {}).get("rendered", "")
+
+        issues = []
+        quality = "✓"
+        if char_count < 1700:
+            issues.append(f"글자수 부족({char_count}자)"); quality = "✗"
+        if img_count < 3:
+            issues.append(f"이미지 부족({img_count}개)"); quality = "⚠" if quality == "✓" else quality
+        md_markers = re.findall(r'\*\*[^*]+\*\*|^#{1,3} ', content_html, re.MULTILINE)
+        if md_markers:
+            issues.append(f"마크다운 잔재({len(md_markers)}개)"); quality = "⚠" if quality == "✓" else quality
+        for marker in ["[검증 필요]", "[출처 필요]", "[사실 확인]", "{{", "===이미지==="]:
+            if marker in content_html:
+                issues.append(f"내부마커({marker})"); quality = "✗"; break
+
+        draft = {
+            "post_id":     post["id"],
+            "title":       title,
+            "char_count":  char_count,
+            "img_count":   img_count,
+            "quality":     quality,
+            "issues":      issues,
+            "content_html": content_html,
+            "content_text": clean_text,
+            "preview":     clean_text[:800],
+        }
+        drafts.append(draft)
+        _log(f"  {quality} [{post['id']}] {title} ({char_count}자, 이미지{img_count}개)")
+        if issues:
+            _log(f"     → {', '.join(issues)}")
+        _log(f"     미리보기: {clean_text[:200]}")
+    return drafts
+
+
+def read_naver_drafts(blog_id: str):
+    """네이버 블로그 draft 상태를 DB에서 확인 (Playwright 없이)"""
+    try:
+        from keyword_engine.db_handler import _conn
+        with _conn() as db:
+            rows = db.execute(
+                "SELECT keyword, updated_at FROM keyword_blog_status "
+                "WHERE blog_id=? AND status='draft_saved' ORDER BY updated_at DESC LIMIT 5",
+                (blog_id,)
+            ).fetchall()
+        if not rows:
+            _log(f"[{blog_id}] draft_saved 없음")
+            return []
+        drafts = []
+        for kw, updated_at in rows:
+            _log(f"  [{blog_id}] draft_saved: '{kw}' ({updated_at})")
+            drafts.append({"keyword": kw, "updated_at": updated_at,
+                           "note": "네이버는 publish_drafts.py로 직접 검수 필요"})
+        return drafts
+    except Exception as e:
+        _log(f"[{blog_id}] DB 조회 오류: {e}")
+        return []
+
+
 if __name__ == "__main__":
     target = sys.argv[1] if len(sys.argv) > 1 else 'all'
-
     results = {}
 
-    if target in ('all', 'goodisak'):
-        results['goodisak'] = read_tistory_drafts('goodisak', max_drafts=5)
+    TISTORY_BLOGS = ["goodisak", "nolja100", "woll100", "phn0502"]
+    WP_BLOGS      = ["baremi542", "triplog"]
+    NAVER_BLOGS   = ["salim1su", "me1091"]
 
-    if target in ('all', 'nolja100'):
-        results['nolja100'] = read_tistory_drafts('nolja100', max_drafts=5)
+    for blog_id in TISTORY_BLOGS:
+        if target in ('all', blog_id):
+            _log(f"\n=== {blog_id} (Tistory) ===")
+            results[blog_id] = read_tistory_drafts(blog_id, max_drafts=3)
+
+    for blog_id in WP_BLOGS:
+        if target in ('all', blog_id):
+            _log(f"\n=== {blog_id} (WordPress) ===")
+            results[blog_id] = read_wp_drafts(blog_id)
+
+    for blog_id in NAVER_BLOGS:
+        if target in ('all', blog_id):
+            _log(f"\n=== {blog_id} (Naver) ===")
+            results[blog_id] = read_naver_drafts(blog_id)
 
     # 요약 출력
     _log("\n========== 임시저장 글 요약 ==========")
+    total = 0
     for blog_id, drafts in results.items():
-        _log(f"\n[{blog_id}] {len(drafts)}개 확인")
-        for d in drafts:
-            _log(f"  {d['quality']} {d['title']} ({d['char_count']}자, 이미지{d['img_count']}개)")
-            if d['issues']:
-                _log(f"     → {', '.join(d['issues'])}")
+        if drafts:
+            total += len(drafts)
+            _log(f"\n[{blog_id}] {len(drafts)}개")
+            for d in drafts:
+                title = d.get('title') or d.get('keyword', '?')
+                q = d.get('quality', '-')
+                cc = d.get('char_count', '-')
+                ic = d.get('img_count', '-')
+                _log(f"  {q} {title} ({cc}자, 이미지{ic}개)")
+                if d.get('issues'):
+                    _log(f"     → {', '.join(d['issues'])}")
+    _log(f"\n총 {total}개 임시저장 글 발견")
 
-    # JSON 저장
+    # JSON 저장 (Claude Code가 읽어서 검수에 활용)
     out = Path("draft_review.json")
-    save_data = {k: [{kk: vv for kk, vv in d.items() if kk != 'preview'} for d in v]
-                 for k, v in results.items()}
-    out.write_text(json.dumps(save_data, ensure_ascii=False, indent=2))
-    _log(f"\n결과 저장: {out}")
+    out.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    _log(f"결과 저장: {out} (Claude Code 검수용)")
