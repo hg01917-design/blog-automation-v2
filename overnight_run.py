@@ -127,6 +127,8 @@ def _extract_core_words(keyword):
         # 여행/블로그 자주 쓰는 수식어
         '코스', '여행', '일정', '동선', '정복', '완주', '완전', '정보',
         '소개', '총정리', '핵심', '필수', '최신', '2026', '2025',
+        # 교통/공항 관련 일반 수식어 (이것만으로 중복 판정 금지)
+        '시간표', '요금', '노선', '운행', '탑승', '예약',
     }
     words = keyword.split()
     core = [w for w in words if len(w) >= 2 and w not in STOP_WORDS]
@@ -165,8 +167,16 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
         for ek in existing_keywords:
             ek_core = _extract_core_words(ek)
             ek_main = ek_core[0] if ek_core else ek.split()[0]
-            # ① 메인키워드 일치 → 즉시 중복 (예: "가스레인지 청소" vs "가스레인지 청소 방법")
+            # ① 메인키워드 일치 → 중복 판단 (단, 3글자 이하 장소명이 첫 단어인 경우 추가 단어도 겹쳐야 함)
+            # 예: "가스레인지 청소" vs "가스레인지 청소 방법" → 중복 O
+            # 반례: "서울 김포공항 시간표" vs "서울 인천공항 시간표" → 첫 단어만 같고 내용은 달라서 중복 X
             if main_kw == ek_main:
+                if len(core_words) >= 3 or len(main_kw) <= 2:
+                    # 짧은 장소명(서울, 인천, 부산 등) 또는 키워드가 길면
+                    # 2번째 핵심어도 일치해야 중복으로 판정
+                    # 예: "서울 김포공항" vs "서울 인천공항" → 2번째가 다르면 중복 X
+                    if len(ek_core) >= 2 and len(core_words) >= 2 and core_words[1] != ek_core[1]:
+                        continue  # 2번째 핵심어 다름 → 중복 아님
                 _log(f"[유사문서] ⚠ DB 메인키워드 중복: '{ek}' (메인: '{main_kw}')")
                 return True, ek
             # ② 핵심 단어 절반 이상 겹치면 중복
@@ -690,12 +700,46 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
                     body_m = re.search(r"===본문===\s*\n(.*?)\n*===본문끝===", raw, re.DOTALL)
                     tag_m = re.search(r"===태그===\s*\n(.*?)\n*===태그끝===", raw, re.DOTALL)
                     img_m = re.search(r"===이미지===\s*\n(.*?)\n*===이미지끝===", raw, re.DOTALL)
+                    if not img_m:
+                        img_m = re.search(r"===이미지===\s*(.*?)\s*===이미지끝===", raw, re.DOTALL)
                     if title_m:
                         title = _truncate_title(title_m.group(1).strip().split('\n')[0].strip(), max_len=40)
                     body = body_m.group(1).strip() if body_m else body  # body2 미정의 방지
                     if tag_m:
                         tag_line = tag_m.group(1).strip().split('\n')[0].strip()
                         tags = [t.strip() for t in tag_line.split(",") if t.strip()]
+                    # 이미지 목록도 재생성 결과에서 업데이트 (핵심 버그 수정: 텍스트와 이미지 불일치 방지)
+                    if img_m:
+                        new_images = []
+                        img_text2 = img_m.group(1)
+                        for m2 in re.finditer(
+                            r"\[이미지\s*(\d+)\][^\n]*\n.*?(?:Gemini\s*)?프롬프트:\s*(.+?)\n.*?파일명:\s*(.+?)\n.*?alt:\s*(.+?)(?=\[이미지|\Z)",
+                            img_text2, re.DOTALL,
+                        ):
+                            new_images.append({
+                                "index": int(m2.group(1)),
+                                "prompt": m2.group(2).strip(),
+                                "filename": m2.group(3).strip(),
+                                "alt": m2.group(4).strip(),
+                            })
+                        if not new_images:
+                            for block in re.findall(r"\[이미지\s*\d+\][^\[]+", img_text2, re.DOTALL):
+                                n_m2 = re.search(r"\[이미지\s*(\d+)\]", block)
+                                p_m2 = re.search(r"프롬프트:\s*(.+)", block)
+                                f_m2 = re.search(r"파일명:\s*(.+)", block)
+                                a_m2 = re.search(r"alt:\s*(.+)", block)
+                                if n_m2 and p_m2:
+                                    new_images.append({
+                                        "index": int(n_m2.group(1)),
+                                        "prompt": p_m2.group(1).strip(),
+                                        "filename": f_m2.group(1).strip() if f_m2 else f"image-{n_m2.group(1)}.jpg",
+                                        "alt": a_m2.group(1).strip() if a_m2 else "",
+                                    })
+                        if new_images:
+                            log(f"[검수] 재생성 이미지 목록 업데이트: {len(images)}개 → {len(new_images)}개")
+                            images = new_images
+                        else:
+                            log(f"[검수] ⚠ 재생성 이미지 파싱 실패 — 원본 이미지 목록 유지 (불일치 위험)")
                     body = re.sub(r'\n*항목기준충족.*$', '', body, flags=re.DOTALL).strip()
                     body = re.sub(r'\n*===검수===.*?(?:===검수끝===|$)', '', body, flags=re.DOTALL).strip()
                     body = re.sub(r'\n[✅❌☑️].{0,60}(?:\n[✅❌☑️].{0,60}){2,}', '', body).strip()
