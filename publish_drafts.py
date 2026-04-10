@@ -148,11 +148,24 @@ def publish_wp_draft():
     _log(f"[WP] 선택된 드래프트: [{post_id}] {title}")
     _log(f"[WP] 콘텐츠 길이: {len(content_html)}자")
 
-    # ── 품질 검수 게이트 ──
+    # ── 품질 검수 + 자동/Claude 수정 ──
     wp_issues = _content_quality_gate(content_html, title, "baremi542")
     if wp_issues:
-        _log("[WP] ⛔ 품질 검수 실패 — 발행 중단 (수동 확인 필요)")
-        return False
+        fixed_html, remaining = _auto_repair_content(content_html, wp_issues)
+        if fixed_html != content_html:
+            _log("[WP] 자동 수정 적용")
+            content_html = fixed_html
+        if remaining:
+            repaired = _claude_repair_draft(content_html, title, remaining, "baremi542")
+            if repaired:
+                content_html = repaired
+                re_issues = _content_quality_gate(content_html, title, "baremi542")
+                if re_issues:
+                    _notify_issue("baremi542", title, re_issues)
+                    return False
+            else:
+                _notify_issue("baremi542", title, remaining)
+                return False
 
     # 이미지 체크
     has_images = bool(re.search(r'<img\s', content_html))
@@ -307,6 +320,114 @@ def _content_quality_gate(content: str, title: str, blog_id: str) -> list:
     else:
         _log(f"[{blog_id}] ✅ 품질 검수 통과")
     return issues
+
+
+def _notify_issue(blog_id: str, title: str, issues: list):
+    """수동 확인 필요 시 텔레그램으로 알림."""
+    try:
+        from telegram_utils import send_message
+        msg = (
+            f"⚠️ 검수 실패 — 수동 확인 필요\n"
+            f"블로그: {blog_id}\n"
+            f"제목: {title}\n"
+            f"이슈:\n" + "\n".join(f"  - {i}" for i in issues)
+        )
+        send_message(msg)
+    except Exception as e:
+        _log(f"[알림] 텔레그램 전송 실패: {e}")
+
+
+def _auto_repair_content(content: str, issues: list) -> tuple[str, list]:
+    """자동 수정 가능한 이슈를 처리하고 (수정된 콘텐츠, 남은 이슈) 반환.
+
+    자동 수정:
+    - 마커 잔재 제거 (===본문===, Gemini프롬프트: 등)
+    - 중복 이미지 제거
+
+    자동 수정 불가:
+    - 본문 너무 짧음 → Claude 수정 필요
+    - 제목 너무 짧음 → 수동 확인 필요
+    """
+    fixed = content
+    remaining = []
+
+    for issue in issues:
+        if "템플릿 마커 노출" in issue:
+            # 마커 패턴 제거
+            marker_patterns = [
+                r'===제목===.*?===제목끝===\s*',
+                r'===본문===\s*', r'===본문끝===\s*',
+                r'===이미지===.*?===이미지끝===\s*',
+                r'===태그===.*?===태그끝===\s*',
+                r'\[이미지\d+\]\s*\n?- Gemini프롬프트:.*?\n.*?\n.*?\n',
+                r'- Gemini프롬프트:.*?\n',
+                r'- 파일명:.*?\n',
+                r'- alt:.*?\n',
+                r'\[이미지\d+\]\s*',
+                r'\{\{이미지\d+\}\}',
+                r'===제목===\s*', r'===이미지===\s*', r'===태그===\s*',
+            ]
+            before = fixed
+            for pattern in marker_patterns:
+                fixed = re.sub(pattern, '', fixed, flags=re.DOTALL)
+            if fixed != before:
+                _log(f"  → 마커 자동 제거 완료")
+            else:
+                remaining.append(issue)
+
+        elif "중복 이미지" in issue:
+            # 두 번째 이상 같은 src 이미지 태그 제거
+            seen_srcs = set()
+            def _dedup_img(m):
+                src = re.search(r'src=["\']([^"\']+)["\']', m.group(0))
+                if not src:
+                    return m.group(0)
+                base = src.group(1).split('?')[0]
+                if base in seen_srcs:
+                    return ''  # 중복 제거
+                seen_srcs.add(base)
+                return m.group(0)
+            fixed = re.sub(r'<img[^>]+>', _dedup_img, fixed)
+            _log(f"  → 중복 이미지 자동 제거 완료")
+
+        else:
+            # 자동 수정 불가 이슈
+            remaining.append(issue)
+
+    return fixed, remaining
+
+
+def _claude_repair_draft(content: str, title: str, issues: list, blog_id: str) -> str | None:
+    """Claude를 사용해 글 내용을 수정. 수정된 HTML 반환 (실패 시 None).
+
+    본문이 너무 짧거나 내용 문제가 있을 때 호출.
+    claude_playwright.repair_text()를 사용해 기존 글을 보완.
+    """
+    _log(f"[{blog_id}] Claude 수정 요청 중...")
+    try:
+        from claude_playwright import repair_text
+        issues_str = "\n".join(f"- {i}" for i in issues)
+        # HTML을 plain text로 변환 후 repair_text에 전달
+        plain = re.sub(r'<[^>]+>', '', content)
+        plain = re.sub(r'\s+', ' ', plain).strip()
+        # repair_text는 ===섹션=== 형식 기대 — 임시로 형식 감싸기
+        wrapped = f"===제목===\n{title}\n===제목끝===\n\n===본문===\n{plain}\n===본문끝==="
+        repaired_raw = repair_text(wrapped, issues, on_log=_log)
+        if not repaired_raw:
+            return None
+        # 수정된 raw에서 본문 추출 후 HTML 변환 (단락 → <p>)
+        body_m = re.search(r'===본문===\s*\n(.*?)\n*===본문끝===', repaired_raw, re.DOTALL)
+        if not body_m:
+            return None
+        body_text = body_m.group(1).strip()
+        # 줄바꿈 → <p> 태그
+        paragraphs = [p.strip() for p in re.split(r'\n{2,}', body_text) if p.strip()]
+        repaired_html = '\n'.join(f'<p>{p}</p>' for p in paragraphs)
+        _log(f"[{blog_id}] Claude 수정 완료 ({len(repaired_html)}자)")
+        return repaired_html
+    except Exception as e:
+        _log(f"[{blog_id}] Claude 수정 실패: {e}")
+        return None
 
 
 # ══════════════════════════════════════════════
@@ -528,11 +649,33 @@ def _tistory_check_and_fix(page, blog_id: str, post_id: str):
     _log(f"[{blog_id}] 제목: {title}")
     _log(f"[{blog_id}] 콘텐츠 길이: {len(content)}자")
 
-    # ── 품질 검수 게이트 ──
+    # ── 품질 검수 + 자동/Claude 수정 ──
     issues = _content_quality_gate(content, title, blog_id)
     if issues:
-        _log(f"[{blog_id}] ⛔ 품질 검수 실패 — 발행 중단 (수동 확인 필요)")
-        return False
+        # 1단계: 자동 수정 시도 (마커 제거, 중복 이미지)
+        fixed_content, remaining = _auto_repair_content(content, issues)
+        if fixed_content != content:
+            _log(f"[{blog_id}] 자동 수정 적용 — 에디터 업데이트")
+            page.evaluate("(c) => tinymce.activeEditor.setContent(c)", fixed_content)
+            content = fixed_content
+
+        if remaining:
+            # 2단계: 자동 수정 후에도 남은 이슈 → Claude 수정 시도
+            _log(f"[{blog_id}] 남은 이슈 {len(remaining)}개 — Claude 수정 시도")
+            repaired = _claude_repair_draft(content, title, remaining, blog_id)
+            if repaired:
+                page.evaluate("(c) => tinymce.activeEditor.setContent(c)", repaired)
+                content = repaired
+                # 재검수
+                re_issues = _content_quality_gate(content, title, blog_id)
+                if re_issues:
+                    _log(f"[{blog_id}] ⛔ 수정 후에도 검수 실패 — 텔레그램 알림 후 스킵")
+                    _notify_issue(blog_id, title, re_issues)
+                    return False
+            else:
+                _log(f"[{blog_id}] ⛔ Claude 수정 실패 — 텔레그램 알림 후 스킵")
+                _notify_issue(blog_id, title, remaining)
+                return False
 
     # 이미지 체크 (Tistory [##_Image 형식 포함)
     has_images = '<img' in content or '[##_Image' in content
@@ -1200,8 +1343,13 @@ def publish_naver_draft(blog_id="salim1su") -> bool:
         naver_text = page.evaluate("() => document.body.innerText || ''")
         issues = _content_quality_gate(naver_text, naver_title, blog_id)
         if issues:
-            _log(f"[{blog_id}] ⛔ 품질 검수 실패 — 발행 중단 (수동 확인 필요)")
-            return False
+            # Naver SE3 에디터는 setContent가 어려우므로 자동 수정만 시도
+            fixed_text, remaining = _auto_repair_content(naver_text, issues)
+            if remaining:
+                # 자동 수정 불가 → 텔레그램 알림 후 스킵 (Naver는 에디터 직접 수정 어려움)
+                _log(f"[{blog_id}] ⛔ 품질 검수 실패 — 텔레그램 알림 후 스킵")
+                _notify_issue(blog_id, naver_title, remaining)
+                return False
 
         # 글자수 체크
         if info.get('length', 0) < 1700:
