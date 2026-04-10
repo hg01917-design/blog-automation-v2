@@ -163,7 +163,7 @@ end tell
 def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int = 3,
                           on_log=None) -> bool:
     """Tistory 이미지 업로드.
-    이미지버튼(mce-i-image) 클릭 → 사진 메뉴 → Finder 열림 → AppleScript로 파일 선택
+    이미지버튼(mce-i-image) 클릭 → 사진 메뉴 → file_chooser로 파일 선택 (AppleScript 불필요)
     """
     def _log(msg):
         if on_log:
@@ -183,20 +183,17 @@ def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int =
             }""")
             time.sleep(0.8)
 
-            # 2. "사진" 서브메뉴 클릭 → Finder 열림
-            page.evaluate("""() => {
-                const items = [...document.querySelectorAll('.mce-tistory-attach-item')];
-                const el = items.find(e => e.textContent.trim() === '사진');
-                if (el) el.click();
-            }""")
-            time.sleep(1.0)  # Finder 열릴 때까지 대기
-
-            # 3. AppleScript로 파일 선택 (Cmd+Shift+G → 경로 입력 → Enter → Enter)
-            ok = _select_file_in_finder(filepath)
-            if not ok:
-                raise Exception("AppleScript 파일 선택 실패")
+            # 2. "사진" 서브메뉴 클릭 + file_chooser 인터셉트
+            with page.expect_file_chooser(timeout=5000) as fc_info:
+                page.evaluate("""() => {
+                    const items = [...document.querySelectorAll('.mce-tistory-attach-item')];
+                    const el = items.find(e => e.textContent.trim() === '사진');
+                    if (el) el.click();
+                }""")
+            fc_info.value.set_files(filepath)
             time.sleep(4)
-            # 업로드된 마지막 img에 alt 설정 (TinyMCE)
+
+            # 3. 업로드된 마지막 img에 alt 설정 (TinyMCE)
             if alt:
                 try:
                     page.evaluate("""(altText) => {
@@ -873,12 +870,10 @@ def _naver_upload_image(page, filepath, log_fn=None, alt: str = ""):
         return False
 
     try:
-        # 사진 버튼 클릭 → Finder 열림
-        photo_btn.click(timeout=5000)
-        time.sleep(1.0)  # Finder 열릴 때까지 대기
-
-        # AppleScript로 파일 선택 (Cmd+Shift+G → 경로 입력 → Enter → Enter)
-        _select_file_in_finder(filepath)
+        # 사진 버튼 클릭 + file_chooser 인터셉트 (Finder 열지 않음)
+        with page.expect_file_chooser(timeout=8000) as fc_info:
+            photo_btn.click(timeout=5000)
+        fc_info.value.set_files(filepath)
         time.sleep(4)
 
         # 이미지 로드 확인
