@@ -344,7 +344,7 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
                             SELECT 1 FROM keyword_blog_status kbs
                             WHERE kbs.keyword = k.keyword
                               AND kbs.blog_id = ?
-                              AND kbs.status IN ('published', 'failed', 'in_progress')
+                              AND kbs.status IN ('published', 'failed', 'in_progress', 'draft_saved')
                           )
                         ORDER BY k.score DESC LIMIT 1
                         """,
@@ -360,7 +360,7 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
                             SELECT 1 FROM keyword_blog_status kbs
                             WHERE kbs.keyword = k.keyword
                               AND kbs.blog_id = ?
-                              AND kbs.status IN ('published', 'failed', 'in_progress')
+                              AND kbs.status IN ('published', 'failed', 'in_progress', 'draft_saved')
                           )
                         ORDER BY k.score DESC LIMIT 1
                         """,
@@ -375,7 +375,7 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
                         SELECT 1 FROM keyword_blog_status kbs
                         WHERE kbs.keyword = k.keyword
                           AND kbs.blog_id = ?
-                          AND kbs.status IN ('published', 'failed', 'in_progress')
+                          AND kbs.status IN ('published', 'failed', 'in_progress', 'draft_saved')
                       )
                     ORDER BY k.score DESC LIMIT 1
                     """,

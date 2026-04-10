@@ -1048,6 +1048,59 @@ def publish_tistory_draft(blog_id: str) -> bool:
                     return False
             _log(f"[nolja100] ✅ 여행 주제 확인: {title_val[:40]}")
 
+        # woll100: 교통 주제 아닌 글은 발행 금지
+        if blog_id == "woll100":
+            title_val = ""
+            for sel in ['#post-title-inp', '#title', 'input[name="title"]']:
+                el = page.query_selector(sel)
+                if el:
+                    title_val = (el.input_value() or "").strip()
+                    if title_val:
+                        break
+            TRAFFIC_KW = ["공항", "버스", "리무진", "시외버스", "KTX", "기차", "지하철",
+                          "교통", "시간표", "요금", "노선", "정류장", "예매", "소요시간",
+                          "출발", "도착", "인천공항", "김포공항", "김해공항", "제주공항",
+                          "대구공항", "청주공항", "무안공항", "공항철도", "셔틀버스"]
+            is_traffic = any(kw in title_val for kw in TRAFFIC_KW)
+            if title_val and not is_traffic:
+                _log(f"[woll100] ⛔ 교통 주제 아님 (제목: {title_val[:40]}) → 스킵 (임시저장 삭제)")
+                try:
+                    del_links = page.query_selector_all('a.link_del, button.btn_del, [data-action="delete"]')
+                    if del_links:
+                        del_links[0].click()
+                        time.sleep(1)
+                except Exception:
+                    pass
+                return False
+            if title_val:
+                _log(f"[woll100] ✅ 교통 주제 확인: {title_val[:40]}")
+
+        # phn0502: 영화/OTT 주제 아닌 글은 발행 금지
+        if blog_id == "phn0502":
+            title_val = ""
+            for sel in ['#post-title-inp', '#title', 'input[name="title"]']:
+                el = page.query_selector(sel)
+                if el:
+                    title_val = (el.input_value() or "").strip()
+                    if title_val:
+                        break
+            MOVIE_KW = ["영화", "넷플릭스", "왓챠", "웨이브", "티빙", "OTT", "결말", "줄거리",
+                        "해석", "쿠키", "배우", "출연", "드라마", "시리즈", "애니", "액션",
+                        "로맨스", "스릴러", "공포", "신작", "장르", "추천", "평점", "명작"]
+            is_movie = any(kw in title_val for kw in MOVIE_KW)
+            if title_val and not is_movie:
+                _log(f"[phn0502] ⛔ 영화 주제 아님 (제목: {title_val[:40]}) → 스킵 (임시저장 삭제)")
+                try:
+                    del_links = page.query_selector_all('a.link_del, button.btn_del, [data-action="delete"]')
+                    if del_links:
+                        del_links[0].click()
+                        time.sleep(1)
+                except Exception:
+                    pass
+                return False
+            if title_val:
+                _log(f"[phn0502] ✅ 영화 주제 확인: {title_val[:40]}")
+
         # 공개 발행
         ok = _tistory_publish_private(page, blog_id)
         if ok:
