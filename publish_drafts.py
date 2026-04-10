@@ -43,6 +43,34 @@ BLOG_DOMAIN = {
     "phn0502":  "film.baremi542.com",
 }
 
+# ─── DB 상태 업데이트 ──────────────────────────
+def _mark_keyword_published(blog_id: str, title: str):
+    """발행 성공 후 keyword_blog_status 테이블을 draft_saved → published 로 업데이트."""
+    try:
+        import sqlite3 as _sqlite3
+        db = _sqlite3.connect("keyword_engine/engine.db")
+        rows = db.execute(
+            "SELECT keyword FROM keyword_blog_status WHERE blog_id=? AND status='draft_saved'",
+            (blog_id,)
+        ).fetchall()
+        db.close()
+        if not rows:
+            return
+        # 제목에 포함된 키워드 우선 매칭
+        matched = None
+        for (kw,) in rows:
+            if kw and kw in title:
+                matched = kw
+                break
+        if not matched:
+            matched = rows[0][0]  # 첫 번째 draft_saved 키워드로 폴백
+        from keyword_engine.db_handler import set_keyword_status
+        set_keyword_status(matched, "published", blog_id)
+        _log(f"[{blog_id}] DB 업데이트: '{matched}' → published")
+    except Exception as e:
+        _log(f"[{blog_id}] DB 업데이트 실패: {e}")
+
+
 # ─── 로그 ───────────────────────────────────────
 def _log(msg):
     ts = time.strftime("%H:%M:%S")
@@ -236,6 +264,8 @@ def publish_wp_draft():
     new_status = result.get("status", "?")
     new_link = result.get("link", "")
     _log(f"[WP] 발행 완료 → status={new_status}, link={new_link}")
+    if new_status == "publish":
+        _mark_keyword_published("baremi542", title)
     if new_link:
         from gsc_indexing import request_indexing
         request_indexing(new_link)
@@ -969,6 +999,8 @@ def publish_triplog_draft() -> bool:
     new_status = result.get("status", "")
     new_link = result.get("link", "")
     _log(f"[triplog] 발행 결과: {new_status} — {title}")
+    if new_status == "publish":
+        _mark_keyword_published("triplog", title)
     if new_link and new_status == "publish":
         from gsc_indexing import request_indexing
         request_indexing(new_link)
@@ -1009,6 +1041,15 @@ def publish_tistory_draft(blog_id: str) -> bool:
         # 이미지/애드센스 체크 및 보완
         if not _tistory_check_and_fix(page, blog_id, draft_id):
             return False
+
+        # 제목 읽기 (DB 업데이트용)
+        _draft_title = ""
+        for _sel in ['#post-title-inp', '#title', 'input[name="title"]', '.title-input']:
+            _el = page.query_selector(_sel)
+            if _el:
+                _draft_title = (_el.input_value() or "").strip()
+                if _draft_title:
+                    break
 
         # nolja100: 여행 주제 아닌 글은 발행 금지
         if blog_id == "nolja100":
@@ -1105,6 +1146,7 @@ def publish_tistory_draft(blog_id: str) -> bool:
         ok = _tistory_publish_private(page, blog_id)
         if ok:
             _log(f"[{blog_id}] ✓ 공개 발행 완료")
+            _mark_keyword_published(blog_id, _draft_title)
             # 색인 요청: 최신 발행글 URL 가져오기
             try:
                 time.sleep(3)
@@ -1453,6 +1495,7 @@ def publish_naver_draft(blog_id="salim1su") -> bool:
         ok = _naver_publish_public(page, category=cat)
         if ok:
             _log(f"[{blog_id}] ✓ 공개 발행 완료")
+            _mark_keyword_published(blog_id, naver_title)
             # 색인 요청: 발행 후 URL 캡처
             try:
                 time.sleep(3)
