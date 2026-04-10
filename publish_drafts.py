@@ -324,15 +324,26 @@ def _content_quality_gate(content: str, title: str, blog_id: str) -> list:
 
 def _notify_issue(blog_id: str, title: str, issues: list):
     """수동 확인 필요 시 텔레그램으로 알림."""
+    msg = (
+        f"⚠️ 검수 실패 — 수동 확인 필요\n"
+        f"블로그: {blog_id}\n"
+        f"제목: {title}\n"
+        f"이슈:\n" + "\n".join(f"  - {i}" for i in issues)
+    )
+    _log(f"[알림] {msg}")
     try:
-        from telegram_utils import send_message
-        msg = (
-            f"⚠️ 검수 실패 — 수동 확인 필요\n"
-            f"블로그: {blog_id}\n"
-            f"제목: {title}\n"
-            f"이슈:\n" + "\n".join(f"  - {i}" for i in issues)
-        )
-        send_message(msg)
+        import urllib.request as _ur, urllib.parse as _up, json as _json, ssl as _ssl
+        token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        if not token:
+            return
+        chat_id = "8674424194"
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = _json.dumps({"chat_id": chat_id, "text": msg}).encode()
+        ctx = _ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = _ssl.CERT_NONE
+        req = _ur.Request(url, data=data, headers={"Content-Type": "application/json"})
+        _ur.urlopen(req, timeout=10, context=ctx)
     except Exception as e:
         _log(f"[알림] 텔레그램 전송 실패: {e}")
 
