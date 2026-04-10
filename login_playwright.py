@@ -232,7 +232,7 @@ def login_naver(naver_id=None, on_log=None):
         # 기대 계정과 다를 경우 — ID 필드 지우고 직접 입력 (다중 네이버 계정 지원)
         if naver_id and current_id != naver_id:
             log(f"[2/4] ⚠ 계정 불일치: 자동완성={current_id}, 필요={naver_id} — ID 직접 입력 시도")
-            id_input.triple_click()
+            id_input.click(click_count=3)
             _rand_delay(page, 300, 500)
             id_input.press("Control+a")
             id_input.press("Backspace")
