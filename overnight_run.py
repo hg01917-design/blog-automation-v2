@@ -36,6 +36,15 @@ def save_log():
     log(f"로그 저장: {LOG_FILE}")
 
 
+def _ssl_ctx():
+    """SSL 인증서 검증 비활성화 컨텍스트 (자체 서명 인증서 대응용)"""
+    import ssl as _ssl
+    ctx = _ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = _ssl.CERT_NONE
+    return ctx
+
+
 # ─── 블로그 테마 적합성 검사 ───
 _BLOG_THEMES = {
     "nolja100": ["여행", "관광", "숙소", "맛집", "코스", "캠핑", "펜션", "호텔", "드라이브",
@@ -193,18 +202,23 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
         _wp_url = _wp_user = _wp_pass = ""
 
     if _wp_url and _wp_user:
-        # WordPress REST API로 유사 제목 검색
-        try:
-            import base64 as _b64, ssl as _ssl
-            _auth = _b64.b64encode(f"{_wp_user}:{_wp_pass}".encode()).decode()
-            _ctx = _ssl.create_default_context(); _ctx.check_hostname = False; _ctx.verify_mode = 0
-            _search_q = urllib.parse.urlencode({"search": " ".join(core_words[:3]), "per_page": 20, "status": "publish"})
-            _req = urllib.request.Request(
-                f"{_wp_url}/wp-json/wp/v2/posts?{_search_q}",
-                headers={"Authorization": f"Basic {_auth}"},
-            )
-            with urllib.request.urlopen(_req, timeout=10, context=_ctx) as _r:
-                _posts = json.loads(_r.read())
+        # WordPress REST API로 유사 제목 검색 (최대 2회 재시도)
+        import base64 as _b64
+        _auth = _b64.b64encode(f"{_wp_user}:{_wp_pass}".encode()).decode()
+        _search_q = urllib.parse.urlencode({"search": " ".join(core_words[:3]), "per_page": 20, "status": "publish"})
+        _req = urllib.request.Request(
+            f"{_wp_url}/wp-json/wp/v2/posts?{_search_q}",
+            headers={"Authorization": f"Basic {_auth}"},
+        )
+        _posts = None
+        for _attempt in range(2):
+            try:
+                with urllib.request.urlopen(_req, timeout=15, context=_ssl_ctx()) as _r:
+                    _posts = json.loads(_r.read())
+                break
+            except Exception as e:
+                _log(f"[유사문서] WP 검색 실패 (시도 {_attempt+1}/2): {e}")
+        if _posts is not None:
             for p in _posts:
                 title = re.sub(r'<[^>]+>', '', p.get("title", {}).get("rendered", ""))
                 match_count = sum(1 for w in core_words if w in title)
@@ -212,8 +226,6 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
                     _log(f"[유사문서] ⚠ WP 중복 발견: \"{title}\" (id={p['id']})")
                     return True, title
             _log(f"[유사문서] WP 검색 완료 — {len(_posts)}개 중 중복 없음")
-        except Exception as e:
-            _log(f"[유사문서] WP 검색 실패: {e}")
 
     elif blog_id in ("nolja100", "goodisak", "woll100", "phn0502"):
         # Tistory RSS로 최근 글 확인
@@ -226,13 +238,14 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
         rss_url = TISTORY_RSS.get(blog_id, "")
         if rss_url:
             try:
-                _ctx2 = __import__("ssl").create_default_context(); _ctx2.check_hostname = False; _ctx2.verify_mode = 0
+                _ctx2 = _ssl_ctx()
                 _rreq = urllib.request.Request(rss_url, headers={"User-Agent": "Mozilla/5.0"})
                 with urllib.request.urlopen(_rreq, timeout=10, context=_ctx2) as _r:
                     _rss = _r.read().decode("utf-8", errors="ignore")
                 _rtitles = re.findall(r'<title><!\[CDATA\[(.*?)\]\]></title>', _rss)
                 if not _rtitles:
                     _rtitles = re.findall(r'<title>(.*?)</title>', _rss)
+                _log(f"[유사문서] Tistory RSS {len(_rtitles)-1}개 제목 수집")
                 for t in _rtitles[1:21]:  # 첫 번째는 블로그 제목
                     t_clean = re.sub(r'<[^>]+>', '', t).strip()
                     match_count = sum(1 for w in core_words if w in t_clean)
@@ -288,11 +301,13 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
             if not titles:
                 titles = re.findall(r'class="pcol2"[^>]*>(.*?)</a>', html)
             clean_titles = [re.sub(r'<[^>]+>', '', t).strip() for t in titles if len(t) > 5]
+            _log(f"[유사문서] Naver 검색 결과 {len(clean_titles)}개")
             for t in clean_titles[:10]:
                 match_count = sum(1 for w in core_words if w in t)
                 if match_count >= 2 or (len(core_words) == 1 and match_count >= 1):
                     _log(f"[유사문서] ⚠ Naver 중복: \"{t}\"")
                     return True, t
+            _log(f"[유사문서] Naver 검색 완료 — 중복 없음")
         except Exception as e:
             _log(f"[유사문서] Naver 검색 실패: {e}")
 
@@ -361,12 +376,8 @@ def _inject_internal_links(body: str, blog_id: str, on_log=None) -> str:
         return body
     rss_url, base_url = _BLOG_RSS[blog_id]
     try:
-        import ssl as _ssl
-        ctx = _ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = 0
         req = urllib.request.Request(rss_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=8, context=ctx) as _r:
+        with urllib.request.urlopen(req, timeout=8, context=_ssl_ctx()) as _r:
             rss = _r.read().decode("utf-8", errors="ignore")
         # 제목 + 링크 파싱
         items = re.findall(r'<item>.*?<title><!\[CDATA\[(.*?)\]\]></title>.*?<link>(.*?)</link>.*?</item>', rss, re.DOTALL)
@@ -742,14 +753,15 @@ def _run_image_and_post(blog_id, keyword, title, body, tags, images):
         _blog_img_dir.mkdir(parents=True, exist_ok=True)
         extra_prompts = [keyword, f"{keyword} 관련 정보", f"{keyword} 생활 팁"]
         for i in range(len(image_paths), MIN_IMAGES):
+            new_idx = len(images) + 1
             kw_fb = extra_prompts[i % len(extra_prompts)]
-            fname = f"fallback_{blog_id}_{i+1}.jpg"
+            fname = f"fallback_{blog_id}_{new_idx}.jpg"
             enh = _enhance_prompt(blog_id, kw_fb)
             fp = str(_blog_img_dir / fname)
             ok = _pollinations_image(enh, fp, on_log=log)
             if ok:
-                images.append({"index": len(images)+1, "prompt": kw_fb, "filename": fname, "alt": kw_fb})
-                image_paths[fname] = fp
+                images.append({"index": new_idx, "prompt": kw_fb, "filename": fname, "alt": kw_fb})
+                image_paths[new_idx] = fp  # poster.py가 기대하는 {index: filepath} 형식
         log(f"[파이프라인] 이미지 보충 후 총 {len(image_paths)}개")
 
     if len(image_paths) < MIN_IMAGES:
