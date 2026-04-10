@@ -129,6 +129,15 @@ def connect_cdp(on_log=None):
     return pw, browser
 
 
+def _apply_stealth(page):
+    """Playwright-stealth 적용 — 봇 감지 시그니처 숨기기"""
+    try:
+        from playwright_stealth import Stealth
+        Stealth().apply_stealth_sync(page)
+    except Exception:
+        pass
+
+
 def get_or_create_page(browser, url_contains=None, navigate_to=None):
     """기존 탭에서 url_contains 매칭 탭을 찾거나, 없으면 첫 번째 기존 탭 반환.
     navigate_to가 지정된 경우에만 새 탭 생성."""
@@ -136,6 +145,7 @@ def get_or_create_page(browser, url_contains=None, navigate_to=None):
         for ctx in browser.contexts:
             for p in ctx.pages:
                 if url_contains in p.url:
+                    _apply_stealth(p)
                     return p
 
     context = browser.contexts[0] if browser.contexts else browser.new_context()
@@ -143,9 +153,12 @@ def get_or_create_page(browser, url_contains=None, navigate_to=None):
     # navigate_to 없이 호출 시: 기존 탭 재사용 (새 탭 열지 않음)
     if not navigate_to:
         if context.pages:
-            return context.pages[0]
+            page = context.pages[0]
+            _apply_stealth(page)
+            return page
 
     page = context.new_page()
+    _apply_stealth(page)
     if navigate_to:
         page.goto(navigate_to, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)
