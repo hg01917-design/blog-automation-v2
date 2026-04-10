@@ -132,10 +132,38 @@ def _get_adsense_html():
 # ─────────────────────────────────────────────
 # 헬퍼: Tistory 이미지 파일 업로드 (파일 선택 창 방식)
 # ─────────────────────────────────────────────
+def _select_file_in_finder(filepath: str) -> bool:
+    """macOS 파일 피커 다이얼로그에서 파일 선택 (사람처럼).
+
+    Finder가 열린 상태에서 Cmd+Shift+G → 전체 경로 입력 → Enter → Enter
+    다이얼로그가 자연스럽게 닫히며 파일 선택 완료.
+    """
+    import subprocess as _sp
+    # 파일 경로에서 특수문자 이스케이프
+    safe_path = filepath.replace('"', '\\"')
+    script = f'''
+tell application "System Events"
+    delay 0.8
+    keystroke "g" using {{command down, shift down}}
+    delay 0.5
+    keystroke "{safe_path}"
+    delay 0.3
+    key code 36
+    delay 0.5
+    key code 36
+end tell
+'''
+    try:
+        result = _sp.run(["osascript", "-e", script], capture_output=True, timeout=8)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int = 3,
                           on_log=None) -> bool:
     """Tistory 이미지 업로드.
-    이미지버튼(mce-i-image) 클릭 → 사진 메뉴 → input#openFile set_input_files
+    이미지버튼(mce-i-image) 클릭 → 사진 메뉴 → Finder 열림 → AppleScript로 파일 선택
     """
     def _log(msg):
         if on_log:
@@ -155,26 +183,19 @@ def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int =
             }""")
             time.sleep(0.8)
 
-            # 2. "사진" 서브메뉴 클릭 — expect_file_chooser로 파일 피커 인터셉트
-            # (Finder가 뜨기 전에 가로채므로 OS 파일 다이얼로그가 열리지 않음)
-            with page.expect_file_chooser(timeout=5000) as fc_info:
-                page.evaluate("""() => {
-                    const items = [...document.querySelectorAll('.mce-tistory-attach-item')];
-                    const el = items.find(e => e.textContent.trim() === '사진');
-                    if (el) el.click();
-                }""")
-            file_chooser = fc_info.value
-            file_chooser.set_files(filepath)
+            # 2. "사진" 서브메뉴 클릭 → Finder 열림
+            page.evaluate("""() => {
+                const items = [...document.querySelectorAll('.mce-tistory-attach-item')];
+                const el = items.find(e => e.textContent.trim() === '사진');
+                if (el) el.click();
+            }""")
+            time.sleep(1.0)  # Finder 열릴 때까지 대기
+
+            # 3. AppleScript로 파일 선택 (Cmd+Shift+G → 경로 입력 → Enter → Enter)
+            ok = _select_file_in_finder(filepath)
+            if not ok:
+                raise Exception("AppleScript 파일 선택 실패")
             time.sleep(4)
-            # 혹시 남은 Finder 창 닫기 (보험용)
-            try:
-                import subprocess as _sp2
-                _sp2.run(
-                    ["osascript", "-e", 'tell application "Finder" to close every window'],
-                    capture_output=True, timeout=3
-                )
-            except Exception:
-                pass
             _log(f"[이미지업로드] 업로드 완료 (시도 {attempt})")
             return True
 
@@ -846,21 +867,13 @@ def _naver_upload_image(page, filepath, log_fn=None):
         return False
 
     try:
-        # file chooser 이벤트 감지 + 사진 버튼 클릭
-        with page.expect_file_chooser(timeout=10000) as fc_info:
-            photo_btn.click(timeout=5000)
-        file_chooser = fc_info.value
-        file_chooser.set_files(filepath)
+        # 사진 버튼 클릭 → Finder 열림
+        photo_btn.click(timeout=5000)
+        time.sleep(1.0)  # Finder 열릴 때까지 대기
+
+        # AppleScript로 파일 선택 (Cmd+Shift+G → 경로 입력 → Enter → Enter)
+        _select_file_in_finder(filepath)
         time.sleep(4)
-        # macOS 파일 피커(Finder) 자동 닫기
-        try:
-            import subprocess as _sp3
-            _sp3.run(
-                ["osascript", "-e", 'tell application "Finder" to close every window'],
-                capture_output=True, timeout=3
-            )
-        except Exception:
-            pass
 
         # 이미지 로드 확인
         _naver_wait_for_image_load(page)
