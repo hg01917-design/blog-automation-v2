@@ -11,7 +11,8 @@ except ImportError:
 
 from claude_playwright import generate_text_with_fallback as generate_text
 from image_router import generate_images_for_blog as _img_router
-from overnight_run import _truncate_title, fetch_next_keyword, update_keyword_status, check_duplicate_post
+from overnight_run import _truncate_title, check_duplicate_post
+from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as _db_set_status
 from keyword_crawler import _is_banned
 
 try:
@@ -66,35 +67,35 @@ def _needs_coupang(keyword: str, body: str = "") -> bool:
 
 
 def _collect_keyword(on_log=None):
-    """Notion 키워드 큐에서 salim1su 대기 키워드를 직접 수집한다.
+    """SQLite DB에서 salim1su 대기 키워드를 수집한다.
 
     - 금칙어(banned) 또는 중복 발행 키워드는 건너뜀
-    - 유효 키워드 발견 시 상태를 '진행중'으로 업데이트하고 (keyword, page_id) 반환
-    - 없으면 (None, None) 반환
+    - 유효 키워드 발견 시 상태를 'in_progress'로 업데이트하고 keyword 반환
+    - 없으면 None 반환
     """
     def log(msg):
         if on_log:
             on_log(msg)
 
-    keyword, page_id = fetch_next_keyword(BLOG_ID)
+    keyword = fetch_next_pending(BLOG_ID)
     if not keyword:
         log("[키워드수집] 대기 키워드 없음")
-        return None, None
+        return None
 
     if _is_banned(keyword, BLOG_ID):
         log(f"[키워드수집] '{keyword}' — 금칙어, 건너뜀")
-        update_keyword_status(page_id, "실패", memo="금칙어")
-        return None, None
+        _db_set_status(keyword, "failed", blog_id=BLOG_ID)
+        return None
 
     is_dup, matched = check_duplicate_post(BLOG_ID, keyword, on_log=log)
     if is_dup:
         log(f"[키워드수집] '{keyword}' — 중복 발행 ('{matched}'), 건너뜀")
-        update_keyword_status(page_id, "실패", memo=f"중복: {matched}")
-        return None, None
+        _db_set_status(keyword, "failed", blog_id=BLOG_ID)
+        return None
 
-    update_keyword_status(page_id, "진행중")
+    _db_set_status(keyword, "in_progress", blog_id=BLOG_ID)
     log(f"[키워드수집] '{keyword}' 수집 완료 → 진행중")
-    return keyword, page_id
+    return keyword
 
 
 def _expand_keyword(keyword: str, on_log=None) -> str:
@@ -140,7 +141,7 @@ def _expand_keyword(keyword: str, on_log=None) -> str:
         return keyword
 
 
-def run(keyword: str = None, on_log=None, on_status=None, _page_id=None):
+def run(keyword: str = None, on_log=None, on_status=None):
     """글 + 이미지 생성 후 파싱된 결과를 반환한다.
 
     blog_id는 "salim1su"으로 고정됩니다.
@@ -166,9 +167,9 @@ def run(keyword: str = None, on_log=None, on_status=None, _page_id=None):
     if on_status:
         on_status("writer", "working")
 
-    # keyword가 없으면 Notion 큐에서 직접 수집
+    # keyword가 없으면 SQLite DB에서 직접 수집
     if keyword is None:
-        keyword, _page_id = _collect_keyword(on_log=log)
+        keyword = _collect_keyword(on_log=log)
         if not keyword:
             if on_status:
                 on_status("writer", "failed")

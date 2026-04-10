@@ -146,10 +146,9 @@ class SchedulerWorker(QThread):
                         min_volume=1000,   # 검색량 1,000 이상
                         min_score=50000,   # 기회점수 5만 이상
                         top_n=30,
-                        push_to_notion=True,
                         on_log=self._log,
                     )
-                    self._log(f"[키워드수집] {bid} ✓ {len(result)}개 키워드 노션 적재")
+                    self._log(f"[키워드수집] {bid} ✓ {len(result)}개 키워드 DB 적재")
                     total += len(result)
                 _keyword_engine_last_run = today
                 self._log(f"[키워드수집] ✓ 전체 완료 — 총 {total}개 적재")
@@ -550,7 +549,6 @@ class KeywordCollectWorker(QThread):
                     top_n=50,
                     min_score=50_000,
                     min_volume=500,
-                    push_to_notion=False,
                     use_playwright=self.use_playwright,
                     on_log=on_log,
                     on_keyword=on_keyword,
@@ -991,106 +989,6 @@ class KeywordEngineDialog(QDialog):
             self._worker.wait(2000)
         super().closeEvent(event)
 
-
-class RetryFailedDialog(QDialog):
-    """실패 키워드 목록을 보여주고 선택한 항목을 '대기'로 초기화하는 다이얼로그"""
-
-    def __init__(self, blog_id: str, parent=None):
-        super().__init__(parent)
-        self.blog_id = blog_id
-        self.setWindowTitle(f"↺  {blog_id} — 실패 키워드 재시도")
-        self.setMinimumWidth(420)
-        self._checks: list[tuple[QCheckBox, str]] = []  # (checkbox, page_id)
-
-        layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-
-        hint = QLabel("재시도할 키워드를 선택하면 상태를 '대기'로 초기화합니다.")
-        hint.setStyleSheet("color:#888; font-size:11px;")
-        layout.addWidget(hint)
-
-        # 로딩 중 표시
-        self._status_label = QLabel("키워드 목록 불러오는 중...")
-        self._status_label.setStyleSheet("color:#aaa; font-size:12px;")
-        layout.addWidget(self._status_label)
-
-        # 스크롤 영역
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFixedHeight(260)
-        scroll.setStyleSheet("background:#1a1a2e; border:1px solid #333;")
-        self._list_widget = QWidget()
-        self._list_layout = QVBoxLayout(self._list_widget)
-        self._list_layout.setSpacing(4)
-        self._list_layout.setAlignment(Qt.AlignTop)
-        scroll.setWidget(self._list_widget)
-        layout.addWidget(scroll)
-
-        # 전체 선택 / 해제
-        sel_row = QHBoxLayout()
-        all_btn = QPushButton("전체 선택")
-        all_btn.setFixedHeight(26)
-        all_btn.clicked.connect(lambda: [c.setChecked(True) for c, _ in self._checks])
-        none_btn = QPushButton("전체 해제")
-        none_btn.setFixedHeight(26)
-        none_btn.clicked.connect(lambda: [c.setChecked(False) for c, _ in self._checks])
-        sel_row.addWidget(all_btn)
-        sel_row.addWidget(none_btn)
-        sel_row.addStretch()
-        layout.addLayout(sel_row)
-
-        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btn_box.button(QDialogButtonBox.Ok).setText("선택 항목 재시도")
-        btn_box.button(QDialogButtonBox.Cancel).setText("닫기")
-        btn_box.accepted.connect(self._reset_selected)
-        btn_box.rejected.connect(self.reject)
-        layout.addWidget(btn_box)
-
-        # 비동기로 목록 불러오기
-        QTimer.singleShot(0, self._load_keywords)
-
-    def _load_keywords(self):
-        try:
-            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-            from overnight_run import fetch_failed_keywords
-            items = fetch_failed_keywords(self.blog_id)
-        except Exception as e:
-            self._status_label.setText(f"오류: {e}")
-            return
-
-        if not items:
-            self._status_label.setText("실패 키워드가 없습니다.")
-            return
-
-        self._status_label.setText(f"실패 키워드 {len(items)}개")
-        for keyword, page_id in items:
-            cb = QCheckBox(keyword)
-            cb.setChecked(True)
-            cb.setStyleSheet("color:#e0e0e0; font-size:12px;")
-            self._list_layout.addWidget(cb)
-            self._checks.append((cb, page_id))
-
-    def _reset_selected(self):
-        selected = [(c.text(), pid) for c, pid in self._checks if c.isChecked()]
-        if not selected:
-            QMessageBox.warning(self, "선택 없음", "재시도할 키워드를 선택해주세요.")
-            return
-
-        from overnight_run import update_keyword_status
-        success = 0
-        for keyword, page_id in selected:
-            try:
-                update_keyword_status(page_id, "대기")
-                success += 1
-            except Exception:
-                pass
-
-        QMessageBox.information(
-            self, "완료",
-            f"{success}/{len(selected)}개 키워드를 '대기' 상태로 초기화했습니다.\n"
-            "다음 실행 시 자동으로 처리됩니다."
-        )
-        self.accept()
 
 
 class BlogAutomationApp(QMainWindow):

@@ -11,7 +11,6 @@ from keyword_engine import (
     gsc_connector,
     naver_api,
     pub_finder,
-    queue_pusher,
     title_collector,
 )
 from keyword_engine import keyword_scorer
@@ -35,7 +34,6 @@ def run(
     min_score: float = DEFAULT_MIN_SCORE,
     min_volume: int = DEFAULT_MIN_VOLUME,
     max_pub_count: int = DEFAULT_MAX_PUB_COUNT,
-    push_to_notion: bool = False,
     use_playwright: bool = True,
     on_log=None,
 ) -> list:
@@ -217,12 +215,6 @@ def run(
     for pub, sites in pub_groups.items():
         _log(f"  {pub} → {len(sites)}개 사이트", on_log)
 
-    # ── 8단계: Notion 큐 적재 ────────────────────────────
-    if push_to_notion and blog_id and top:
-        _log(f"\n[8단계] Notion 큐 적재 → {blog_id}", on_log)
-        saved = queue_pusher.push(top, blog_id, on_log)
-        _log(f"[8단계] {saved}개 저장 완료", on_log)
-
     return top
 
 
@@ -253,7 +245,6 @@ if __name__ == "__main__":
     parser.add_argument("--min-volume", type=int, default=DEFAULT_MIN_VOLUME)
     parser.add_argument("--max-pub", type=int, default=DEFAULT_MAX_PUB_COUNT,
                         help="경쟁 글 최대 수 (기본: 30,000)")
-    parser.add_argument("--no-push", action="store_true")
     parser.add_argument("--no-playwright", action="store_true",
                         help="Playwright 대신 경량 urllib 모드 사용")
     args = parser.parse_args()
@@ -264,6 +255,5 @@ if __name__ == "__main__":
         min_score=args.min_score,
         min_volume=args.min_volume,
         max_pub_count=args.max_pub,
-        push_to_notion=not args.no_push,
         use_playwright=not args.no_playwright,
     )

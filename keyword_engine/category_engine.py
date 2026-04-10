@@ -9,7 +9,6 @@ from keyword_engine import db_handler
 from keyword_engine import gsc_connector
 from keyword_engine import naver_api
 from keyword_engine import pub_finder
-from keyword_engine import queue_pusher
 from keyword_engine import title_collector
 from keyword_engine import keyword_scorer
 
@@ -94,7 +93,6 @@ def run_category(
     top_n: int = DEFAULT_TOP_N,
     min_score: float = DEFAULT_MIN_SCORE,
     min_volume: int = DEFAULT_MIN_VOLUME,
-    push_to_notion: bool = True,
     use_playwright: bool = False,
     on_log=None,
     on_keyword=None,
@@ -223,12 +221,6 @@ def run_category(
     _log(f"  [{category}] 완료: {len(top)}개 (DB 저장)", on_log)
     _log(f"{'═' * 55}", on_log)
 
-    # ── Notion 큐 적재 ────────────────────────────────────
-    if push_to_notion and blog_id and top:
-        _log(f"\n[Notion] → {blog_id}", on_log)
-        saved = queue_pusher.push(top, blog_id, on_log)
-        _log(f"[Notion] {saved}개 저장 완료", on_log)
-
     return top
 
 
@@ -253,7 +245,6 @@ if __name__ == "__main__":
     parser.add_argument("--top", type=int, default=DEFAULT_TOP_N)
     parser.add_argument("--min-score", type=float, default=DEFAULT_MIN_SCORE)
     parser.add_argument("--min-volume", type=int, default=DEFAULT_MIN_VOLUME)
-    parser.add_argument("--no-push", action="store_true")
     parser.add_argument("--query", action="store_true")
     args = parser.parse_args()
 
@@ -268,5 +259,4 @@ if __name__ == "__main__":
             top_n=args.top,
             min_score=args.min_score,
             min_volume=args.min_volume,
-            push_to_notion=not args.no_push,
         )

@@ -170,7 +170,7 @@ def run_keyword_engine():
         from keyword_engine.main import run as run_engine
         # 4개 블로그 전체에 적재
         for blog_id in ["goodisak", "nolja100", "salim1su", "baremi542"]:
-            run_engine(blog_id=blog_id, push_to_notion=True, on_log=log)
+            run_engine(blog_id=blog_id, on_log=log)
         _keyword_engine_last_run = today
         log("[키워드엔진] 완료")
     except Exception as e:

@@ -36,102 +36,6 @@ def save_log():
     log(f"로그 저장: {LOG_FILE}")
 
 
-# ─── Notion 키워드 큐에서 대기 키워드 가져오기 ───
-NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
-NOTION_API = "https://api.notion.com/v1"
-KEYWORD_DB_ID = "d6bb5b753f1b4963891de02427411276"
-
-
-def _notion_headers():
-    token = os.environ.get("NOTION_TOKEN") or NOTION_TOKEN
-    return {
-        "Authorization": f"Bearer {token}",
-        "Notion-Version": "2022-06-28",
-        "Content-Type": "application/json",
-    }
-
-
-def fetch_next_keyword(blog_id):
-    """Notion 키워드 큐에서 blog_id의 '대기' 상태 키워드 1개 가져오기"""
-    body = {
-        "filter": {
-            "and": [
-                {"property": "블로그", "select": {"equals": blog_id}},
-                {"property": "상태", "select": {"equals": "대기"}},
-            ]
-        },
-        "sorts": [{"property": "검색량", "direction": "descending"}],
-        "page_size": 1,
-    }
-    req = urllib.request.Request(
-        f"{NOTION_API}/databases/{KEYWORD_DB_ID}/query",
-        data=json.dumps(body).encode(),
-        headers=_notion_headers(),
-        method="POST",
-    )
-    try:
-        resp = urllib.request.urlopen(req, timeout=10)
-        data = json.loads(resp.read())
-        results = data.get("results", [])
-        if not results:
-            return None, None
-        page = results[0]
-        page_id = page["id"]
-        props = page.get("properties", {})
-        for prop_name in ["키워드", "Name", "name", "제목"]:
-            prop = props.get(prop_name, {})
-            if prop.get("type") == "title":
-                texts = prop.get("title", [])
-                if texts:
-                    return texts[0].get("plain_text", ""), page_id
-        return None, None
-    except Exception as e:
-        log(f"[Notion] 키워드 가져오기 실패: {e}")
-        return None, None
-
-
-def fetch_failed_keywords(blog_id):
-    """Notion 키워드 큐에서 blog_id의 '실패' 상태 키워드 전체 가져오기.
-
-    Returns: list of (keyword: str, page_id: str)
-    """
-    body = {
-        "filter": {
-            "and": [
-                {"property": "블로그", "select": {"equals": blog_id}},
-                {"property": "상태", "select": {"equals": "실패"}},
-            ]
-        },
-        "sorts": [{"property": "검색량", "direction": "descending"}],
-        "page_size": 50,
-    }
-    req = urllib.request.Request(
-        f"{NOTION_API}/databases/{KEYWORD_DB_ID}/query",
-        data=json.dumps(body).encode(),
-        headers=_notion_headers(),
-        method="POST",
-    )
-    try:
-        resp = urllib.request.urlopen(req, timeout=10)
-        data = json.loads(resp.read())
-        results = data.get("results", [])
-        keywords = []
-        for page in results:
-            page_id = page["id"]
-            props = page.get("properties", {})
-            for prop_name in ["키워드", "Name", "name", "제목"]:
-                prop = props.get(prop_name, {})
-                if prop.get("type") == "title":
-                    texts = prop.get("title", [])
-                    if texts:
-                        keywords.append((texts[0].get("plain_text", ""), page_id))
-                        break
-        return keywords
-    except Exception as e:
-        log(f"[Notion] 실패 키워드 조회 실패: {e}")
-        return []
-
-
 # ─── 블로그 테마 적합성 검사 ───
 _BLOG_THEMES = {
     "nolja100": ["여행", "관광", "숙소", "맛집", "코스", "캠핑", "펜션", "호텔", "드라이브",
@@ -200,23 +104,6 @@ def is_keyword_suitable(blog_id: str, keyword: str) -> bool:
     return any(w in keyword for w in theme_words)
 
 
-def update_keyword_status(page_id, status, memo=None):
-    """Notion 키워드 상태 업데이트 (메모 옵션)"""
-    props = {"상태": {"select": {"name": status}}}
-    if memo:
-        props["메모"] = {"rich_text": [{"text": {"content": memo}}]}
-    body = {"properties": props}
-    req = urllib.request.Request(
-        f"{NOTION_API}/pages/{page_id}",
-        data=json.dumps(body).encode(),
-        headers=_notion_headers(),
-        method="PATCH",
-    )
-    try:
-        urllib.request.urlopen(req, timeout=10)
-    except Exception as e:
-        log(f"[Notion] 상태 업데이트 실패: {e}")
-
 
 def _extract_core_words(keyword):
     """키워드에서 핵심 단어를 추출한다.
@@ -236,56 +123,6 @@ def _extract_core_words(keyword):
     core = [w for w in words if len(w) >= 2 and w not in STOP_WORDS]
     return core if core else words[:2]
 
-
-def check_keyword_duplicate_in_notion(blog_id, keyword):
-    """노션 큐에서 이미 완료된 유사 키워드가 있는지 확인한다.
-
-    한 키워드가 다른 키워드를 포함하거나(부분 문자열) 핵심 단어가 겹치면 중복으로 판단.
-    예: "실업급여" ↔ "실업급여 계산기" → 중복
-    """
-    body = {
-        "filter": {
-            "and": [
-                {"property": "블로그", "select": {"equals": blog_id}},
-                {"property": "상태", "select": {"equals": "완료"}},
-            ]
-        },
-        "page_size": 100,
-    }
-    req = urllib.request.Request(
-        f"{NOTION_API}/databases/{KEYWORD_DB_ID}/query",
-        data=json.dumps(body).encode(),
-        headers=_notion_headers(),
-        method="POST",
-    )
-    try:
-        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
-        done_keywords = []
-        for page in data.get("results", []):
-            props = page.get("properties", {})
-            for prop_name in ["키워드", "Name", "name", "제목"]:
-                prop = props.get(prop_name, {})
-                if prop.get("type") == "title":
-                    texts = prop.get("title", [])
-                    if texts:
-                        done_keywords.append(texts[0].get("plain_text", ""))
-                        break
-
-        kw_words = set(keyword.split())
-        for done in done_keywords:
-            done_words = set(done.split())
-            # 공백 제거 후 완전 동일 (예: "실업급여계산기" == "실업급여 계산기")
-            if keyword.replace(" ", "") == done.replace(" ", ""):
-                return True, done
-            # 단어 단위로 한 쪽이 다른 쪽의 완전한 부분집합 (예: {"실업급여"} ⊂ {"실업급여","계산기"})
-            # 단, 단어가 1개짜리 키워드는 제외 (너무 광범위한 차단 방지)
-            if len(kw_words) >= 2 and kw_words <= done_words:
-                return True, done
-            if len(done_words) >= 2 and done_words <= kw_words:
-                return True, done
-        return False, None
-    except Exception:
-        return False, None
 
 
 def check_duplicate_post(blog_id, keyword, on_log=None):
@@ -585,11 +422,8 @@ def _clear_text_buffer(blog_id: str):
 
 
 # ─── 전체 포스팅 파이프라인 ───
-def run_posting_pipeline(blog_id, keyword, page_id=None, _resume=None):
-    """유사문서 체크 → 글 생성 → 이미지 → 포스팅 전체 파이프라인
-
-    page_id가 주어지면 유사문서 발견 시 Notion 상태를 '실패'로 변경.
-    """
+def run_posting_pipeline(blog_id, keyword, _resume=None):
+    """유사문서 체크 → 글 생성 → 이미지 → 포스팅 전체 파이프라인"""
     from claude_playwright import generate_text
     from image_router import generate_images_for_blog
     from poster import post_single
@@ -610,8 +444,6 @@ def run_posting_pipeline(blog_id, keyword, page_id=None, _resume=None):
     is_dup, matched = check_duplicate_post(blog_id, keyword, on_log=log)
     if is_dup:
         log(f"[파이프라인] ⚠ 유사문서 발견 — 키워드 '{keyword}' 건너뜀")
-        if page_id:
-            update_keyword_status(page_id, "실패", memo=f"유사문서: {matched[:30]}")
         return False
 
     # 1. triplog: MRT 제휴 링크 조회 후 프롬프트에 포함
@@ -1054,7 +886,7 @@ def _post_one_blog_inner(blog_id):
     log(f"[{blog_id}] 키워드: {kw}")
     _db_set(kw, "in_progress", blog_id=blog_id)
     try:
-        ok = run_posting_pipeline(blog_id, kw, page_id=None)
+        ok = run_posting_pipeline(blog_id, kw)
         if ok:
             # 모든 블로그 임시저장 → draft_saved (Claude Code가 검수 후 발행)
             _db_set(kw, "draft_saved", blog_id=blog_id)
