@@ -649,6 +649,7 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     from claude_playwright import generate_text
     from image_router import generate_images_for_blog
     from poster import post_single
+    from public_api import fetch_context_for_blog
 
     # 0-2. 유사문서 체크 (블로그 내 기존 글)
     log(f"[파이프라인] {blog_id} / '{keyword}' — 유사문서 체크")
@@ -725,8 +726,12 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
             break
     keyword_final = keyword_with_mrt + _season_ctx
 
+    # 공공API 데이터 주입 (축제·공공서비스 실제 데이터 → 할루시네이션 방지)
+    _api_ctx = fetch_context_for_blog(blog_id, keyword, on_log=log)
+
     log(f"[파이프라인] {blog_id} / '{keyword}' — Claude.ai 글 생성 시작")
-    raw = generate_text("", blog_id=blog_id, keyword=keyword_final, on_log=log)
+    raw = generate_text("", blog_id=blog_id, keyword=keyword_final, on_log=log,
+                        extra_context=_api_ctx if _api_ctx else None)
 
     if not raw or "추출 실패" in raw:
         log(f"[파이프라인] 글 생성 실패")
