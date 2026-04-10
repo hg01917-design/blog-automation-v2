@@ -1650,6 +1650,17 @@ if __name__ == "__main__":
             except Exception as e:
                 _log(f"[소셜] 오류: {e}")
 
+        # 네이버 이웃봇 (salim1su 또는 me1091 발행 성공 시)
+        naver_published = any(round_results.get(b) for b in ("salim1su", "me1091"))
+        if naver_published:
+            _log("[이웃봇] 네이버 발행 완료 → run_neighbor.sh 백그라운드 실행")
+            import subprocess as _sp
+            _sp.Popen(
+                ["bash", str(Path(__file__).parent / "run_neighbor.sh")],
+                stdout=open(str(Path(__file__).parent / "logs" / "neighbor.log"), "a"),
+                stderr=_sp.STDOUT,
+            )
+
         # 라운드 간 대기 (마지막 라운드 제외)
         if round_num < ROUNDS:
             gap = random.randint(ROUND_GAP_MIN, ROUND_GAP_MAX)
