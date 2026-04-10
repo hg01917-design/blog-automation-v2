@@ -799,6 +799,33 @@ def _tistory_publish_private(page, blog_id: str) -> bool:
     _log(f"[{blog_id}] '{clicked}' 버튼 클릭")
     time.sleep(2)
 
+    # 1-1. 썸네일(대표이미지) 설정 — 발행 패널에서 첫 번째 이미지 선택
+    thumb_result = page.evaluate("""() => {
+        // 발행 패널에서 이미지 목록 찾기 (썸네일 선택 UI)
+        const selectors = [
+            '.cover-image-list img',
+            '.thumbnail-list img',
+            '[class*="cover"] img',
+            '[class*="thumb"] img',
+            '.attach-image-wrap img',
+            '[class*="imageSelect"] img',
+            '[class*="representative"] img',
+        ];
+        for (const sel of selectors) {
+            const imgs = document.querySelectorAll(sel);
+            if (imgs.length > 0) {
+                imgs[0].click();
+                return 'set:' + sel;
+            }
+        }
+        return null;
+    }""")
+    if thumb_result:
+        _log(f"[{blog_id}] 썸네일 설정 완료 ({thumb_result})")
+        time.sleep(0.5)
+    else:
+        _log(f"[{blog_id}] 썸네일 UI 없음 — 기본값 유지")
+
     # 2. 공개 라디오 선택 (open20 = 공개)
     page.evaluate("""() => {
         const r = document.getElementById('open20');

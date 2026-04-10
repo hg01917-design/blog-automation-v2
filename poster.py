@@ -196,6 +196,17 @@ def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int =
             if not ok:
                 raise Exception("AppleScript 파일 선택 실패")
             time.sleep(4)
+            # 업로드된 마지막 img에 alt 설정 (TinyMCE)
+            if alt:
+                try:
+                    page.evaluate("""(altText) => {
+                        const ed = window.tinymce && (tinymce.get('content') || tinymce.activeEditor);
+                        if (!ed) return;
+                        const imgs = ed.getBody().querySelectorAll('img');
+                        if (imgs.length > 0) imgs[imgs.length - 1].setAttribute('alt', altText);
+                    }""", alt)
+                except Exception:
+                    pass
             _log(f"[이미지업로드] 업로드 완료 (시도 {attempt})")
             return True
 
@@ -706,11 +717,6 @@ def _post_tistory(account, title, body_html, tags=None,
                 except Exception as e:
                     log(f"[포스팅] 카테고리 선택 오류: {e}")
 
-        # ── 대표이미지 설정 (첫 번째 이미지) ──
-        if image_paths:
-            log("[포스팅] 대표이미지 설정 시도...")
-            _tistory_set_thumbnail(page, log)
-
         # ── 임시저장 (검수 후 수동 발행) ──
         log("[포스팅] 임시저장 중...")
         saved = page.evaluate("""() => {
@@ -842,7 +848,7 @@ def _naver_remove_image_placeholders(page):
         pass
 
 
-def _naver_upload_image(page, filepath, log_fn=None):
+def _naver_upload_image(page, filepath, log_fn=None, alt: str = ""):
     """네이버 에디터에 이미지 1장을 업로드한다.
 
     expect_file_chooser 방식:
@@ -881,6 +887,23 @@ def _naver_upload_image(page, filepath, log_fn=None):
 
         # 업로드 후 남아있는 파일선택/라이브러리 패널 닫기
         _naver_close_upload_panel(page)
+
+        # alt/caption 설정: 마지막 이미지의 캡션 placeholder 클릭 후 입력
+        if alt:
+            try:
+                set_ok = page.evaluate("""(altText) => {
+                    // SE3 이미지 컴포넌트의 마지막 img에 alt 직접 설정
+                    const imgs = document.querySelectorAll(
+                        '.se-image-resource, .se-module-image img, .se-component-image img'
+                    );
+                    if (imgs.length > 0) imgs[imgs.length - 1].setAttribute('alt', altText);
+                    return imgs.length;
+                }""", alt)
+                if log_fn:
+                    log_fn(f"[포스팅] 이미지 alt 설정: {alt[:30]} (img 수: {set_ok})")
+            except Exception as _ae:
+                if log_fn:
+                    log_fn(f"[포스팅] alt 설정 실패: {_ae}")
 
         # 이미지 뒤 본문 영역으로 커서 복귀
         body_ps = page.query_selector_all(
@@ -1468,6 +1491,9 @@ def _post_naver(account, title, content, tags=None,
             elif stype == "image":
                 idx = section["index"]
                 filepath = image_paths.get(idx)
+                img_alt = next((i.get("alt", "") for i in image_infos if i["index"] == idx), "")
+                if not img_alt:
+                    img_alt = keyword or title or ""
 
                 # image_paths에 없으면 images 폴더에서 검색
                 if not filepath:
@@ -1480,7 +1506,7 @@ def _post_naver(account, title, content, tags=None,
 
                 if filepath and os.path.exists(filepath):
                     log(f"[포스팅] 이미지 {idx} 업로드: {Path(filepath).name}")
-                    ok = _naver_upload_image(page, filepath, log)
+                    ok = _naver_upload_image(page, filepath, log, alt=img_alt)
                     if ok:
                         log(f"[포스팅] 이미지 {idx} 완료")
                     else:
@@ -1635,6 +1661,27 @@ def _post_naver(account, title, content, tags=None,
                         time.sleep(random.uniform(0.5, 1.0))
             except Exception:
                 log("[포스팅] 태그 입력 실패 — 스킵")
+
+        # 네이버 대표이미지(썸네일) 설정 — 발행 팝업에서 첫 번째 이미지 선택
+        if image_paths:
+            try:
+                thumb_set = page.evaluate("""() => {
+                    const sels = [
+                        '[class*="thumbnail"] img', '[class*="thumb_img"] img',
+                        '[class*="representative"] img', '[class*="coverImage"] img',
+                        '.se-thumbnail-list img', '.publish-thumbnail img',
+                    ];
+                    for (const s of sels) {
+                        const imgs = document.querySelectorAll(s);
+                        if (imgs.length > 0) { imgs[0].click(); return s; }
+                    }
+                    return null;
+                }""")
+                if thumb_set:
+                    log(f"[포스팅] 네이버 대표이미지 설정 완료 ({thumb_set})")
+                    time.sleep(0.5)
+            except Exception:
+                pass
 
         # 발행 팝업 닫기 (Escape) → 임시저장
         log("[포스팅] 발행 팝업 닫기 (Escape) → 임시저장...")
