@@ -1632,7 +1632,7 @@ if __name__ == "__main__":
     MIN_BLOG_GAP  = 12600   # 같은 블로그 재발행 최소 간격 (3.5시간)
 
     # 마지막 발행 시간 파일 (세션 간 유지)
-    TIMES_FILE = Path("/tmp/blog_publish_times.json")
+    TIMES_FILE = Path(__file__).parent / "logs" / "blog_publish_times.json"
     last_published: dict = {}
     if TIMES_FILE.exists():
         try:

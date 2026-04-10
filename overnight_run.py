@@ -930,7 +930,26 @@ MIN_POST_GAP_HOURS = 3  # 같은 블로그 포스팅 최소 간격
 
 
 def _hours_since_last_post(blog_id: str) -> float:
-    """마지막 published 이후 경과 시간(시간). 발행 이력 없으면 999 반환."""
+    """마지막 발행 이후 경과 시간(시간). 발행 이력 없으면 999 반환.
+
+    publish_drafts.py가 logs/blog_publish_times.json에 기록한 실제 발행 시각을
+    우선 참조하고, 없으면 SQLite draft_saved 시각으로 fallback.
+    """
+    import json as _j
+    from datetime import datetime as _dt
+
+    # 1순위: publish_drafts.py가 기록한 실제 발행 시각 (Unix timestamp)
+    _times_file = LOG_DIR / "blog_publish_times.json"
+    if _times_file.exists():
+        try:
+            times = _j.loads(_times_file.read_text())
+            ts = times.get(blog_id)
+            if ts:
+                return (_dt.now().timestamp() - float(ts)) / 3600
+        except Exception:
+            pass
+
+    # 2순위: SQLite draft_saved 시각
     from keyword_engine.db_handler import _conn
     with _conn() as db:
         row = db.execute(
@@ -941,7 +960,6 @@ def _hours_since_last_post(blog_id: str) -> float:
         ).fetchone()
     if not row:
         return 999.0
-    from datetime import datetime as _dt
     try:
         last_time = _dt.fromisoformat(row[0])
         return (_dt.now() - last_time).total_seconds() / 3600
