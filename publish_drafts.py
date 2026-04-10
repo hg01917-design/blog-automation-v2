@@ -48,7 +48,8 @@ def _mark_keyword_published(blog_id: str, title: str):
     """발행 성공 후 keyword_blog_status 테이블을 draft_saved → published 로 업데이트."""
     try:
         import sqlite3 as _sqlite3
-        db = _sqlite3.connect("keyword_engine/engine.db")
+        _db_path = Path(__file__).parent / "keyword_engine" / "engine.db"
+        db = _sqlite3.connect(str(_db_path))
         rows = db.execute(
             "SELECT keyword FROM keyword_blog_status WHERE blog_id=? AND status='draft_saved'",
             (blog_id,)
@@ -1569,7 +1570,9 @@ def _analyze_and_report(all_results: list):
     # ── 키워드 잔량 ──────────────────────────────
     kw_remain = {}
     try:
-        db = sqlite3.connect("keyword_engine/engine.db")
+        import sqlite3 as _sqlite3
+        _db_path2 = Path(__file__).parent / "keyword_engine" / "engine.db"
+        db = _sqlite3.connect(str(_db_path2))
         rows = db.execute(
             "SELECT category, COUNT(*) FROM keywords WHERE status NOT IN ('published','failed') GROUP BY category"
         ).fetchall()

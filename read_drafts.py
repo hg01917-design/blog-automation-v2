@@ -61,7 +61,7 @@ def read_tistory_drafts(blog_id: str, max_drafts: int = 3):
                 t = (link.text_content() or '').strip()
                 if t and t not in SKIP_TITLES and '규칙 확인' not in t and '[내용 없음]' not in t:
                     draft_titles.append(t)
-            except:
+            except Exception:
                 pass
 
         _log(f"[{blog_id}] 유효 드래프트 제목 {len(draft_titles)}개: {draft_titles[:5]}")
@@ -91,7 +91,7 @@ def read_tistory_drafts(blog_id: str, max_drafts: int = 3):
                         time.sleep(5)
                         clicked = True
                         break
-                except:
+                except Exception:
                     pass
 
             if not clicked:
@@ -104,26 +104,26 @@ def read_tistory_drafts(blog_id: str, max_drafts: int = 3):
                             link.click()
                             time.sleep(5)
                             break
-                    except:
+                    except Exception:
                         pass
 
             # 내용 읽기
             try:
                 content = page.evaluate("() => tinymce.activeEditor ? tinymce.activeEditor.getContent() : ''")
-            except:
+            except Exception:
                 content = ""
 
             # 제목
             try:
                 title_el = page.query_selector('#post-title-inp') or page.query_selector('#title')
                 actual_title = title_el.input_value() if title_el else target_title
-            except:
+            except Exception:
                 actual_title = target_title
 
             # 태그
             try:
                 tag_val = page.evaluate("() => document.getElementById('tagText')?.value || ''")
-            except:
+            except Exception:
                 tag_val = ""
 
             # 분석

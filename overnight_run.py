@@ -203,7 +203,8 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
                 f"{_wp_url}/wp-json/wp/v2/posts?{_search_q}",
                 headers={"Authorization": f"Basic {_auth}"},
             )
-            _posts = json.loads(urllib.request.urlopen(_req, timeout=10, context=_ctx).read())
+            with urllib.request.urlopen(_req, timeout=10, context=_ctx) as _r:
+                _posts = json.loads(_r.read())
             for p in _posts:
                 title = re.sub(r'<[^>]+>', '', p.get("title", {}).get("rendered", ""))
                 match_count = sum(1 for w in core_words if w in title)
@@ -227,7 +228,8 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
             try:
                 _ctx2 = __import__("ssl").create_default_context(); _ctx2.check_hostname = False; _ctx2.verify_mode = 0
                 _rreq = urllib.request.Request(rss_url, headers={"User-Agent": "Mozilla/5.0"})
-                _rss = urllib.request.urlopen(_rreq, timeout=10, context=_ctx2).read().decode("utf-8", errors="ignore")
+                with urllib.request.urlopen(_rreq, timeout=10, context=_ctx2) as _r:
+                    _rss = _r.read().decode("utf-8", errors="ignore")
                 _rtitles = re.findall(r'<title><!\[CDATA\[(.*?)\]\]></title>', _rss)
                 if not _rtitles:
                     _rtitles = re.findall(r'<title>(.*?)</title>', _rss)
@@ -251,7 +253,8 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
                         _search_q = urllib.parse.quote(" ".join(core_words[:2]))
                         _search_url = f"https://{_domain}/search/{_search_q}"
                         _sreq = urllib.request.Request(_search_url, headers={"User-Agent": "Mozilla/5.0"})
-                        _shtml = urllib.request.urlopen(_sreq, timeout=10, context=_ctx2).read().decode("utf-8", errors="ignore")
+                        with urllib.request.urlopen(_sreq, timeout=10, context=_ctx2) as _r:
+                            _shtml = _r.read().decode("utf-8", errors="ignore")
                         _stitles = re.findall(r'<h3[^>]*class="[^"]*tit[^"]*"[^>]*>(.*?)</h3>', _shtml, re.S)
                         if not _stitles:
                             _stitles = re.findall(r'<a[^>]+class="[^"]*link[^"]*"[^>]*>(.*?)</a>', _shtml, re.S)
@@ -279,7 +282,8 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
         )
         try:
             req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0"})
-            html = urllib.request.urlopen(req, timeout=10).read().decode("utf-8", errors="ignore")
+            with urllib.request.urlopen(req, timeout=10) as _r:
+                html = _r.read().decode("utf-8", errors="ignore")
             titles = re.findall(r'<span class="ell">(.*?)</span>', html)
             if not titles:
                 titles = re.findall(r'class="pcol2"[^>]*>(.*?)</a>', html)
@@ -362,7 +366,8 @@ def _inject_internal_links(body: str, blog_id: str, on_log=None) -> str:
         ctx.check_hostname = False
         ctx.verify_mode = 0
         req = urllib.request.Request(rss_url, headers={"User-Agent": "Mozilla/5.0"})
-        rss = urllib.request.urlopen(req, timeout=8, context=ctx).read().decode("utf-8", errors="ignore")
+        with urllib.request.urlopen(req, timeout=8, context=ctx) as _r:
+            rss = _r.read().decode("utf-8", errors="ignore")
         # 제목 + 링크 파싱
         items = re.findall(r'<item>.*?<title><!\[CDATA\[(.*?)\]\]></title>.*?<link>(.*?)</link>.*?</item>', rss, re.DOTALL)
         if not items:
@@ -396,20 +401,33 @@ _TEXT_BUFFER_DIR = LOG_DIR / "text_buffers"
 
 def _save_text_buffer(blog_id: str, keyword: str, title: str, body: str, tags: list, images: list):
     """텍스트 생성 완료 후 버퍼 저장 — 이미지/Playwright 실패해도 텍스트 보존"""
+    import fcntl
     _TEXT_BUFFER_DIR.mkdir(parents=True, exist_ok=True)
     buf = {"keyword": keyword, "title": title, "body": body, "tags": tags, "images": images,
            "saved_at": datetime.now().isoformat()}
-    (_TEXT_BUFFER_DIR / f"{blog_id}.json").write_text(
-        json.dumps(buf, ensure_ascii=False, indent=2), encoding="utf-8")
+    p = _TEXT_BUFFER_DIR / f"{blog_id}.json"
+    with open(p, "w", encoding="utf-8") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            f.write(json.dumps(buf, ensure_ascii=False, indent=2))
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
     log(f"[버퍼] {blog_id} 텍스트 저장 완료 ('{title}')")
 
 def _load_text_buffer(blog_id: str):
     """저장된 텍스트 버퍼 로드. 없거나 파손 시 None 반환."""
+    import fcntl
     p = _TEXT_BUFFER_DIR / f"{blog_id}.json"
     if not p.exists():
         return None
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        with open(p, "r", encoding="utf-8") as f:
+            fcntl.flock(f, fcntl.LOCK_SH)
+            try:
+                data = json.loads(f.read())
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+        return data
     except Exception:
         p.unlink(missing_ok=True)
         return None
@@ -594,7 +612,7 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
         img_text = img_m.group(1)
         log(f"[파싱] 이미지 섹션 발견 (길이={len(img_text)}자), 내용: {repr(img_text[:300])}")
         for m in re.finditer(
-            r"\[이미지\s*(\d+)\]\s*[-\n]*\s*(?:Gemini\s*)?프롬프트:\s*(.+?)[\n\r]+-\s*파일명:\s*(.+?)[\n\r]+-\s*alt:\s*(.+?)(?=\[이미지|\Z)",
+            r"\[이미지\s*(\d+)\][^\n]*\n.*?(?:Gemini\s*)?프롬프트:\s*(.+?)\n.*?파일명:\s*(.+?)\n.*?alt:\s*(.+?)(?=\[이미지|\Z)",
             img_text,
             re.DOTALL,
         ):

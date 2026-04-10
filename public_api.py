@@ -41,8 +41,8 @@ def _get(url: str, params: dict) -> dict:
             "User-Agent": "Mozilla/5.0",
             "Accept": "application/json",
         })
-        resp = urllib.request.urlopen(req, timeout=10)
-        return json.loads(resp.read().decode("utf-8"))
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
     except Exception as e:
         return {"error": str(e)}
 

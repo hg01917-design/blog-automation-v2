@@ -338,8 +338,8 @@ def _pollinations_image(prompt: str, filepath: str, on_log=None) -> bool:
 
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        resp = urllib.request.urlopen(req, timeout=60, context=ctx)
-        data = resp.read()
+        with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
+            data = resp.read()
         if len(data) < 5000:
             log(f"[Pollinations] 응답 너무 작음: {len(data)}B")
             return False
