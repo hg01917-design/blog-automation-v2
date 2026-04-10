@@ -1,6 +1,7 @@
 """claude.ai Playwright 자동화 — CDP 연결로 글 생성"""
 import re
 import time
+import json
 import random
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from browser import connect_cdp as _connect_cdp, get_or_create_page
@@ -44,6 +45,39 @@ MAX_WAIT_SECS = 300         # 최대 대기 5분
 # 재시도
 RETRY_THRESHOLD = 500       # 이 글자수 미만이면 재시도
 MAX_RETRIES = 2
+
+
+def _parse_sse_body(body: str) -> str:
+    """claude.ai SSE 스트림 바디에서 텍스트 조립.
+
+    claude.ai는 응답을 다음 두 형식 중 하나로 스트리밍함:
+      형식A (Anthropic API SSE):
+        data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"강릉"}}
+      형식B (claude.ai 내부 포맷):
+        data: {"completion":"강릉 카페"}
+    두 형식 모두 처리. 어느 것도 아니면 "" 반환.
+    """
+    parts = []
+    for line in body.splitlines():
+        line = line.strip()
+        if not line.startswith("data: "):
+            continue
+        data_str = line[6:]
+        if data_str in ("[DONE]", ""):
+            continue
+        try:
+            obj = json.loads(data_str)
+        except json.JSONDecodeError:
+            continue
+        # 형식A
+        if obj.get("type") == "content_block_delta":
+            delta = obj.get("delta", {})
+            if delta.get("type") == "text_delta":
+                parts.append(delta.get("text", ""))
+        # 형식B
+        elif "completion" in obj:
+            parts.append(obj["completion"])
+    return "".join(parts)
 
 
 def _count_body_chars(text):
@@ -785,6 +819,20 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
                 page.wait_for_timeout(2000)
                 continue
 
+            # ── 네트워크 인터셉트 준비 ──
+            # 전송 전에 리스너 등록 → 스트리밍 완료 후 SSE 파싱
+            _sse_captured = [None]  # [response 객체] — 바디는 스트리밍 완료 후 읽음
+
+            def _on_sse_response(resp):
+                url = resp.url
+                # claude.ai 스트리밍 완료 엔드포인트만 캡처
+                if ("claude.ai" in url or "anthropic.com" in url) and (
+                    "/completion" in url or "chat_conversations" in url
+                ):
+                    _sse_captured[0] = resp
+
+            page.on("response", _on_sse_response)
+
             # 전송
             log("[Playwright] 전송 중...")
             sent = False
@@ -807,19 +855,39 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             prev_response_count = page.locator(RESPONSE_SEL).count()
             log(f"[Playwright] 기존 응답 블록: {prev_response_count}개")
 
-            # 응답 대기
+            # 응답 대기 (DOM 기반 타이밍 — 스트리밍 완료까지 블로킹)
             log("[Playwright] 응답 대기 중...")
             final_len, streamed_text = _wait_for_response(page, prev_response_count, log)
 
-            # 스트리밍 중 포착된 텍스트가 있으면 우선 사용 (tool result collapse 대응)
-            # 단, 본문(===본문===)이 포함된 경우에만 사용 — 제목만 있는 50자짜리 캡처는 스킵
-            if streamed_text and "===제목===" in streamed_text and "===본문===" in streamed_text:
-                response_text = streamed_text
-                log(f"[Playwright] 스트리밍 포착 텍스트 사용 ({len(response_text)}자)")
-            else:
-                # 응답 추출
-                log("[Playwright] 응답 추출 중...")
-                # 현재 페이지에 있는 응답 블록 수 확인 (디버그용)
+            # 리스너 해제 (스트리밍 완료됐으므로 더 이상 불필요)
+            try:
+                page.remove_listener("response", _on_sse_response)
+            except Exception:
+                pass
+
+            # ── 1순위: 네트워크 인터셉트 SSE 파싱 ──
+            response_text = ""
+            if _sse_captured[0] is not None:
+                try:
+                    _sse_body = _sse_captured[0].text()
+                    _sse_text = _parse_sse_body(_sse_body)
+                    if _sse_text and "===제목===" in _sse_text:
+                        response_text = _sse_text
+                        log(f"[네트워크] SSE 파싱 성공 ({len(response_text)}자) ✅")
+                    else:
+                        log(f"[네트워크] SSE 파싱 결과 부족 ({len(_sse_text)}자) — 폴백")
+                except Exception as _e:
+                    log(f"[네트워크] SSE 바디 읽기 실패: {_e} — 폴백")
+
+            # ── 2순위: 스트리밍 중 DOM 포착 텍스트 ──
+            if not response_text:
+                if streamed_text and "===제목===" in streamed_text and "===본문===" in streamed_text:
+                    response_text = streamed_text
+                    log(f"[Playwright] DOM 스트리밍 포착 텍스트 사용 ({len(response_text)}자)")
+
+            # ── 3순위: DOM 전체 추출 (폴백) ──
+            if not response_text:
+                log("[Playwright] DOM 전체 추출 시도 (폴백)...")
                 try:
                     cur_sel_counts = {}
                     for _sel in RESPONSE_SEL_FALLBACKS[:3]:
@@ -828,10 +896,9 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
                 except Exception:
                     pass
                 response_text = _extract_response(page, prev_response_count, log)
-                # DOM 추출 실패 시 스트리밍 중 포착된 텍스트를 폴백으로 사용
                 if "[추출 실패]" in response_text and streamed_text and "===제목===" in streamed_text and len(streamed_text) > 500:
                     response_text = streamed_text
-                    log(f"[Playwright] DOM 추출 실패 → 스트리밍 포착 텍스트 폴백 사용 ({len(response_text)}자)")
+                    log(f"[Playwright] DOM 추출 실패 → 스트리밍 포착 텍스트 최후 폴백 ({len(response_text)}자)")
 
             # 글자수 확인
             body_chars = _count_body_chars(response_text)
