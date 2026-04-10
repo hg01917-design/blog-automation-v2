@@ -478,8 +478,44 @@ def _generate_naver(image_infos: list, skip_webp: bool, log, reference_images: l
     return _try_pollinations(image_infos, log, output_dir=output_dir)
 
 
+def _loremflickr_image(prompt: str, filepath: str, on_log=None) -> bool:
+    """loremflickr.com 스톡 이미지 다운로드 (Tistory/WP 전용 최후 폴백)."""
+    import urllib.request, urllib.parse
+    keyword = urllib.parse.quote(prompt.split(',')[0].replace(' ', ',')[:50])
+    url = f"https://loremflickr.com/1024/768/{keyword}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = resp.read()
+        if len(data) < 5000:
+            return False
+        with open(filepath, 'wb') as f:
+            f.write(data)
+        if on_log:
+            on_log(f"[Router] loremflickr 성공: {filepath}")
+        return True
+    except Exception as e:
+        if on_log:
+            on_log(f"[Router] loremflickr 실패: {e}")
+        return False
+
+
+def _try_loremflickr(image_infos: list, log, output_dir=None) -> dict:
+    save_dir = Path(output_dir) if output_dir else IMAGES_DIR
+    save_dir.mkdir(parents=True, exist_ok=True)
+    results = {}
+    for info in image_infos:
+        idx = info['index']
+        filepath = str(save_dir / info['filename'])
+        log(f"[Router] loremflickr [{idx}]: {info['prompt'][:50]}")
+        if _loremflickr_image(info['prompt'], filepath, on_log=log):
+            results[idx] = filepath
+        time.sleep(1)
+    return results
+
+
 def _generate_other(image_infos: list, skip_webp: bool, log, output_dir=None) -> dict:
-    """Tistory/WP: Bing → Pollinations (Gemini 사용 안 함)"""
+    """Tistory/WP: Bing → Pollinations → loremflickr (Gemini 사용 안 함)"""
     # 1단계: Bing(Copilot)
     bing_res = _try_bing(image_infos, skip_webp, log, output_dir=output_dir)
     if bing_res:
@@ -489,11 +525,25 @@ def _generate_other(image_infos: list, skip_webp: bool, log, output_dir=None) ->
         log(f"[Router] Bing 실패 {len(failed)}장 → Pollinations 폴백")
         poll_res = _try_pollinations(failed, log, output_dir=output_dir)
         bing_res.update(poll_res)
+        still_failed = [info for info in failed if info['index'] not in poll_res]
+        if still_failed:
+            log(f"[Router] Pollinations 실패 {len(still_failed)}장 → loremflickr 폴백")
+            bing_res.update(_try_loremflickr(still_failed, log, output_dir=output_dir))
         return bing_res
 
     # 2단계: Pollinations
     log("[Router] Bing 전체 실패 → Pollinations 폴백")
-    return _try_pollinations(image_infos, log, output_dir=output_dir)
+    poll_res = _try_pollinations(image_infos, log, output_dir=output_dir)
+    if poll_res:
+        failed = [info for info in image_infos if info['index'] not in poll_res]
+        if failed:
+            log(f"[Router] Pollinations 실패 {len(failed)}장 → loremflickr 폴백")
+            poll_res.update(_try_loremflickr(failed, log, output_dir=output_dir))
+        return poll_res
+
+    # 3단계: loremflickr
+    log("[Router] Pollinations 전체 실패 → loremflickr 폴백")
+    return _try_loremflickr(image_infos, log, output_dir=output_dir)
 
 
 def _try_bing(image_infos: list, skip_webp: bool, log, output_dir=None) -> dict:
