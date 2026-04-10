@@ -1336,10 +1336,10 @@ def _post_naver(account, title, content, tags=None,
 
     image_paths = image_paths or {}
     image_infos = image_infos or []
+    blog_id = account.get("blog", "")
     images_dir = Path(__file__).parent / "images" / blog_id
 
     # 애드센스 마커 삽입
-    blog_id = account.get("blog", "")
     body_text = insert_adsense_markers(content, blog_id)
 
     # 본문을 섹션으로 파싱 + 이미지 상단 몰림 방지
