@@ -63,7 +63,7 @@ def _download_image(url: str, filepath: str, on_log=None) -> bool:
         return False
 
 
-def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_log=None, session_used: set = None) -> str | None:
+def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_log=None, session_used: set = None, output_dir=None) -> str | None:
     """Bing Image Creator에서 이미지 1장 생성 후 저장. 경로 반환."""
     def log(msg):
         if on_log:
@@ -79,7 +79,9 @@ def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_
         if not filename.endswith('.webp'):
             filename = Path(filename).stem + '.webp'
 
-    out_path = str(IMAGES_DIR / filename)
+    save_dir = Path(output_dir) if output_dir else IMAGES_DIR
+    save_dir.mkdir(parents=True, exist_ok=True)
+    out_path = str(save_dir / filename)
 
     # Bing 이미지 생성 페이지로 이동
     page.goto(BING_URL, wait_until='domcontentloaded')
@@ -245,7 +247,7 @@ def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_
     return None
 
 
-def generate_images_bing(image_infos: list, skip_webp: bool = False, on_log=None) -> dict:
+def generate_images_bing(image_infos: list, skip_webp: bool = False, on_log=None, output_dir=None) -> dict:
     """Bing Image Creator로 이미지 목록 생성.
 
     Args:
@@ -276,7 +278,7 @@ def generate_images_bing(image_infos: list, skip_webp: bool = False, on_log=None
             filename = info['filename']
 
             log(f"[Bing] [{idx}] 생성 중: {prompt[:60]}")
-            path = _generate_one(page, prompt, filename, skip_webp, on_log, session_used)
+            path = _generate_one(page, prompt, filename, skip_webp, on_log, session_used, output_dir=output_dir)
             if path:
                 results[idx] = path
                 log(f"[Bing] [{idx}] ✓ 저장: {path}")

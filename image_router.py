@@ -400,12 +400,17 @@ def generate_images_for_blog(
         enhanced['filename'] = _clean_filename(info['filename'], skip_webp)
         enhanced_infos.append(enhanced)
 
-    is_naver = blog_id in ("salim1su", "me1091")
+    # 블로그별 이미지 저장 폴더
+    output_dir = IMAGES_DIR / blog_id
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    if is_naver:
-        results = _generate_naver(enhanced_infos, skip_webp, log, reference_images=reference_images)
+    # Gemini 전용: salim1su, me1091, nolja100, triplog (Bing 오류 이미지 방지)
+    is_gemini_only = blog_id in ("salim1su", "me1091", "nolja100", "triplog")
+
+    if is_gemini_only:
+        results = _generate_naver(enhanced_infos, skip_webp, log, reference_images=reference_images, output_dir=output_dir)
     else:
-        results = _generate_other(enhanced_infos, skip_webp, log)
+        results = _generate_other(enhanced_infos, skip_webp, log, output_dir=output_dir)
 
     # 첫 번째 이미지(썸네일)에 제목 텍스트 오버레이
     if title and results:
@@ -414,10 +419,20 @@ def generate_images_for_blog(
         if first_path and Path(first_path).exists():
             add_title_overlay(first_path, title, blog_id=blog_id, on_log=log)
 
+    # macOS Finder 창 자동 닫기 (이미지 저장 시 열리는 창)
+    try:
+        import subprocess as _sp
+        _sp.run(
+            ["osascript", "-e", "tell application \"Finder\" to close every window"],
+            capture_output=True, timeout=3
+        )
+    except Exception:
+        pass
+
     return results
 
 
-def _generate_naver(image_infos: list, skip_webp: bool, log, reference_images: list = None) -> dict:
+def _generate_naver(image_infos: list, skip_webp: bool, log, reference_images: list = None, output_dir=None) -> dict:
     """Naver(salim1su/me1091): Gemini → Bing → Pollinations"""
     # 1단계: Gemini
     try:
@@ -426,7 +441,7 @@ def _generate_naver(image_infos: list, skip_webp: bool, log, reference_images: l
         if not blocked:
             log("[Router] Naver: Gemini 시도")
             results = generate_images(image_infos, on_log=log, skip_webp=skip_webp,
-                                      reference_images=reference_images)
+                                      reference_images=reference_images, output_dir=output_dir)
             if results:
                 log(f"[Router] Gemini 성공: {len(results)}장")
                 # 실패한 것만 폴백
@@ -434,12 +449,12 @@ def _generate_naver(image_infos: list, skip_webp: bool, log, reference_images: l
                 if not failed:
                     return results
                 log(f"[Router] Gemini 실패 {len(failed)}장 → Bing 폴백")
-                bing_res = _try_bing(failed, skip_webp, log)
+                bing_res = _try_bing(failed, skip_webp, log, output_dir=output_dir)
                 results.update(bing_res)
                 # 여전히 실패한 것 → Pollinations
                 still_failed = [info for info in failed if info['index'] not in bing_res]
                 if still_failed:
-                    poll_res = _try_pollinations(still_failed, log)
+                    poll_res = _try_pollinations(still_failed, log, output_dir=output_dir)
                     results.update(poll_res)
                 return results
         else:
@@ -448,58 +463,60 @@ def _generate_naver(image_infos: list, skip_webp: bool, log, reference_images: l
         log(f"[Router] Gemini 오류: {e}")
 
     # 2단계: Bing(Copilot)
-    bing_res = _try_bing(image_infos, skip_webp, log)
+    bing_res = _try_bing(image_infos, skip_webp, log, output_dir=output_dir)
     if bing_res:
         failed = [info for info in image_infos if info['index'] not in bing_res]
         if not failed:
             return bing_res
         log(f"[Router] Bing 실패 {len(failed)}장 → Pollinations 폴백")
-        poll_res = _try_pollinations(failed, log)
+        poll_res = _try_pollinations(failed, log, output_dir=output_dir)
         bing_res.update(poll_res)
         return bing_res
 
     # 3단계: Pollinations
     log("[Router] Bing 전체 실패 → Pollinations 폴백")
-    return _try_pollinations(image_infos, log)
+    return _try_pollinations(image_infos, log, output_dir=output_dir)
 
 
-def _generate_other(image_infos: list, skip_webp: bool, log) -> dict:
+def _generate_other(image_infos: list, skip_webp: bool, log, output_dir=None) -> dict:
     """Tistory/WP: Bing → Pollinations (Gemini 사용 안 함)"""
     # 1단계: Bing(Copilot)
-    bing_res = _try_bing(image_infos, skip_webp, log)
+    bing_res = _try_bing(image_infos, skip_webp, log, output_dir=output_dir)
     if bing_res:
         failed = [info for info in image_infos if info['index'] not in bing_res]
         if not failed:
             return bing_res
         log(f"[Router] Bing 실패 {len(failed)}장 → Pollinations 폴백")
-        poll_res = _try_pollinations(failed, log)
+        poll_res = _try_pollinations(failed, log, output_dir=output_dir)
         bing_res.update(poll_res)
         return bing_res
 
     # 2단계: Pollinations
     log("[Router] Bing 전체 실패 → Pollinations 폴백")
-    return _try_pollinations(image_infos, log)
+    return _try_pollinations(image_infos, log, output_dir=output_dir)
 
 
-def _try_bing(image_infos: list, skip_webp: bool, log) -> dict:
+def _try_bing(image_infos: list, skip_webp: bool, log, output_dir=None) -> dict:
     """Bing Image Creator로 이미지 생성 시도."""
     try:
         from bing_image import generate_images_bing
         log(f"[Router] Bing Image Creator 시도: {len(image_infos)}장")
-        results = generate_images_bing(image_infos, skip_webp=skip_webp, on_log=log)
+        results = generate_images_bing(image_infos, skip_webp=skip_webp, on_log=log, output_dir=output_dir)
         return results or {}
     except Exception as e:
         log(f"[Router] Bing 오류: {e}")
         return {}
 
 
-def _try_pollinations(image_infos: list, log) -> dict:
+def _try_pollinations(image_infos: list, log, output_dir=None) -> dict:
     """Pollinations API로 이미지 생성 시도."""
+    save_dir = Path(output_dir) if output_dir else IMAGES_DIR
+    save_dir.mkdir(parents=True, exist_ok=True)
     results = {}
     for info in image_infos:
         idx = info['index']
         prompt = info['prompt']
-        filepath = str(IMAGES_DIR / info['filename'])
+        filepath = str(save_dir / info['filename'])
         log(f"[Router] Pollinations [{idx}]: {prompt[:60]}")
         ok = _pollinations_image(prompt, filepath, on_log=log)
         if ok:

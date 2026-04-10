@@ -36,100 +36,6 @@ def save_log():
     log(f"로그 저장: {LOG_FILE}")
 
 
-def _notify_draft_saved(blog_id: str, keyword: str):
-    """임시저장 완료 후 Claude Code로 검수·발행 — 중복 방지 락 적용"""
-    import subprocess as _sp
-    import fcntl as _fcntl
-    PROJECT_DIR = str(Path(__file__).parent)
-    CLAUDE_BIN = "/Users/hana/.local/bin/claude"
-
-    # 이미 claude 검수 실행 중이면 스킵 (락 파일 확인)
-    lock_path = "/tmp/publish_drafts.lock"
-    try:
-        _lfd = open(lock_path, "w")
-        _fcntl.flock(_lfd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
-        _fcntl.flock(_lfd, _fcntl.LOCK_UN)
-        _lfd.close()
-    except BlockingIOError:
-        log(f"[publish] Claude 검수 이미 실행 중 — {blog_id} 스킵")
-        return
-
-    prompt = (
-        f"blog_id={blog_id} keyword={keyword}\n"
-        f"봇이 임시저장 완료했습니다. {blog_id} 블로그의 임시저장 글을 아래 순서로 검수 후 발행해줘.\n\n"
-        f"[검수 체크리스트 — 전부 통과해야 발행]\n"
-        f"1. 중복 확인: {blog_id} 블로그 최근 발행 글 목록(RSS 또는 관리페이지)과 비교해서 "
-        f"제목/주제가 유사한 글이 이미 있으면 임시저장 삭제 후 발행 중단\n"
-        f"2. 마크다운 잔재 없는지 (**bold**, ## heading 등 텍스트 그대로 노출)\n"
-        f"3. 이미지 3장 이상 (부족하면 Gemini로 생성 후 삽입)\n"
-        f"4. [검증 필요][출처 필요] 등 내부 마커 없는지\n"
-        f"5. 블로그 테마와 주제 일치 여부\n"
-        f"6. 1700자 이상 (미달이면 보완 후 발행)\n"
-        f"7. 같은 블로그 마지막 발행 후 3.5시간 이상 경과 여부 (미달이면 대기)\n\n"
-        f"발행 완료 또는 중단 후 텔레그램(chat_id=8674424194)으로 결과 보고."
-    )
-    log_file = PROJECT_DIR + f"/logs/claude_publish_{blog_id}.log"
-    try:
-        _fh = open(log_file, "a")
-        proc = _sp.Popen(
-            [CLAUDE_BIN, "--print", prompt],
-            cwd=PROJECT_DIR,
-            stdout=_fh,
-            stderr=_sp.STDOUT,
-        )
-        _fh.close()  # 부모 프로세스에서 핸들 닫기 (자식은 독립적으로 유지)
-        log(f"[publish] Claude Code 검수 시작 — {blog_id} (키워드: {keyword}, pid={proc.pid})")
-    except Exception as e:
-        log(f"[publish] Claude Code 실행 실패: {e}")
-
-
-def _claude_error_intervention(blog_id: str, keyword: str, error_msg: str, tb: str):
-    """포스팅 오류 발생 시 Claude Code를 blocking으로 호출해 수정 요청.
-    Claude가 종료될 때까지 overnight_run.py는 대기한다."""
-    import subprocess as _sp
-    import json as _json
-
-    PROJECT_DIR = str(Path(__file__).parent)
-    CLAUDE_BIN = "/Users/hana/.local/bin/claude"
-    ERROR_FILE = Path(PROJECT_DIR) / "logs" / "overnight_error.json"
-
-    # 오류 내용 파일로 저장 (Claude가 읽을 수 있도록)
-    error_info = {
-        "blog_id": blog_id,
-        "keyword": keyword,
-        "error": error_msg,
-        "traceback": tb,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    }
-    try:
-        ERROR_FILE.write_text(_json.dumps(error_info, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
-        pass
-
-    prompt = (
-        f"overnight_run.py 자동 포스팅 중 오류 발생.\n\n"
-        f"블로그: {blog_id}\n"
-        f"키워드: {keyword}\n"
-        f"오류: {error_msg}\n\n"
-        f"트레이스백:\n{tb}\n\n"
-        f"원인 파악 후 수정해줘. 수정 완료되면 봇이 {blog_id} 재시도함.\n"
-        f"텔레그램(chat_id=8674424194)으로 수정 결과 보고."
-    )
-    log(f"[오류개입] Claude Code 호출 (blocking) — {blog_id}: {error_msg[:80]}")
-    try:
-        log_file = Path(PROJECT_DIR) / "logs" / f"claude_fix_{blog_id}.log"
-        with open(log_file, "a") as _fh:
-            _sp.run(
-                [CLAUDE_BIN, "--print", prompt],
-                cwd=PROJECT_DIR,
-                stdout=_fh,
-                stderr=_sp.STDOUT,
-            )
-        log(f"[오류개입] Claude Code 수정 완료 — {blog_id} 재시도 진행")
-    except Exception as e:
-        log(f"[오류개입] Claude Code 실행 실패: {e}")
-
-
 # ─── Notion 키워드 큐에서 대기 키워드 가져오기 ───
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
 NOTION_API = "https://api.notion.com/v1"
@@ -397,7 +303,7 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
         with _conn() as db:
             rows = db.execute(
                 """SELECT keyword FROM keyword_blog_status
-                   WHERE blog_id = ? AND status IN ('published', 'draft_saved', 'in_progress')
+                   WHERE blog_id = ? AND status IN ('published', 'draft_saved', 'in_progress', 'failed')
                    AND keyword != ?""",
                 (blog_id, keyword),
             ).fetchall()
@@ -917,12 +823,14 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
     if len(image_paths) < MIN_IMAGES:
         log(f"[파이프라인] ⚠ 이미지 {len(image_paths)}개 < 최소 {MIN_IMAGES}개 — Pollinations 폴백 보충")
         from image_router import _pollinations_image, _enhance_prompt, IMAGES_DIR as _IMG_DIR
+        _blog_img_dir = _IMG_DIR / blog_id
+        _blog_img_dir.mkdir(parents=True, exist_ok=True)
         extra_prompts = [keyword, f"{keyword} 관련 정보", f"{keyword} 생활 팁"]
         for i in range(len(image_paths), MIN_IMAGES):
             kw_fb = extra_prompts[i % len(extra_prompts)]
             fname = f"fallback_{blog_id}_{i+1}.jpg"
             enh = _enhance_prompt(blog_id, kw_fb)
-            fp = str(_IMG_DIR / fname)
+            fp = str(_blog_img_dir / fname)
             ok = _pollinations_image(enh, fp, on_log=log)
             if ok:
                 images.append({"index": len(images)+1, "prompt": kw_fb, "filename": fname, "alt": kw_fb})
@@ -951,7 +859,6 @@ def run_posting_pipeline(blog_id, keyword, page_id=None):
 
     if ok:
         log(f"[파이프라인] {blog_id} / '{keyword}' 임시저장완료 ✅")
-        _notify_draft_saved(blog_id, keyword)
     else:
         log(f"[파이프라인] {blog_id} / '{keyword}' 포스팅 실패 ⚠")
     return ok
@@ -1034,8 +941,6 @@ def post_one_blog(blog_id):
         tb_str = _tb.format_exc()
         log(f"[{blog_id}] 오류: {e}")
         _db_set(kw, "failed", blog_id=blog_id)
-        # Claude Code에 오류 수정 요청 (blocking — 수정 완료까지 대기)
-        _claude_error_intervention(blog_id, kw, str(e), tb_str)
         return False
 
 
@@ -1074,59 +979,32 @@ def run_one_round(round_num):
 
 
 # ─── 메인 실행 ───
+# 사용법: python3 overnight_run.py [blog_id]
+#   blog_id 지정 시: 해당 블로그 1편만 생성+임시저장
+#   blog_id 없을 시: 전체 블로그 1라운드 실행
 if __name__ == "__main__":
-    import time as _time
-    import random as _random
+    import sys as _sys
 
     log("=" * 60)
     log(f"자동 실행 시작 ({datetime.now().strftime('%Y-%m-%d %H:%M')})")
     log("=" * 60)
 
-    # ── 재실행 상태 관리 ──
+    # ── 일 1회 작업: 키워드 크롤링 + 롱테일 확장 + 경쟁모니터 (상태파일로 중복 방지) ──
     _STATE_FILE = LOG_DIR / "overnight_state.json"
     _today_str = datetime.now().strftime("%Y-%m-%d")
-
-    def _load_state():
-        try:
-            if _STATE_FILE.exists():
-                s = json.loads(_STATE_FILE.read_text(encoding="utf-8"))
-                if s.get("run_date") == _today_str:
-                    return s
-        except Exception:
-            pass
-        return None
-
-    def _save_state(s):
-        try:
-            _STATE_FILE.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
-        except Exception:
-            pass
-
-    _state = _load_state()
-    if _state:
-        log(f"[재실행] 오늘({_today_str}) 상태 복원 — 완료 라운드: {_state.get('completed_rounds', [])}")
-    else:
-        _state = {
-            "run_date": _today_str,
-            "crawling_done": False,
-            "decision_done": False,
-            "extra_rounds": 0,
-            "completed_rounds": [],
-            "next_times": {},
-        }
-        _save_state(_state)
-
-    # ── 화면 잠금/슬립 방지 (macOS caffeinate) ──
-    import subprocess as _sub
     try:
-        _caffeinate = _sub.Popen(["caffeinate", "-d", "-i", "-s"],
-                                 stdout=_sub.DEVNULL, stderr=_sub.DEVNULL)
-        log("[시스템] caffeinate 시작 (화면 잠금/슬립 방지)")
-    except Exception as _e:
-        _caffeinate = None
-        log(f"[시스템] caffeinate 실패: {_e}")
+        _state = json.loads(_STATE_FILE.read_text(encoding="utf-8"))
+        if _state.get("run_date") != _today_str:
+            _state = None
+    except Exception:
+        _state = None
+    if not _state:
+        _state = {"run_date": _today_str, "crawling_done": False}
+        try:
+            _STATE_FILE.write_text(json.dumps(_state, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
 
-    # ── 키워드 크롤링 (1회, 오늘 이미 했으면 스킵) ──
     _crawled_keywords = {}
     if not _state.get("crawling_done"):
         log("[크롤링] salim1su, baremi542 키워드 수집")
@@ -1141,148 +1019,75 @@ if __name__ == "__main__":
             except Exception as e:
                 log(f"[크롤링] {bid} 오류: {e}")
         _state["crawling_done"] = True
-        _save_state(_state)
+        try:
+            _STATE_FILE.write_text(json.dumps(_state, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+        save_log()
+
+        log("[롱테일] 키워드 확장 시작")
+        _BLOG_LONGTAIL = {
+            "nolja100":  "여행",
+            "triplog":   "여행",
+            "salim1su":  "살림",
+            "goodisak":  "IT",
+            "baremi542": "정부지원금",
+            "woll100":   "교통",
+            "phn0502":   "영화",
+            "me1091":    "리뷰",
+        }
+        try:
+            from keyword_engine.longtail_expander import expand_longtail
+            from keyword_engine.db_handler import get_top_keywords
+            _CAT_BLOG = {"여행": ["nolja100", "triplog"], "살림": ["salim1su"],
+                         "IT": ["goodisak"], "정부지원금": ["baremi542"],
+                         "교통": ["woll100"], "영화": ["phn0502"]}
+            for bid, cat in _BLOG_LONGTAIL.items():
+                if cat == "여행" and bid == "triplog":
+                    continue
+                crawled_seeds = []
+                for _bid in _CAT_BLOG.get(cat, []):
+                    crawled_seeds.extend(_crawled_keywords.get(_bid, []))
+                db_seeds = [r["keyword"] for r in get_top_keywords(n=20, min_score=0)
+                            if r.get("category", "") == cat and len(r["keyword"].split()) <= 4]
+                seen_seeds = set()
+                seeds = []
+                for kw in crawled_seeds + db_seeds:
+                    if kw not in seen_seeds:
+                        seen_seeds.add(kw)
+                        seeds.append(kw)
+                if not seeds:
+                    continue
+                added = expand_longtail(base_keywords=seeds, category=cat, blog_id=bid,
+                                        top_n=8, on_log=log)
+                log(f"[롱테일] {bid}({cat}): +{added}개 롱테일 추가")
+        except Exception as e:
+            log(f"[롱테일] 오류: {e}")
+
+        _today_wd = datetime.now().weekday()
+        if _today_wd in (0, 2, 4):
+            log("[경쟁모니터] 경쟁 사이트 신규 포스트 감지 시작")
+            try:
+                from keyword_engine.competitor_monitor import monitor_competitors
+                _added = monitor_competitors(on_log=log)
+                log(f"[경쟁모니터] 신규 키워드 {_added}개 추가 완료")
+            except Exception as _e:
+                log(f"[경쟁모니터] 오류: {_e}")
         save_log()
     else:
         log("[크롤링] 오늘 이미 완료 — 스킵")
 
-    # ── 롱테일 키워드 확장 (크롤링 직후, 오늘 이미 했으면 스킵) ──
-    # 크롤링한 경쟁사 seed → 네이버 자동완성/연관검색어 → 롱테일(4단어↑)만 저장
-    if _state.get("crawling_done") and not _crawled_keywords:
-        log("[롱테일] 크롤링 이미 완료(재실행) — 새 seed 없음, 스킵")
-    _BLOG_LONGTAIL = {
-        "nolja100":  "여행",
-        "triplog":   "여행",
-        "salim1su":  "살림",
-        "goodisak":  "IT",
-        "baremi542": "정부지원금",
-        "woll100":   "교통",
-        "phn0502":   "영화",
-        "me1091":    "리뷰",
-    }
-    log("[롱테일] 키워드 확장 시작")
-    try:
-        from keyword_engine.longtail_expander import expand_longtail
-        from keyword_engine.db_handler import get_top_keywords
-
-        # 각 블로그 카테고리별로 seed 구성: 크롤링 신규 키워드 우선, 없으면 DB 기존 키워드
-        _CAT_BLOG = {"여행": ["nolja100", "triplog"], "살림": ["salim1su"],
-                     "IT": ["goodisak"], "정부지원금": ["baremi542"],
-                     "교통": ["woll100"], "영화": ["phn0502"]}
-        for bid, cat in _BLOG_LONGTAIL.items():
-            # 이미 다른 blog_id가 같은 카테고리를 처리했으면 스킵 (중복 확장 방지)
-            if cat in ("여행",) and bid == "triplog":
-                continue  # nolja100에서 이미 처리
-            # 1순위: 오늘 크롤링한 키워드
-            crawled_seeds = []
-            for _bid in _CAT_BLOG.get(cat, []):
-                crawled_seeds.extend(_crawled_keywords.get(_bid, []))
-            # 2순위: DB 기존 키워드 (단어 수 적은 것 — seed 역할)
-            db_seeds = [r["keyword"] for r in get_top_keywords(n=20, min_score=0)
-                        if r.get("category", "") == cat and len(r["keyword"].split()) <= 4]
-            # seed 합치기 (크롤링 우선, 중복 제거)
-            seen_seeds = set()
-            seeds = []
-            for kw in crawled_seeds + db_seeds:
-                if kw not in seen_seeds:
-                    seen_seeds.add(kw)
-                    seeds.append(kw)
-            if not seeds:
-                continue
-            added = expand_longtail(
-                base_keywords=seeds,
-                category=cat,
-                blog_id=bid,
-                top_n=8,   # seed 최대 8개 확장 (신규 seed 많으면 더 많이)
-                on_log=log,
-            )
-            log(f"[롱테일] {bid}({cat}): +{added}개 롱테일 추가")
-    except Exception as e:
-        log(f"[롱테일] 오류: {e}")
-    save_log()
-
-    # ── 경쟁 사이트 모니터링 (월/수/금 실행) ──
-    _today_wd = datetime.now().weekday()  # 0=월, 2=수, 4=금
-    if _today_wd in (0, 2, 4):
-        log("[경쟁모니터] 경쟁 사이트 신규 포스트 감지 시작")
-        try:
-            from keyword_engine.competitor_monitor import monitor_competitors
-            _added = monitor_competitors(on_log=log)
-            log(f"[경쟁모니터] 신규 키워드 {_added}개 추가 완료")
-        except Exception as _e:
-            log(f"[경쟁모니터] 오류: {_e}")
-        save_log()
-
-    # ── 판단 엔진 (라운드 시작 전 1회, 오늘 이미 했으면 스킵) ──
-    _extra_rounds = _state.get("extra_rounds", 0)
-    if not _state.get("decision_done"):
-        try:
-            from decision_engine import run_daily_analysis, get_publish_count_recommendation
-            run_daily_analysis(on_log=log)
-            _rec = get_publish_count_recommendation(on_log=log)
-            _rec_count = max(_rec.values()) if _rec else 1
-            _extra_rounds = max(0, _rec_count - 3)  # 기본 3라운드 초과분
-            if _extra_rounds:
-                log(f"[판단엔진] 수익 pace 저조 → 추가 라운드 {_extra_rounds}개 실행 예정")
-        except Exception as _de:
-            log(f"[판단엔진] 생략: {_de}")
-        _state["decision_done"] = True
-        _state["extra_rounds"] = _extra_rounds
-
-        # ── 라운드 예약 시간 사전 계산 (첫 실행 시만) ──
-        _now_ts = _time.time()
-        _d1 = _random.uniform(0, 30 * 60)
-        _d2 = _random.uniform(4 * 3600, 5 * 3600)   # R2 목표: 7시 기준 11시30분~12시
-        _d3 = _random.uniform(4 * 3600, 4.5 * 3600) # R3 목표: R2 기준 4시간 후 → 4시~4시30분
-        _state["next_times"] = {
-            "1": _now_ts + _d1,
-            "2": _now_ts + _d1 + _d2,
-            "3": _now_ts + _d1 + _d2 + _d3,
-        }
-        _prev_ts = _state["next_times"]["3"]
-        for _er in range(_extra_rounds):
-            _de = _random.uniform(3 * 3600, 5 * 3600)
-            _state["next_times"][str(4 + _er)] = _prev_ts + _de
-            _prev_ts += _de
-        log(f"[스케줄] 라운드 1: {int(_d1/60)}분 후 / 라운드 2: {int((_d1+_d2)/3600)}시간 후 / 라운드 3: {int((_d1+_d2+_d3)/3600)}시간 후")
-        _save_state(_state)
+    # ── 포스팅 실행 ──
+    _target_blog = _sys.argv[1] if len(_sys.argv) > 1 else None
+    if _target_blog:
+        log(f"[실행] 블로그 지정: {_target_blog}")
+        ok = post_one_blog(_target_blog)
+        log(f"[완료] {_target_blog}: {'✅' if ok else '⚠'}")
     else:
-        log(f"[판단엔진] 오늘 이미 완료 — 스킵 (extra_rounds={_extra_rounds})")
-    save_log()
-
-    # ── 라운드 실행 (재실행 시 완료 라운드 스킵, 예약 시간 복원) ──
-    def _run_round_with_resume(round_num):
-        completed = _state.get("completed_rounds", [])
-        if round_num in completed:
-            log(f"[라운드 {round_num}] 이미 완료 — 스킵")
-            return
-        target_ts = _state.get("next_times", {}).get(str(round_num))
-        if target_ts:
-            wait = target_ts - _time.time()
-            if wait > 60:
-                log(f"[라운드 {round_num}] {int(wait/3600)}시간 {int((wait%3600)/60)}분 후 시작 예정")
-                _time.sleep(wait)
-            elif wait > 0:
-                _time.sleep(wait)
-            else:
-                log(f"[라운드 {round_num}] 예약 시간 경과({abs(int(wait/60))}분 전) — 즉시 시작")
-        run_one_round(round_num)
-        _state["completed_rounds"].append(round_num)
-        _save_state(_state)
-
-    _total_rounds = 3 + _extra_rounds
-    for _rn in range(1, _total_rounds + 1):
-        _run_round_with_resume(_rn)
+        log("[실행] 전체 블로그 1라운드")
+        run_one_round(1)
 
     log("\n" + "=" * 60)
-    log("전체 완료")
+    log("완료")
     log("=" * 60)
     save_log()
-
-    # ── caffeinate 종료 ──
-    if _caffeinate:
-        try:
-            _caffeinate.terminate()
-            log("[시스템] caffeinate 종료")
-        except Exception:
-            pass

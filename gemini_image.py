@@ -58,7 +58,7 @@ def _parse_quota_until(err_text: str) -> datetime:
     return (now + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
 
 
-def _generate_via_fallback(prompt: str, filename: str, on_log=None, skip_webp=False):
+def _generate_via_fallback(prompt: str, filename: str, on_log=None, skip_webp=False, save_dir: Path = None):
     """Gemini 쿼터 초과 시 무료 스톡 이미지 폴백 (loremflickr.com).
 
     프롬프트에서 영문 키워드를 추출해 관련 CC 라이선스 이미지 다운로드.
@@ -74,6 +74,9 @@ def _generate_via_fallback(prompt: str, filename: str, on_log=None, skip_webp=Fa
     _ctx = _ssl.create_default_context()
     _ctx.check_hostname = False
     _ctx.verify_mode = _ssl.CERT_NONE
+
+    _save_dir = Path(save_dir) if save_dir else IMAGES_DIR
+    _save_dir.mkdir(parents=True, exist_ok=True)
 
     # 프롬프트에서 명사 키워드 추출 (영문 단어 2~3개)
     words = _re.findall(r'[A-Za-z]{4,}', prompt)
@@ -93,7 +96,7 @@ def _generate_via_fallback(prompt: str, filename: str, on_log=None, skip_webp=Fa
 
         img = Image.open(io.BytesIO(data))
         w, h = img.size
-        final_path = IMAGES_DIR / filename
+        final_path = _save_dir / filename
         if skip_webp:
             img.convert("RGB").save(str(final_path), "JPEG", quality=90)
         else:
@@ -105,13 +108,13 @@ def _generate_via_fallback(prompt: str, filename: str, on_log=None, skip_webp=Fa
         return None
 
 
-def generate_images(image_infos: list, on_log=None, skip_webp=False, reference_images: list = None) -> dict:
+def generate_images(image_infos: list, on_log=None, skip_webp=False, reference_images: list = None, output_dir: Path = None) -> dict:
     """이미지 프롬프트 리스트로 Gemini에서 이미지 생성 후 저장.
 
     Args:
         skip_webp: True면 webp 변환 없이 PNG 그대로 저장 (네이버 블로그용)
         reference_images: 참고 이미지 경로 리스트. image_infos와 1:1 매칭.
-                          e.g. ['/path/review_1.jpg', '/path/review_2.jpg', None]
+        output_dir: 저장 폴더 (None이면 기본 images/ 사용)
 
     Returns:
         {index: filepath} 딕셔너리 (성공한 것만)
@@ -123,6 +126,10 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False, reference_i
     if not image_infos:
         log("[이미지] 생성할 이미지 없음")
         return {}
+
+    # 블로그별 저장 폴더 (output_dir 우선, 없으면 기본 images/)
+    save_dir = Path(output_dir) if output_dir else IMAGES_DIR
+    save_dir.mkdir(parents=True, exist_ok=True)
 
     # Gemini 쿼터 차단 여부 사전 확인
     _blocked_until = _quota_blocked_until()
@@ -146,7 +153,7 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False, reference_i
                 if not filename.endswith(".webp"):
                     filename += ".webp"
             log(f"[이미지 {idx}] 폴백 모드 생성: {prompt[:50]}...")
-            fp = _generate_via_fallback(prompt, filename, on_log, skip_webp)
+            fp = _generate_via_fallback(prompt, filename, on_log, skip_webp, save_dir=save_dir)
             if fp:
                 results[idx] = fp
                 log(f"[이미지 {idx}] 저장 완료: {fp}")
@@ -185,6 +192,7 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False, reference_i
                     skip_webp=skip_webp,
                     open_new_chat=is_first,
                     reference_image=ref_img,
+                    save_dir=save_dir,
                 )
                 is_first = False
                 if filepath:
@@ -243,7 +251,7 @@ def _drag_toolbar_away(page):
 
 
 def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp=False,
-                     open_new_chat: bool = True, reference_image: str = None):
+                     open_new_chat: bool = True, reference_image: str = None, save_dir: Path = None):
     """단일 이미지 생성 → 스크린샷 캡처 → webp 변환 (skip_webp=True면 PNG 그대로)
 
     Args:
@@ -253,6 +261,9 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     def log(msg):
         if on_log:
             on_log(msg)
+
+    _save_dir = Path(save_dir) if save_dir else IMAGES_DIR
+    _save_dir.mkdir(parents=True, exist_ok=True)
 
     page = get_or_create_page(browser, url_contains="gemini.google",
                               navigate_to=GEMINI_URL)
@@ -400,7 +411,7 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
                             until = _parse_quota_until(err_text)
                             _save_quota_block(until)
                             log(f"[이미지] Gemini 쿼터 초과 감지 ({i}초) — 차단 해제: {until.strftime('%m/%d %H:%M')} → loremflickr 폴백")
-                            return _generate_via_fallback(prompt, filename, on_log, skip_webp)
+                            return _generate_via_fallback(prompt, filename, on_log, skip_webp, save_dir=save_dir)
                         if i > 60:
                             log(f"[이미지] 텍스트 응답({len(err_text)}자): {err_text[:80]!r}")
                             log(f"[이미지] 텍스트 오류 응답 감지 ({i}초) — 조기 종료")
@@ -420,7 +431,7 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
         'model-response img:not(.user-icon), .response-container img:not(.user-icon), '
         '[data-response-id] img:not(.user-icon), img.image.loaded'
     ).last
-    final_path = IMAGES_DIR / filename
+    final_path = _save_dir / filename
 
     log("[이미지] canvas 방식으로 이미지 추출 (툴바 없음)...")
     saved = False
@@ -513,7 +524,7 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     # 최종 폴백: 스크린샷 (툴바 포함될 수 있음)
     if not saved:
         log("[이미지] 스크린샷 폴백...")
-        png_path = IMAGES_DIR / f"temp_{filename}.png"
+        png_path = _save_dir / f"temp_{filename}.png"
         try:
             page.mouse.move(0, 0)
             page.wait_for_timeout(500)

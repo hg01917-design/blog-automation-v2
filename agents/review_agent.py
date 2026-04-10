@@ -128,9 +128,15 @@ def run(result: dict, keyword: str, blog_id: str,
         idx = img_info["index"]
         filepath = image_paths.get(idx)
         if not filepath:
-            candidate = IMAGES_DIR / img_info.get("filename", "")
+            blog_images_dir = IMAGES_DIR / blog_id
+            candidate = blog_images_dir / img_info.get("filename", "")
             if not candidate.exists():
-                issues.append(f"이미지 {idx} 파일 없음")
+                # 이전 버전 호환: 루트 images/ 폴더도 확인
+                candidate_old = IMAGES_DIR / img_info.get("filename", "")
+                if candidate_old.exists():
+                    image_paths[idx] = str(candidate_old)
+                else:
+                    issues.append(f"이미지 {idx} 파일 없음")
             else:
                 image_paths[idx] = str(candidate)
         elif not os.path.exists(filepath):

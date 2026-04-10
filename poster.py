@@ -917,7 +917,7 @@ def _naver_apply_subtitle_format(page):
         '.se-toolbar-item-textformat button',
     ]:
         el = page.query_selector(sel)
-        if el and el.is_visible(timeout=500):
+        if el and el.is_visible():
             fmt_btn = el
             break
 
@@ -939,7 +939,7 @@ def _naver_apply_subtitle_format(page):
                     'li[data-type="sectionTitle"] button',
                 ]:
                     sub_btn = page.query_selector(sub_sel)
-                    if sub_btn and sub_btn.is_visible(timeout=200):
+                    if sub_btn and sub_btn.is_visible():
                         sub_btn.click()
                         time.sleep(0.4)
                         return True
@@ -968,7 +968,7 @@ def _naver_set_font_color_black(page):
         for sel in color_selectors:
             try:
                 el = page.query_selector(sel)
-                if el and el.is_visible(timeout=300):
+                if el and el.is_visible():
                     color_btn = el
                     break
             except Exception:
@@ -989,7 +989,7 @@ def _naver_set_font_color_black(page):
         for sel in hex_input_sels:
             try:
                 el = page.query_selector(sel)
-                if el and el.is_visible(timeout=300):
+                if el and el.is_visible():
                     hex_input = el
                     break
             except Exception:
@@ -1010,7 +1010,7 @@ def _naver_set_font_color_black(page):
             for sel in black_sels:
                 try:
                     el = page.query_selector(sel)
-                    if el and el.is_visible(timeout=300):
+                    if el and el.is_visible():
                         el.click()
                         time.sleep(0.3)
                         break
@@ -1228,10 +1228,16 @@ def _parse_naver_sections(content):
 
     flush_text()
 
-    # 도입부 규칙: 글 첫 번째 요소가 소제목이면 일반 텍스트로 변환
-    # (도입부에는 소제목 없이 본문 텍스트로 시작해야 함)
+    # 도입부 규칙: 첫 번째 요소가 소제목이면 일반 텍스트로 강제 변환
+    # HTML div(핵심요약 등)가 첫 번째면 그 뒤 첫 소제목도 확인해서 도입부 없으면 빈 도입부 추가는 안 함
+    # (프롬프트로 도입부를 요청하는 것이 근본 해결책)
     if sections and sections[0]["type"] == "heading":
         sections[0] = {"type": "text", "body": sections[0]["text"]}
+    # HTML 블록(핵심요약 박스 등)이 첫 번째이고, 그 다음이 바로 소제목인 경우도 처리
+    elif sections and sections[0]["type"] == "html":
+        if len(sections) >= 2 and sections[1]["type"] == "heading":
+            # 소제목을 텍스트로 변환 (도입부 역할)
+            sections[1] = {"type": "text", "body": sections[1]["text"]}
 
     return sections
 
@@ -1312,7 +1318,7 @@ def _post_naver(account, title, content, tags=None,
 
     image_paths = image_paths or {}
     image_infos = image_infos or []
-    images_dir = Path(__file__).parent / "images"
+    images_dir = Path(__file__).parent / "images" / blog_id
 
     # 애드센스 마커 삽입
     blog_id = account.get("blog", "")
