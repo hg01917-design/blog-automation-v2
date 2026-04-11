@@ -112,11 +112,48 @@ def wait_for_tinymce(page, timeout_sec=25) -> bool:
     return False
 
 
+def delete_existing_images(page, blog_id: str) -> int:
+    """TinyMCE 에디터에서 기존 이미지 전체 삭제. 삭제된 개수 반환."""
+    deleted = page.evaluate("""() => {
+        const ed = tinymce.activeEditor;
+        const body = ed.getBody();
+        // Tistory 이미지 블록: figure.imageblock, p>img, div.img_block 등
+        const containers = [
+            ...body.querySelectorAll('figure[class*="image"], figure[class*="img"]'),
+            ...body.querySelectorAll('p > img'),
+            ...body.querySelectorAll('div[class*="img"]'),
+        ];
+        // 중복 제거 (img 자체가 포함된 경우 부모 우선)
+        const toRemove = new Set();
+        containers.forEach(el => {
+            // img 태그면 부모 figure/p로 올라가서 제거
+            if (el.tagName === 'IMG') {
+                const parent = el.closest('figure') || el.parentElement;
+                toRemove.add(parent || el);
+            } else {
+                toRemove.add(el);
+            }
+        });
+        // figure/p 없이 body 직속 img도 제거
+        body.querySelectorAll(':scope > img').forEach(el => toRemove.add(el));
+        toRemove.forEach(el => { try { el.remove(); } catch(e) {} });
+        ed.fire('change');
+        ed.save();
+        return toRemove.size;
+    }""")
+    log(f"[{blog_id}] 기존 이미지 {deleted}개 삭제")
+    return deleted
+
+
 def insert_images_at_positions(page, blog_id: str, image_files: list) -> int:
-    """TinyMCE 에디터에서 H2 소제목 아래에 이미지 삽입.
+    """TinyMCE 에디터에서 기존 이미지 전부 삭제 후 H2 소제목 아래에 새 이미지 삽입.
     삽입 위치를 매번 DOM에서 새로 조회해 DOM 변화에 강건하게 처리.
     삽입 후 실제 img 수 증가 여부로 성공 검증.
     """
+    # ── 먼저 기존 이미지 전체 삭제 ──
+    delete_existing_images(page, blog_id)
+    time.sleep(1)
+
     inserted = 0
 
     # 현재 H2/H3 개수 파악 → 삽입 가능한 최대 이미지 수 결정

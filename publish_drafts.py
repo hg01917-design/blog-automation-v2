@@ -1390,6 +1390,44 @@ def _naver_open_draft_in_editor(page, blog_id: str, draft_url: str) -> bool:
     return True
 
 
+def _naver_delete_all_images(page) -> int:
+    """Naver SE3 에디터에서 이미지 컴포넌트 전체 삭제. 삭제된 개수 반환.
+
+    SE3 이미지 블록은 .se-module-image (컴포넌트 래퍼).
+    JS로 클릭 → 삭제 버튼(.se-btn-remove) 클릭 방식으로 제거.
+    클릭 방식 실패 시 DOM 직접 제거 폴백.
+    """
+    deleted = page.evaluate("""() => {
+        let count = 0;
+        // SE3 이미지 모듈 전체 선택
+        const modules = document.querySelectorAll(
+            '.se-module-image, [class*="se-module"][class*="image"], .se-component-image'
+        );
+        modules.forEach(mod => {
+            try {
+                // 삭제 버튼 클릭 시도 (SE3 컴포넌트 내 remove 버튼)
+                const removeBtn = mod.querySelector(
+                    '.se-btn-remove, [class*="btn_remove"], [class*="delete"], button[title*="삭제"]'
+                );
+                if (removeBtn) {
+                    removeBtn.click();
+                    count++;
+                    return;
+                }
+                // 삭제 버튼 없으면 컴포넌트 자체 제거
+                const component = mod.closest('.se-component') || mod;
+                component.remove();
+                count++;
+            } catch(e) {}
+        });
+        return count;
+    }""")
+    _log(f"[Naver] 기존 이미지 {deleted}개 삭제")
+    if deleted > 0:
+        import time as _t; _t.sleep(1)
+    return deleted
+
+
 def _naver_check_editor_content(page) -> dict:
     """Naver Smart Editor 콘텐츠 확인."""
     result = page.evaluate("""() => {
