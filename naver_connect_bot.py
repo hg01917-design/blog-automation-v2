@@ -142,15 +142,37 @@ def mark_done(product_name: str, affiliate_url: str, angle: str = "", blog_url: 
 
 
 # ── 상품 목록 로드 ────────────────────────────────────────────────────────────
+def _normalize_product(p: dict) -> dict:
+    """키워드 마스터 export 형식 + 직접 입력 형식 통합 정규화.
+    키워드마스터: {"title": ..., "seller": ..., "price": ..., "link": ..., "imageUrl": ...}
+    직접입력:     {"name": ..., "link": ..., "category": ..., "imageUrl": ...}
+    """
+    # name 통합 (title → name)
+    name = p.get("name") or p.get("title") or ""
+    name = name.strip()
+    # category 통합 (seller → category 폴백)
+    category = p.get("category") or p.get("seller") or "생활용품"
+    # imageUrl 지원
+    image_url = p.get("imageUrl") or p.get("image_url") or ""
+    return {
+        "name": name,
+        "link": p.get("link", ""),
+        "category": category,
+        "imageUrl": image_url,
+        "price": p.get("price", ""),
+    }
+
+
 def load_products() -> list:
-    """naver_connect_products.json에서 상품 목록 읽기."""
+    """naver_connect_products.json에서 상품 목록 읽기.
+    키워드 마스터 export JSON 형식도 자동 인식."""
     if not PRODUCTS_FILE.exists():
-        # 예시 파일 생성
         example = [
             {
                 "name": "예시 상품명 (여기에 실제 상품명 입력)",
                 "link": "https://naver.me/XXXXXXXX",
-                "category": "주방/생활"
+                "category": "주방/생활",
+                "imageUrl": ""
             }
         ]
         PRODUCTS_FILE.write_text(json.dumps(example, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -158,14 +180,48 @@ def load_products() -> list:
         return []
 
     try:
-        products = json.loads(PRODUCTS_FILE.read_text(encoding="utf-8"))
-        # 예시 행 제거
-        products = [p for p in products if "(예시)" not in p.get("name", "") and "XXXXXXXX" not in p.get("link", "")]
+        raw = json.loads(PRODUCTS_FILE.read_text(encoding="utf-8"))
+        products = [_normalize_product(p) for p in raw]
+        # 예시/빈 행 제거
+        products = [
+            p for p in products
+            if p["name"] and "(예시)" not in p["name"]
+            and p["link"] and "XXXXXXXX" not in p["link"]
+            and p["link"] != "링크 생성 실패"
+        ]
         log(f"[상품목록] {len(products)}개 상품 로드")
         return products
     except Exception as e:
         log(f"[상품목록] 로드 실패: {e}")
         return []
+
+
+# ── 상품 이미지 다운로드 ──────────────────────────────────────────────────────
+def download_product_image(image_url: str, name: str) -> str | None:
+    """네이버 쇼핑 상품 이미지 다운로드. 성공 시 로컬 경로 반환."""
+    if not image_url or not image_url.startswith("http"):
+        return None
+    try:
+        import ssl, urllib.request
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        safe = re.sub(r'[^\w\-]', '-', name)[:30]
+        out_path = IMAGES_DIR / BLOG_ID / f"nc-{safe}-{int(time.time()) % 100000}.jpg"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        req = urllib.request.Request(image_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, context=ctx, timeout=15) as r:
+            data = r.read()
+        if len(data) < 5000:
+            return None
+        out_path.write_bytes(data)
+        log(f"[이미지] 상품 이미지 다운로드 완료 ({len(data)//1024}KB): {out_path.name}")
+        return str(out_path)
+    except Exception as e:
+        log(f"[이미지] 다운로드 실패: {e}")
+        return None
 
 
 # ── 네이버 쇼핑 상품 정보 수집 ────────────────────────────────────────────────
@@ -467,22 +523,45 @@ def run_one_product():
     if not title or not content:
         return False
 
-    # 3. 이미지 생성 + 임시저장
+    # 3. 이미지 준비 (상품 실사진 우선, 없으면 Gemini 생성)
     try:
         from poster import post_single
         from image_router import generate_images_for_blog
 
-        image_infos = [
-            {"prompt": f"{name} 생활용품 실사용 모습 깔끔한 인테리어", "alt": name, "index": i}
-            for i in range(1, 4)
-        ]
-        image_paths, image_infos_out = generate_images_for_blog(
-            blog_id=BLOG_ID,
-            image_infos=image_infos,
-            skip_webp=True,
-            on_log=log,
-            title=name,
-        )
+        image_paths = []
+        image_infos_out = []
+
+        # 우선순위 1: 상품 JSON에 imageUrl 있으면 다운로드
+        product_img_url = target.get("imageUrl", "")
+        if not product_img_url and info.get("images"):
+            product_img_url = info["images"][0]
+
+        if product_img_url:
+            log(f"[이미지] 상품 실사진 다운로드 시도: {product_img_url[:60]}")
+            # 상품 이미지 최대 3장 다운로드
+            all_img_urls = [product_img_url] + (info.get("images", [])[1:3] if info.get("images") else [])
+            for i, img_url in enumerate(all_img_urls[:3], start=1):
+                path = download_product_image(img_url, f"{name}-{i}")
+                if path:
+                    image_paths.append(path)
+                    image_infos_out.append({"alt": name, "index": i, "prompt": name})
+
+        # 우선순위 2: 상품 이미지 없으면 Gemini로 생성
+        if not image_paths:
+            log("[이미지] 상품 이미지 없음 → Gemini 생성")
+            image_infos = [
+                {"prompt": f"{name} 생활용품 실사용 모습 깔끔한 인테리어", "alt": name, "index": i}
+                for i in range(1, 4)
+            ]
+            image_paths, image_infos_out = generate_images_for_blog(
+                blog_id=BLOG_ID,
+                image_infos=image_infos,
+                skip_webp=True,
+                on_log=log,
+                title=name,
+            )
+
+        log(f"[이미지] 총 {len(image_paths)}장 준비 완료")
 
         ok = post_single(
             blog_id=BLOG_ID,
