@@ -324,7 +324,7 @@ def _content_quality_gate(content: str, title: str, blog_id: str) -> list:
 
     검사 항목:
     1. 템플릿 마커 잔재 (===본문===, Gemini프롬프트: 등)
-    2. 본문 길이 너무 짧음 (500자 미만)
+    2. 본문 길이 너무 짧음 (2000자 미만)
     3. 제목이 키워드 수준으로 짧음 (10자 미만)
     4. 동일 이미지 중복 삽입
     """
@@ -344,8 +344,8 @@ def _content_quality_gate(content: str, title: str, blog_id: str) -> list:
     # 2. 본문 길이 체크 (HTML 태그 제거 후 순수 텍스트)
     plain = re.sub(r'<[^>]+>', ' ', content)
     plain = re.sub(r'\s+', ' ', plain).strip()
-    if len(plain) < 500:
-        issues.append(f"본문 너무 짧음 ({len(plain)}자 < 500자) — 키워드만 있는 글일 가능성")
+    if len(plain) < 2000:
+        issues.append(f"본문 너무 짧음 ({len(plain)}자 < 2000자) — 내용 보완 필요")
 
     # 3. 제목 길이 체크
     if len(title.strip()) < 10:
@@ -1160,6 +1160,35 @@ def publish_tistory_draft(blog_id: str) -> bool:
                 return False
             if title_val:
                 _log(f"[phn0502] ✅ 영화 주제 확인: {title_val[:40]}")
+
+        # goodisak: IT+금융 주제 아닌 글은 발행 금지
+        if blog_id == "goodisak":
+            title_val = ""
+            for sel in ['#post-title-inp', '#title', 'input[name="title"]', '.title-input']:
+                el = page.query_selector(sel)
+                if el:
+                    title_val = (el.input_value() or "").strip()
+                    if title_val:
+                        break
+            BLOCK_KW = ["여행", "관광", "숙소", "호텔", "펜션", "맛집", "카페", "코스",
+                        "드라이브", "당일치기", "트레킹", "둘레길", "해변", "온천", "리조트",
+                        "캠핑", "글램핑", "항공", "축제", "벚꽃", "단풍", "나들이", "피크닉",
+                        "산책", "데이트", "야경", "포토스팟", "제주", "강릉", "경주", "강원",
+                        "주차장", "셔틀", "입장료", "DMZ", "평화생명", "군항제", "살림",
+                        "세탁", "청소", "요리", "냄새", "수납", "세제", "주방"]
+            if title_val and any(kw in title_val for kw in BLOCK_KW):
+                _log(f"[goodisak] ⛔ IT+금융 주제 아님 (제목: {title_val[:40]}) → 스킵 (임시저장 삭제)")
+                try:
+                    page.evaluate("""() => {
+                        const btns = [...document.querySelectorAll('button')];
+                        const del = btns.find(b => b.textContent.includes('삭제'));
+                        if (del) del.click();
+                    }""")
+                except Exception:
+                    pass
+                return False
+            if title_val:
+                _log(f"[goodisak] ✅ IT+금융 주제 확인: {title_val[:40]}")
 
         # 공개 발행
         ok = _tistory_publish_private(page, blog_id)
