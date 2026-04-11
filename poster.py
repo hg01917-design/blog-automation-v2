@@ -357,7 +357,8 @@ def _markdown_table_to_html(lines: list) -> str:
 # 티스토리 글 작성 (TinyMCE 기반)
 # ─────────────────────────────────────────────
 def _post_tistory(account, title, body_html, tags=None,
-                  image_paths=None, image_infos=None, keyword="", on_log=None):
+                  image_paths=None, image_infos=None, keyword="",
+                  thumbnail_path=None, on_log=None):
     """티스토리 에디터에서 글 작성 + 임시저장
 
     Args:
@@ -449,9 +450,39 @@ def _post_tistory(account, title, body_html, tags=None,
         body_el.click()
         _rand_delay(page, 300, 600)
 
+        # ── 썸네일 별도 업로드 → 대표이미지 설정 → 본문에서 삭제 ──
+        blog_id = account.get("blog", "")
+        if thumbnail_path and Path(thumbnail_path).exists():
+            log("[포스팅] 썸네일 업로드 중...")
+            ok_thumb = _tistory_upload_image(page, thumbnail_path, alt="썸네일", on_log=log)
+            if ok_thumb:
+                time.sleep(1)
+                _tistory_set_thumbnail(page, log_fn=log)
+                time.sleep(1)
+                # TinyMCE 본문에서 썸네일 이미지 제거 (대표이미지 슬롯엔 유지됨)
+                page.evaluate("""() => {
+                    const ed = tinymce && tinymce.activeEditor;
+                    if (!ed) return;
+                    const body = ed.getBody();
+                    const imgs = body.querySelectorAll(
+                        'figure.image_type_imageblock, p > img, figure > img, .imageblock, .se-image'
+                    );
+                    if (imgs.length > 0) {
+                        const container = imgs[0].closest('figure, p, div') || imgs[0].parentElement;
+                        if (container && container !== body) {
+                            container.parentElement && container.parentElement.removeChild(container);
+                        } else {
+                            imgs[0].parentElement && imgs[0].parentElement.removeChild(imgs[0]);
+                        }
+                    }
+                }""")
+                time.sleep(0.5)
+                log("[포스팅] 썸네일 설정 완료 (본문에서 제거)")
+            else:
+                log("[포스팅] 썸네일 업로드 실패 — 스킵")
+
         # 본문을 줄 단위로 처리
         # Claude 응답 형식: ## H2, {{이미지N}}, [애드센스], | 표 |, 일반 텍스트
-        blog_id = account.get("blog", "")
 
         # 애드센스 자동 삽입 (content_builder 규칙 적용)
         body_text = insert_adsense_markers(body_html, blog_id)
@@ -1929,7 +1960,7 @@ def _wp_upload_image_with_id(site_url: str, auth_header: str, filepath: str,
 
 def _post_wordpress(account, title, content, tags=None,
                     keyword: str = "", image_paths=None,
-                    image_infos=None, on_log=None):
+                    image_infos=None, thumbnail_path=None, on_log=None):
     """WordPress REST API로 글을 발행하고 Rank Math 메타를 설정한다.
 
     .env 필요:
@@ -2006,23 +2037,29 @@ def _post_wordpress(account, title, content, tags=None,
     # 2. 마크다운 → HTML 변환
     html_content = _md_to_wp_html(content)
 
-    # 2. 이미지 업로드 후 {{이미지N}} 플레이스홀더 교체
+    # 2. 썸네일(특성 이미지) 업로드 — 본문과 별개
+    _featured_media_id = None
+    _thumb_src = thumbnail_path or (image_paths.get(0) if image_paths else None)
+    if _thumb_src and Path(_thumb_src).exists():
+        _thumb_url, _thumb_mid = _wp_upload_image_with_id(
+            site_url, auth_header, _thumb_src, alt=f"{keyword} 대표이미지", on_log=on_log)
+        if _thumb_mid:
+            _featured_media_id = _thumb_mid
+            log(f"[WordPress] 썸네일 업로드 완료: media_id={_thumb_mid}")
+
+    # 2-1. 이미지 업로드 후 {{이미지N}} 플레이스홀더 교체 (index 1부터, 본문 전용)
     info_map = {img["index"]: img for img in image_infos}
-    _first_media_id = [None]  # 첫 번째 이미지 media_id (특성 이미지용)
 
     def _replace_image(m):
         idx = int(m.group(1))
         filepath = image_paths.get(idx, "")
         alt = info_map.get(idx, {}).get("alt", "")
-        # 첫 번째 이미지 alt에 키워드 강제 포함 (Rank Math 이미지 alt 체크)
         if idx == 1 and keyword and keyword not in alt:
             alt = f"{keyword} {alt}".strip()
         if filepath:
             url, media_id = _wp_upload_image_with_id(
                 site_url, auth_header, filepath, alt=alt, on_log=on_log)
             if url:
-                if idx == 1 and media_id and _first_media_id[0] is None:
-                    _first_media_id[0] = media_id
                 return f'<figure class="wp-block-image"><img src="{url}" alt="{alt}"/></figure>'
         log(f"[WordPress] {{이미지{idx}}} — 파일 없음, 플레이스홀더 제거")
         return ""
@@ -2149,10 +2186,10 @@ def _post_wordpress(account, title, content, tags=None,
             "rank_math_description": meta_desc,
         },
     }
-    # 특성 이미지(featured image) 설정 — 첫 번째 이미지 미디어 ID
-    if _first_media_id[0]:
-        post_body["featured_media"] = _first_media_id[0]
-        log(f"[WordPress] 특성 이미지 설정: media_id={_first_media_id[0]}")
+    # 특성 이미지(featured image) 설정 — 별도 생성한 썸네일
+    if _featured_media_id:
+        post_body["featured_media"] = _featured_media_id
+        log(f"[WordPress] 특성 이미지 설정: media_id={_featured_media_id}")
 
     log(f"[WordPress] REST API 발행 시작: \"{title}\"")
     log(f"[WordPress] Focus Keyword: {keyword} / SEO Title: {seo_title}")
@@ -2247,7 +2284,7 @@ def _post_wordpress(account, title, content, tags=None,
 # ─────────────────────────────────────────────
 def post_single(blog_id: str, title: str, content: str,
                 tags=None, image_paths=None, image_infos=None,
-                keyword: str = "", on_log=None):
+                keyword: str = "", thumbnail_path: str = None, on_log=None):
     """한 계정에 대해 로그인 → 포스팅 → 로그아웃 전체 수행"""
     def log(msg):
         if on_log:
@@ -2266,7 +2303,8 @@ def post_single(blog_id: str, title: str, content: str,
         log(f"[순환] {blog_id} WordPress REST API 발행...")
         ok = _post_wordpress(account, title, content, tags,
                              keyword=keyword, image_paths=image_paths,
-                             image_infos=image_infos, on_log=on_log)
+                             image_infos=image_infos, thumbnail_path=thumbnail_path,
+                             on_log=on_log)
         status = "성공" if ok else "실패"
         log(f"[순환] {blog_id} 완료 ({status})")
         return ok
@@ -2285,7 +2323,7 @@ def post_single(blog_id: str, title: str, content: str,
     if account["platform"] == "tistory":
         ok = _post_tistory(account, title, content, tags,
                            image_paths=image_paths, image_infos=image_infos,
-                           keyword=keyword, on_log=on_log)
+                           keyword=keyword, thumbnail_path=thumbnail_path, on_log=on_log)
     elif account["platform"] == "naver":
         ok = _post_naver(account, title, content, tags,
                          image_paths=image_paths, image_infos=image_infos,

@@ -679,8 +679,8 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
     MIN_IMAGES = 3
 
     # 3. 글 품질 검수 (이미지 생성 전에 먼저 — Gemini 쿼터 낭비 방지)
-    MIN_BODY_CHARS_HARD = 1700  # 절대 최소 (이 미만이면 발행 중단)
-    MIN_BODY_CHARS_SOFT = 2000  # 권고 최소 (이 미만이면 재생성 1회 시도)
+    MIN_BODY_CHARS_HARD = 2000  # 절대 최소 (이 미만이면 발행 중단)
+    MIN_BODY_CHARS_SOFT = 3000  # 권고 최소 (이 미만이면 재생성 1회 시도)
 
     # 2000자 미만이면 재생성 1회 시도
     if char_count < MIN_BODY_CHARS_SOFT:
@@ -755,7 +755,7 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
     if char_count < MIN_BODY_CHARS_HARD:
         log(f"[검수] ⚠ 본문 짧음 ({char_count}자 < {MIN_BODY_CHARS_HARD}자) — 임시저장 후 클로드코드 보완 예정")
     elif char_count < MIN_BODY_CHARS_SOFT:
-        log(f"[검수] ⚠ 본문 권고치 미달 ({char_count}자 < {MIN_BODY_CHARS_SOFT}자) — 임시저장 진행")
+        log(f"[검수] ⚠ 본문 권고치 미달 ({char_count}자 < {MIN_BODY_CHARS_SOFT}자) — 임시저장 진행 (목표: 3000자)")
     if not tags:
         log(f"[검수] ⚠ 태그 없음 — 기본 태그로 대체")
         tags = [keyword]  # 최소 키워드라도 태그로 사용
@@ -770,12 +770,15 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
 
 def _run_image_and_post(blog_id, keyword, title, body, tags, images):
     """이미지 생성 → 내부링크 → 임시저장 (텍스트 생성 이후 단계만)"""
-    from image_router import generate_images_for_blog
+    from image_router import generate_images_for_blog, generate_thumbnail
     from poster import post_single
 
-    MIN_IMAGES = 3
+    # H2 소제목 개수 = 본문 이미지 수 (최소 1)
+    h2_count = len(re.findall(r'^##\s+', body, re.MULTILINE))
+    MIN_IMAGES = max(h2_count, 1)
+    log(f"[파이프라인] H2 소제목 {h2_count}개 → 본문 이미지 {MIN_IMAGES}개 목표")
 
-    # 이미지 생성
+    # 본문 이미지 생성 (오버레이 없음)
     image_paths = {}
     if images:
         is_naver = blog_id in ("salim1su", "me1091")
@@ -785,33 +788,43 @@ def _run_image_and_post(blog_id, keyword, title, body, tags, images):
             image_infos=images,
             skip_webp=is_naver,
             on_log=log,
-            title=title,
         )
-        log(f"[파이프라인] 이미지 {len(image_paths)}개 생성 완료")
+        log(f"[파이프라인] 본문 이미지 {len(image_paths)}개 생성 완료")
 
-    # 이미지 최소 3장 보장 — 부족하면 Pollinations 폴백 보충
+    # 본문 이미지 부족 시 Pollinations 폴백 (영문 프롬프트 사용)
     if len(image_paths) < MIN_IMAGES:
         log(f"[파이프라인] ⚠ 이미지 {len(image_paths)}개 < 최소 {MIN_IMAGES}개 — Pollinations 폴백 보충")
-        from image_router import _pollinations_image, _enhance_prompt, IMAGES_DIR as _IMG_DIR
+        from image_router import _pollinations_image, _enhance_prompt, _get_prompt_style, IMAGES_DIR as _IMG_DIR
         _blog_img_dir = _IMG_DIR / blog_id
         _blog_img_dir.mkdir(parents=True, exist_ok=True)
-        extra_prompts = [keyword, f"{keyword} 관련 정보", f"{keyword} 생활 팁"]
+        style = _get_prompt_style(blog_id, keyword)
+        fallback_base = [
+            f"high quality photo related to {keyword}",
+            f"detailed scene about {keyword}, informative",
+            f"representative image for {keyword} topic",
+        ]
         for i in range(len(image_paths), MIN_IMAGES):
-            new_idx = len(images) + 1
-            kw_fb = extra_prompts[i % len(extra_prompts)]
+            new_idx = i + 1
+            fb_prompt = _enhance_prompt(blog_id, fallback_base[i % len(fallback_base)], index=new_idx)
             fname = f"fallback_{blog_id}_{new_idx}.jpg"
-            enh = _enhance_prompt(blog_id, kw_fb)
             fp = str(_blog_img_dir / fname)
-            ok = _pollinations_image(enh, fp, on_log=log)
+            ok = _pollinations_image(fb_prompt, fp, on_log=log)
             if ok:
-                images.append({"index": new_idx, "prompt": kw_fb, "filename": fname, "alt": kw_fb})
-                image_paths[new_idx] = fp  # poster.py가 기대하는 {index: filepath} 형식
+                images.append({"index": new_idx, "prompt": fb_prompt, "filename": fname, "alt": keyword})
+                image_paths[new_idx] = fp
         log(f"[파이프라인] 이미지 보충 후 총 {len(image_paths)}개")
 
     if len(image_paths) < MIN_IMAGES:
         log(f"[검수] ⚠ 이미지 부족 ({len(image_paths)}개 < {MIN_IMAGES}개) — 임시저장 후 클로드코드 보완 예정")
     else:
-        log(f"[검수] ✅ 이미지 {len(image_paths)}개 확인")
+        log(f"[검수] ✅ 본문 이미지 {len(image_paths)}개 확인")
+
+    # 썸네일 별도 생성 (오버레이 적용)
+    log(f"[파이프라인] 썸네일 생성 중...")
+    thumb_path = generate_thumbnail(blog_id, keyword, title, on_log=log)
+    if thumb_path:
+        image_paths[0] = thumb_path
+        log(f"[파이프라인] 썸네일 준비 완료: {thumb_path}")
 
     # 내부링크 삽입
     body = _inject_internal_links(body, blog_id, log)
@@ -827,6 +840,7 @@ def _run_image_and_post(blog_id, keyword, title, body, tags, images):
             tags=tags,
             image_paths=image_paths,
             image_infos=images,
+            thumbnail_path=thumb_path,
             on_log=log,
         )
         if ok:

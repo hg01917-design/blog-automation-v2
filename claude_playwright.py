@@ -5,7 +5,6 @@ import json
 import random
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from browser import connect_cdp as _connect_cdp, get_or_create_page
-from notion_prompt import fetch_prompt
 
 CLAUDE_URL = "https://claude.ai"
 
@@ -561,22 +560,20 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         "본문 마지막 단락에 면책 문구 한 줄 추가: '※ 이 글은 2026년 기준으로 작성되었으며, 정책·요금은 변동될 수 있습니다.'\n"
         "본문 길이: 공백 제외 순수 텍스트 **반드시 2000자 이상** 작성 (소제목 3개 이상, 각 소제목 아래 3~5문단).\n"
         "\n[이미지 규칙 — 필수]\n"
-        "본문 내 소제목 아래에 {{이미지1}}, {{이미지2}}, {{이미지3}} 마커를 반드시 삽입해 (글 내용과 연관된 위치에).\n"
+        "본문 내 H2 소제목(##) 바로 아래에 {{이미지N}} 마커를 반드시 삽입해 (N은 1부터 순서대로).\n"
+        "H2 소제목 개수만큼 이미지 마커를 삽입할 것 — H2가 3개면 {{이미지1}}, {{이미지2}}, {{이미지3}}.\n"
         "그리고 본문 끝에 ===이미지=== 섹션으로 각 이미지의 Gemini 생성 프롬프트를 작성해.\n"
-        "이미지는 글 주제와 직접 연관된 내용으로 — 연관없는 스톡 이미지 금지.\n"
+        "이미지는 해당 H2 섹션의 내용과 직접 연관된 구체적인 장면으로 — 추상적이거나 연관없는 이미지 금지.\n"
         "===이미지===\n"
         "[이미지1]\n"
-        "- Gemini프롬프트: (글 내용과 연관된 구체적 영어 프롬프트)\n"
+        "- Gemini프롬프트: (해당 H2 내용을 구체적으로 묘사하는 영어 프롬프트)\n"
         "- 파일명: (영문-소문자-하이픈.jpg)\n"
         "- alt: (키워드 포함 한국어 alt 텍스트)\n"
         "[이미지2]\n"
         "- Gemini프롬프트: ...\n"
         "- 파일명: ...\n"
         "- alt: ...\n"
-        "[이미지3]\n"
-        "- Gemini프롬프트: ...\n"
-        "- 파일명: ...\n"
-        "- alt: ...\n"
+        "(H2 개수만큼 반복)\n"
         "===이미지끝===\n"
     )
 
@@ -712,27 +709,21 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             prompt += _FORMAT_RULE
             log(f"[Playwright] 프로젝트 모드 — 키워드+모바일규칙+형식규칙 전송: '{keyword}'")
         else:
-            try:
-                prompt = fetch_prompt(blog_id, keyword, on_log)
-                prompt = prompt + _BOLD_RULE
-            except Exception as e:
-                log(f"[Notion] 프롬프트 가져오기 실패: {e}")
-                log("[Notion] 기본 프롬프트로 진행합니다.")
-                # Notion 페이지 없을 때 키워드 + 형식 규칙으로 기본 프롬프트 구성
-                if keyword and not prompt.strip():
-                    _SECTION_FORMAT = (
-                        "\n\n아래 형식으로만 출력해줘 (다른 형식 절대 금지):\n"
-                        "===제목===\n"
-                        "(SEO 최적화된 롱테일 제목 — 구체적 조건/지역/방법 포함 명사구, 25~45자)\n"
-                        "===제목끝===\n\n"
-                        "===본문===\n"
-                        "(블로그 본문 전체)\n"
-                        "===본문끝===\n\n"
-                        "===태그===\n"
-                        "태그1, 태그2, 태그3 (10~20개)\n"
-                        "===태그끝===\n"
-                    )
-                    prompt = keyword + _SECTION_FORMAT + _FORMAT_RULE + _BOLD_RULE
+            # Claude 프로젝트 미등록 blog_id (woll100, phn0502 등) — 키워드 + 형식 규칙으로 기본 프롬프트 구성
+            _SECTION_FORMAT = (
+                "\n\n아래 형식으로만 출력해줘 (다른 형식 절대 금지):\n"
+                "===제목===\n"
+                "(SEO 최적화된 롱테일 제목 — 구체적 조건/지역/방법 포함 명사구, 25~45자)\n"
+                "===제목끝===\n\n"
+                "===본문===\n"
+                "(블로그 본문 전체)\n"
+                "===본문끝===\n\n"
+                "===태그===\n"
+                "태그1, 태그2, 태그3 (10~20개)\n"
+                "===태그끝===\n"
+            )
+            prompt = keyword + _SECTION_FORMAT + _FORMAT_RULE + _BOLD_RULE
+            log(f"[Playwright] 기본 프롬프트 모드 — 키워드+형식규칙 전송: '{keyword}'")
 
     # 팩트 컨텍스트 주입 — 프로젝트 모드 포함 항상 주입 (할루시네이션 방지 핵심)
     # 키워드 뒤에 붙여서 프로젝트 지침이 앞에 오도록 구조 유지
