@@ -354,6 +354,63 @@ def _markdown_table_to_html(lines: list) -> str:
 
 
 # ─────────────────────────────────────────────
+# 내부링크 삽입 (Tistory용 — TinyMCE insertContent)
+# ─────────────────────────────────────────────
+_TISTORY_BLOG_RSS = {
+    "nolja100": "https://issue.baremi542.com/rss",
+    "goodisak": "https://welfare.baremi542.com/rss",
+    "woll100":  "https://info.baremi542.com/rss",
+    "phn0502":  "https://film.baremi542.com/rss",
+}
+
+def _tistory_inject_internal_links(page, blog_id: str, log_fn=None):
+    """본문 끝에 같은 블로그 최근 글 3개 내부링크 섹션을 TinyMCE로 삽입."""
+    log = log_fn or (lambda x: None)
+    if blog_id not in _TISTORY_BLOG_RSS:
+        return
+    import urllib.request as _ur
+    import ssl as _ssl
+    rss_url = _TISTORY_BLOG_RSS[blog_id]
+    try:
+        ctx = _ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = _ssl.CERT_NONE
+        req = _ur.Request(rss_url, headers={"User-Agent": "Mozilla/5.0"})
+        with _ur.urlopen(req, timeout=8, context=ctx) as _r:
+            rss = _r.read().decode("utf-8", errors="ignore")
+        items = re.findall(
+            r'<item>.*?<title><!\[CDATA\[(.*?)\]\]></title>.*?<link>(.*?)</link>.*?</item>',
+            rss, re.DOTALL
+        )
+        if not items:
+            titles = re.findall(r'<title>(.*?)</title>', rss)[1:4]
+            links  = re.findall(r'<link>(.*?)</link>', rss)[1:4]
+            items = list(zip(titles, links))
+        items = [(t.strip(), l.strip()) for t, l in items[:3] if t.strip() and l.strip()]
+        if not items:
+            log(f"[내부링크] {blog_id}: RSS 항목 없음")
+            return
+        li_html = ''.join(
+            f'<li><a href="{url}" target="_blank" style="color:#4285f4;text-decoration:none">{title}</a></li>'
+            for title, url in items
+        )
+        section_html = (
+            '<div style="margin-top:30px;padding:16px;background:#f8f9fa;'
+            'border-left:4px solid #4285f4;border-radius:4px">'
+            '<strong>📌 함께 읽으면 좋은 글</strong>'
+            f'<ul style="margin:8px 0 0 0;padding-left:20px">{li_html}</ul>'
+            '</div>'
+        )
+        page.evaluate(
+            "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.insertContent(html); }",
+            section_html,
+        )
+        log(f"[내부링크] {blog_id}: {len(items)}개 삽입 완료")
+    except Exception as e:
+        log(f"[내부링크] {blog_id} 실패 (무시): {e}")
+
+
+# ─────────────────────────────────────────────
 # 티스토리 글 작성 (TinyMCE 기반)
 # ─────────────────────────────────────────────
 def _post_tistory(account, title, body_html, tags=None,
@@ -744,6 +801,9 @@ def _post_tistory(account, title, body_html, tags=None,
                             log(f"[포스팅] 카테고리 '{cat_name}' 항목 없음. 실제 목록: {selected}")
                 except Exception as e:
                     log(f"[포스팅] 카테고리 선택 오류: {e}")
+
+        # ── 내부링크 삽입 (Tistory: TinyMCE insertContent) ──
+        _tistory_inject_internal_links(page, blog_id_local, log)
 
         # ── 임시저장 (검수 후 수동 발행) ──
         log("[포스팅] 임시저장 중...")

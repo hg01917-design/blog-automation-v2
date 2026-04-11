@@ -335,11 +335,15 @@ def _content_quality_gate(content: str, title: str, blog_id: str) -> list:
         '===본문===', '===이미지===', '===태그===', '===태그끝===',
         '===이미지끝===', 'Gemini프롬프트:', '- 파일명:', '- alt:',
         '===본문끝===', '===제목끝===', '{{이미지1}}', '{{이미지2}}', '{{이미지3}}',
+        '[검증 필요]', '[출처 필요]', '[애드센스]', '[TODO]', '[FIXME]',
     ]
     for marker in BAD_MARKERS:
         if marker in content:
             issues.append(f"템플릿 마커 노출: '{marker}'")
             break  # 첫 번째만 보고해도 충분
+    # 동적 이미지 마커 잔재: {{이미지N}} (숫자 무관)
+    if re.search(r'\{\{이미지\d+\}\}', content):
+        issues.append("이미지 마커 미교체: '{{이미지N}}' 잔재 발견")
 
     # 2. 본문 길이 체크 (HTML 태그 제거 후 순수 텍스트)
     plain = re.sub(r'<[^>]+>', ' ', content)
@@ -426,12 +430,23 @@ def _auto_repair_content(content: str, issues: list) -> tuple[str, list]:
                 r'\[이미지\d+\]\s*',
                 r'\{\{이미지\d+\}\}',
                 r'===제목===\s*', r'===이미지===\s*', r'===태그===\s*',
+                r'\[검증 필요\]', r'\[출처 필요\]', r'\[애드센스\]',
+                r'\[TODO\]', r'\[FIXME\]',
             ]
             before = fixed
             for pattern in marker_patterns:
                 fixed = re.sub(pattern, '', fixed, flags=re.DOTALL)
             if fixed != before:
                 _log(f"  → 마커 자동 제거 완료")
+            else:
+                remaining.append(issue)
+
+        elif "이미지 마커 미교체" in issue:
+            # {{이미지N}} 잔재 제거 (이미지 삽입 실패 시 마커만 남은 경우)
+            before = fixed
+            fixed = re.sub(r'\{\{이미지\d+\}\}', '', fixed)
+            if fixed != before:
+                _log(f"  → 이미지 마커 자동 제거 완료")
             else:
                 remaining.append(issue)
 
