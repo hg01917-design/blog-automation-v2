@@ -20,6 +20,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+# .env 로드
+_env_path = Path(__file__).parent / ".env"
+if _env_path.exists():
+    for _line in _env_path.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _, _v = _line.partition("=")
+            os.environ.setdefault(_k.strip(), _v.strip())
+
 from browser import connect_cdp, get_or_create_page
 from gsc_indexing import request_indexing
 from config import ACCOUNTS, ACCOUNT_MAP
@@ -636,13 +645,13 @@ def _tistory_get_draft_id(page, blog_id: str) -> str | None:
     published_core_sets = [_title_core_words(t) for t in published_titles]
 
     def _is_similar_to_published(title):
-        """발행된 글과 핵심어 40% 이상 겹치면 중복으로 판단"""
+        """발행된 글과 핵심어 55% 이상 겹치면 중복으로 판단"""
         core = _title_core_words(title)
         if not core:
             return False
         for pub_core in published_core_sets:
             overlap = core & pub_core
-            if len(overlap) >= max(2, len(core) * 0.4):
+            if len(overlap) >= max(3, len(core) * 0.55):
                 return True
         return False
 
