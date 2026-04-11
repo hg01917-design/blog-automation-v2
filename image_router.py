@@ -417,8 +417,9 @@ def generate_images_for_blog(
     output_dir = IMAGES_DIR / blog_id
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Gemini 전용: salim1su, me1091, nolja100, triplog (Bing 오류 이미지 방지)
-    is_gemini_only = blog_id in ("salim1su", "me1091", "nolja100", "triplog")
+    # Gemini 전용: Naver 블로그만 (loremflickr/Bing 오류 이미지 방지)
+    # triplog는 WordPress → Pollinations 사용
+    is_gemini_only = blog_id in ("salim1su", "me1091", "nolja100")
 
     if is_gemini_only:
         results = _generate_naver(enhanced_infos, skip_webp, log, reference_images=reference_images, output_dir=output_dir)
@@ -445,7 +446,7 @@ def generate_thumbnail(blog_id: str, keyword: str, title: str, on_log=None) -> s
     thumb_filename = f"thumb-{safe_kw}-{int(time.time()) % 100000}.jpg"
     thumb_path = str(output_dir / thumb_filename)
 
-    is_gemini_only = blog_id in ("salim1su", "me1091", "nolja100", "triplog")
+    is_gemini_only = blog_id in ("salim1su", "me1091", "nolja100")
     success = False
 
     if is_gemini_only:

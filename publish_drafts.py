@@ -497,26 +497,48 @@ def _claude_repair_draft(content: str, title: str, issues: list, blog_id: str) -
     """Claude를 사용해 글 내용을 수정. 수정된 HTML 반환 (실패 시 None).
 
     본문이 너무 짧거나 내용 문제가 있을 때 호출.
-    claude_playwright.repair_text()를 사용해 기존 글을 보완.
+    subprocess로 분리 실행 — sync_playwright 중복 인스턴스 충돌 방지.
     """
+    import subprocess, sys, json as _json, tempfile, os
     _log(f"[{blog_id}] Claude 수정 요청 중...")
     try:
-        from claude_playwright import repair_text
-        issues_str = "\n".join(f"- {i}" for i in issues)
-        # HTML을 plain text로 변환 후 repair_text에 전달
+        # HTML → plain text 변환
         plain = re.sub(r'<[^>]+>', '', content)
         plain = re.sub(r'\s+', ' ', plain).strip()
-        # repair_text는 ===섹션=== 형식 기대 — 임시로 형식 감싸기
         wrapped = f"===제목===\n{title}\n===제목끝===\n\n===본문===\n{plain}\n===본문끝==="
-        repaired_raw = repair_text(wrapped, issues, on_log=_log)
+
+        # 임시 파일로 입력/출력 교환 (subprocess에서 Playwright 사용)
+        in_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8')
+        _json.dump({'text': wrapped, 'issues': issues}, in_file, ensure_ascii=False)
+        in_file.close()
+        out_file = in_file.name + '_out.json'
+
+        repair_script = f"""
+import sys, json
+data = json.load(open({repr(in_file.name)}, encoding='utf-8'))
+sys.path.insert(0, {repr(str(Path(__file__).parent))})
+from claude_playwright import repair_text
+result = repair_text(data['text'], data['issues'])
+json.dump({{'result': result}}, open({repr(out_file)}, 'w', encoding='utf-8'), ensure_ascii=False)
+"""
+        proc = subprocess.run(
+            [sys.executable, '-c', repair_script],
+            timeout=120, capture_output=True, text=True
+        )
+        if proc.returncode != 0:
+            _log(f"[{blog_id}] Claude 수정 subprocess 실패: {proc.stderr[:200]}")
+            return None
+
+        result_data = _json.loads(open(out_file, encoding='utf-8').read())
+        repaired_raw = result_data.get('result')
         if not repaired_raw:
             return None
+
         # 수정된 raw에서 본문 추출 후 HTML 변환 (단락 → <p>)
         body_m = re.search(r'===본문===\s*\n(.*?)\n*===본문끝===', repaired_raw, re.DOTALL)
         if not body_m:
             return None
         body_text = body_m.group(1).strip()
-        # 줄바꿈 → <p> 태그
         paragraphs = [p.strip() for p in re.split(r'\n{2,}', body_text) if p.strip()]
         repaired_html = '\n'.join(f'<p>{p}</p>' for p in paragraphs)
         _log(f"[{blog_id}] Claude 수정 완료 ({len(repaired_html)}자)")
@@ -524,6 +546,12 @@ def _claude_repair_draft(content: str, title: str, issues: list, blog_id: str) -
     except Exception as e:
         _log(f"[{blog_id}] Claude 수정 실패: {e}")
         return None
+    finally:
+        for f in [in_file.name, out_file]:
+            try:
+                os.unlink(f)
+            except Exception:
+                pass
 
 
 # ══════════════════════════════════════════════
