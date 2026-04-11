@@ -32,9 +32,11 @@ def _adsense_api(path: str, params: dict = None) -> dict:
     token = _get_token()
     url = f"https://adsense.googleapis.com/v2/{path}"
     if params:
-        url += "?" + urllib.parse.urlencode(params)
+        # doseq=True: list 값을 개별 파라미터로 인코딩 (metrics 등 다중값 지원)
+        url += "?" + urllib.parse.urlencode(params, doseq=True)
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
-    return json.loads(urllib.request.urlopen(req, timeout=15).read())
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read())
 
 
 def get_account_name() -> str | None:
