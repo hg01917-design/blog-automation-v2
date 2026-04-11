@@ -410,6 +410,38 @@ def _tistory_inject_internal_links(page, blog_id: str, log_fn=None):
         log(f"[내부링크] {blog_id} 실패 (무시): {e}")
 
 
+def _tistory_ensure_meta_description(page, keyword: str, log_fn=None):
+    """첫 <p> 단락에 keyword가 없으면 앞에 키워드 포함 단락을 삽입한다.
+    Tistory는 본문 첫 문단이 메타디스크립션으로 사용되므로 SEO를 위해 필요."""
+    log = log_fn or (lambda x: None)
+    if not keyword:
+        return
+    try:
+        inserted = page.evaluate("""(kw) => {
+            const ed = tinymce.activeEditor;
+            if (!ed) return false;
+            const body = ed.getBody();
+            const firstP = body.querySelector('p');
+            if (!firstP) return false;
+            const text = firstP.textContent || '';
+            if (text.includes(kw)) return false;
+            const newP = ed.getDoc().createElement('p');
+            newP.setAttribute('data-ke-size', 'size19');
+            const preview = text.substring(0, 80).trim();
+            newP.textContent = kw + ' \u2014 ' + (preview ? preview + '...' : '\uc774\uc5d0 \ub300\ud574 \uc790\uc138\ud788 \uc54c\uc544\ubcf4\uc138\uc694.');
+            body.insertBefore(newP, firstP);
+            ed.fire('change');
+            ed.save();
+            return true;
+        }""", keyword)
+        if inserted:
+            log(f"[메타디스크립션] 키워드 '{keyword}' 첫 단락 삽입 완료")
+        else:
+            log(f"[메타디스크립션] 키워드 '{keyword}' 이미 첫 단락에 포함됨 (패스)")
+    except Exception as e:
+        log(f"[메타디스크립션] 삽입 실패 (무시): {e}")
+
+
 # ─────────────────────────────────────────────
 # 티스토리 글 작성 (TinyMCE 기반)
 # ─────────────────────────────────────────────
@@ -804,6 +836,9 @@ def _post_tistory(account, title, body_html, tags=None,
 
         # ── 내부링크 삽입 (Tistory: TinyMCE insertContent) ──
         _tistory_inject_internal_links(page, blog_id_local, log)
+
+        # ── 메타디스크립션 보장 (첫 단락에 키워드 삽입) ──
+        _tistory_ensure_meta_description(page, keyword, log)
 
         # ── 임시저장 (검수 후 수동 발행) ──
         log("[포스팅] 임시저장 중...")

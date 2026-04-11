@@ -114,6 +114,20 @@ def is_keyword_suitable(blog_id: str, keyword: str) -> bool:
 
 
 
+def _naver_competition_check(keyword: str, on_log=None) -> bool:
+    """Naver 검색결과 수 확인. 경쟁 너무 심하면 False 반환."""
+    # 검색결과 수는 직접 크롤링 어려우므로 키워드 길이+단어수로 경쟁도 근사 추정
+    # 롱테일 기준: 단어 2개 미만이면 경쟁 높음으로 간주
+    words = keyword.strip().split()
+    if len(words) < 2:
+        if on_log: on_log(f"[경쟁도] '{keyword}' 단어 1개 — 경쟁 높음 스킵")
+        return False
+    if len(keyword) < 6:
+        if on_log: on_log(f"[경쟁도] '{keyword}' 너무 짧음 — 경쟁 높음 스킵")
+        return False
+    return True
+
+
 def _extract_core_words(keyword):
     """키워드에서 핵심 단어를 추출한다.
 
@@ -826,6 +840,15 @@ def _run_image_and_post(blog_id, keyword, title, body, tags, images):
         image_paths[0] = thumb_path
         log(f"[파이프라인] 썸네일 준비 완료: {thumb_path}")
 
+    # 네이버 블로그 첫 문단 키워드 보장 (검색 결과 CTR 개선)
+    if blog_id in ("salim1su", "me1091"):
+        first_para = body.split("\n\n")[0] if "\n\n" in body else body.split("\n")[0]
+        if keyword and keyword not in first_para:
+            body = f"{keyword}에 대해 정리했습니다.\n\n" + body
+            log(f"[SEO] 네이버 첫 문단에 키워드 '{keyword}' 삽입 완료")
+        else:
+            log(f"[SEO] 네이버 첫 문단에 키워드 '{keyword}' 이미 포함됨 (패스)")
+
     # 내부링크 삽입
     body = _inject_internal_links(body, blog_id, log)
 
@@ -967,10 +990,10 @@ def _post_one_blog_inner(blog_id):
         candidate = fetch_next_pending(blog_id)
         if not candidate:
             break
-        if is_keyword_suitable(blog_id, candidate):
+        if is_keyword_suitable(blog_id, candidate) and _naver_competition_check(candidate, on_log=log):
             kw = candidate
             break
-        log(f"[{blog_id}] ⚠ 테마 부적합 '{candidate}' → 스킵")
+        log(f"[{blog_id}] ⚠ 테마 부적합 또는 경쟁 높음 '{candidate}' → 스킵")
         _db_set(candidate, "failed", blog_id=blog_id)
     if not kw:
         log(f"[{blog_id}] 대기 키워드 없음 — 스킵")
@@ -1024,6 +1047,13 @@ def run_one_round(round_num):
             _time.sleep(_rand.uniform(30, 90))
         log(f"[라운드 {round_num}] 재시도 결과: " + " / ".join(f"{b}:{results[b]}" for b in failed))
         save_log()
+
+    # 리프레시 대상 확인 (30~60일 된 글)
+    try:
+        from refresh_posts import run_refresh
+        run_refresh()
+    except Exception as e:
+        log(f"[리프레시] 스킵: {e}")
 
 
 # ─── 메인 실행 ───

@@ -279,14 +279,26 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
         pass
 
     # 새 대화 시작 (첫 이미지만) — 이후는 같은 채팅창에 이어서 전송
+    # ⚠️ 핵심: 반드시 page.goto()로 강제 새 페이지 로드
+    #    "새 채팅" 버튼 클릭은 aria-label 변경 시 조용히 실패해서
+    #    이전 블로그의 이미지가 채팅에 남아있어 캡처 오염 발생
     if open_new_chat:
         try:
-            new_chat_btn = page.locator('a[aria-label="새 채팅"], a[aria-label="New chat"]').first
-            if new_chat_btn.is_visible(timeout=2000):
-                new_chat_btn.click()
-                page.wait_for_timeout(2000)
-        except Exception:
-            pass
+            page.goto(GEMINI_URL, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(3000)
+            log("[이미지] Gemini 새 세션 로드 완료")
+        except Exception as e:
+            log(f"[이미지] Gemini 페이지 이동 실패 ({e}) — 새 채팅 버튼 시도")
+            try:
+                new_chat_btn = page.locator(
+                    'a[aria-label="새 채팅"], a[aria-label="New chat"], '
+                    'a[href="/app"], [data-test-id="new-chat-button"]'
+                ).first
+                if new_chat_btn.is_visible(timeout=2000):
+                    new_chat_btn.click()
+                    page.wait_for_timeout(2000)
+            except Exception:
+                pass
 
     # ── 참고 이미지 첨부 (me1091 쿠팡 리뷰 이미지 등) ─────────────
     if reference_image and Path(reference_image).exists():
@@ -425,6 +437,25 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
         return None
 
     page.wait_for_timeout(1000)
+
+    # 새 채팅인데 이미지가 여러 개면 이전 채팅 잔재 — 경고 로그
+    if open_new_chat:
+        try:
+            img_count = page.evaluate("""() => {
+                return Array.from(document.querySelectorAll(
+                    'model-response img, .response-container img'
+                )).filter(img => {
+                    if (img.classList.contains('user-icon')) return false;
+                    if ((img.alt||'').includes('프로필')) return false;
+                    const w = img.naturalWidth || img.width;
+                    const h = img.naturalHeight || img.height;
+                    return w >= 100 && h >= 100;
+                }).length;
+            }""")
+            if img_count > 0:
+                log(f"[이미지] ⚠ 새 채팅인데 이미 {img_count}개 이미지 감지 — 이전 대화 잔재 가능성")
+        except Exception:
+            pass
 
     # 생성된 이미지 엘리먼트 찾기 (프로필사진 제외, 100px 이상)
     img_el = page.locator(

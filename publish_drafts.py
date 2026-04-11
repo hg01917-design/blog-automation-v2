@@ -355,7 +355,19 @@ def _content_quality_gate(content: str, title: str, blog_id: str) -> list:
     if len(title.strip()) < 10:
         issues.append(f"제목 너무 짧음 ({len(title.strip())}자): '{title}'")
 
-    # 4. 중복 이미지 체크
+    # 4. 키워드 밀도 체크
+    main_keyword = title.strip().split()[0] if title.strip() else ""
+    if len(main_keyword) >= 3:
+        words = plain.split()
+        if len(words) >= 100:
+            count = sum(1 for w in words if main_keyword in w)
+            density = (count / len(words)) * 100
+            if density < 0.5:
+                issues.append(f"키워드 밀도 너무 낮음 ({density:.1f}%) — 메인키워드 의도적으로 배치 필요")
+            elif density > 4.0:
+                issues.append(f"키워드 과최적화 ({density:.1f}%) — 스팸 패널티 위험")
+
+    # 5. 중복 이미지 체크
     img_srcs = re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', content, re.IGNORECASE)
     if len(img_srcs) > 1:
         seen = set()

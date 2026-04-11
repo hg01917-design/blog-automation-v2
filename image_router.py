@@ -330,7 +330,9 @@ def _pollinations_image(prompt: str, filepath: str, on_log=None) -> bool:
             on_log(msg)
 
     encoded = urllib.parse.quote(prompt, safe="")
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width=800&height=600&nologo=true&seed={abs(hash(prompt)) % 99999}"
+    import time as _t
+    _seed = abs(hash(prompt + str(int(_t.time() / 3600)))) % 9999999  # 시간 포함 → 블로그 간 중복 방지
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=800&height=600&nologo=true&seed={_seed}"
 
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
@@ -393,11 +395,22 @@ def generate_images_for_blog(
         return {}
 
     # 프롬프트에 블로그별 스타일 + 구도 변형 적용
+    # 파일명은 SEO 최적화: {blog_id}-{keyword_slug}-{index}.{ext}
+    def _seo_filename(info: dict, kw_slug: str, skip_webp: bool) -> str:
+        idx = info.get('index', 1)
+        ext = 'jpg' if skip_webp else 'webp'
+        return f"{blog_id}-{kw_slug}-{idx}.{ext}"
+
+    # keyword_slug: 이미지 infos의 alt 또는 prompt 첫 단어로 슬러그 생성
+    first_alt = image_infos[0].get('alt', '') or image_infos[0].get('prompt', '')
+    kw_slug = re.sub(r'[^\w\s-]', '', first_alt.lower()).strip()
+    kw_slug = re.sub(r'[\s_]+', '-', kw_slug)[:30].strip('-') or blog_id
+
     enhanced_infos = []
     for info in image_infos:
         enhanced = dict(info)
         enhanced['prompt'] = _enhance_prompt(blog_id, info['prompt'], index=info.get('index', 1))
-        enhanced['filename'] = _clean_filename(info['filename'], skip_webp)
+        enhanced['filename'] = _seo_filename(info, kw_slug, skip_webp)
         enhanced_infos.append(enhanced)
 
     # 블로그별 이미지 저장 폴더
