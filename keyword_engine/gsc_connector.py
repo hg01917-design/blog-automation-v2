@@ -11,8 +11,8 @@ BLOG_SITES = {
     "goodisak":  "https://welfare.baremi542.com/",
     "nolja100":  "https://issue.baremi542.com/",
     "baremi542": "https://baremi542.com/",
-    "woll100":   "https://info.baremi542.com/",
-    "phn0502":   "https://film.baremi542.com/",
+    "woll100":   "sc-domain:info.baremi542.com",   # GSC에 도메인 속성으로 등록됨
+    "phn0502":   "sc-domain:film.baremi542.com",   # GSC에 도메인 속성으로 등록됨
     "triplog":   "https://app.baremi542.com/",
 }
 
