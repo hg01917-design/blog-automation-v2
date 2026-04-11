@@ -1139,7 +1139,7 @@ def _naver_set_font_color_black(page):
             except Exception:
                 pass
         if hex_input:
-            hex_input.triple_click()
+            hex_input.click(click_count=3)
             time.sleep(0.1)
             hex_input.fill("000000")
             page.keyboard.press("Enter")
