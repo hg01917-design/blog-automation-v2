@@ -52,19 +52,19 @@ def collect_daily(date: str = None) -> dict:
     results = {}
     for blog_id, site_url in BLOG_SITES.items():
         try:
-            # 쿼리별 집계
-            rows = _gsc_query(site_url, date, date, ["query"], row_limit=25)
-            clicks = sum(r["clicks"] for r in rows)
-            impressions = sum(r["impressions"] for r in rows)
-            ctr = clicks / impressions if impressions > 0 else 0
-            avg_pos = (
-                sum(r["position"] * r["impressions"] for r in rows) / impressions
-                if impressions > 0 else 0
-            )
+            # 전체 합계 — dimensions 없이 쿼리해야 상위 N개 제한 없이 정확한 수치 확보
+            total_rows = _gsc_query(site_url, date, date, [], row_limit=1)
+            if total_rows:
+                clicks = total_rows[0].get("clicks", 0)
+                impressions = total_rows[0].get("impressions", 0)
+                ctr = total_rows[0].get("ctr", 0)
+                avg_pos = total_rows[0].get("position", 0)
+            else:
+                clicks = impressions = ctr = avg_pos = 0
             save_gsc_daily(date, blog_id, clicks, impressions, ctr, round(avg_pos, 1))
 
             # 페이지별 집계
-            page_rows = _gsc_query(site_url, date, date, ["page"], row_limit=50)
+            page_rows = _gsc_query(site_url, date, date, ["page"], row_limit=200)
             pages = [
                 {
                     "url": r["keys"][0],
