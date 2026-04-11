@@ -1,16 +1,26 @@
-"""마이리얼트립 파트너 제휴 링크 자동 생성
+"""마이리얼트립 파트너 제휴 링크 자동 생성 (공식 API 사용)
+
 흐름:
-  키워드 → myrealtrip.com 검색 → 상품 URL 수집
-        → 파트너 링크 생성기에 URL 입력 → 제휴 링크 반환
+  키워드 → myrealtrip.com 검색(Playwright) → 상품 URL 수집
+        → POST /v1/mylink API → myrealt.rip 단축 제휴 링크 반환
+
+API:
+  Base: https://partner-ext-api.myrealtrip.com
+  Auth: Authorization: Bearer {MRT_API_KEY}
+  Link: POST /v1/mylink  body: {"targetUrl": "..."}
+  Response: {"data": {"mylink": "https://myrealt.rip/..."}}
 
 사용:
-  from mrt_affiliate import get_affiliate_links
+  from mrt_affiliate import get_affiliate_links, create_affiliate_link
   links = get_affiliate_links("도쿄 디즈니랜드", top_n=3)
-  # → [{"title": "...", "original_url": "...", "affiliate_url": "..."}, ...]
+  link  = create_affiliate_link("https://www.myrealtrip.com/offers/71825")
 """
 import os
 import re
 import time
+import json
+import urllib.request
+import urllib.parse
 from pathlib import Path
 
 # .env 로드
@@ -23,81 +33,70 @@ if _env.exists():
             k, _, v = _line.partition("=")
             os.environ.setdefault(k.strip(), v.strip())
 
-SEARCH_URL     = "https://www.myrealtrip.com/offers?q={query}"
-LINK_GEN_URL   = "https://partner.myrealtrip.com/partnership-marketing/link-generator"
-PARTNER_LOGIN_URL = "https://partner.myrealtrip.com/login"
-URL_INPUT_SEL  = 'input[placeholder*="마이리얼트립 상품 주소"]'
-MAKE_LINK_BTN  = 'button[type="submit"]:has-text("홍보 링크 만들기")'
+SEARCH_URL   = "https://www.myrealtrip.com/offers?q={query}"
+API_BASE     = "https://partner-ext-api.myrealtrip.com"
+MYLINK_PATH  = "/v1/mylink"
 
 
-def _ensure_partner_login(page, on_log=None) -> bool:
-    """파트너 포털 로그인 상태 확인 후 필요 시 자동 로그인. 성공 여부 반환."""
+def _api_headers() -> dict:
+    api_key = os.environ.get("MRT_API_KEY", "")
+    return {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0",
+    }
+
+
+# ── API: 제휴 링크 생성 ──────────────────────────────────────────────────────
+
+def create_affiliate_link(target_url: str, on_log=None) -> str | None:
+    """MRT 공식 API로 targetUrl → myrealt.rip 단축 제휴 링크 생성."""
     def log(msg):
         if on_log: on_log(msg)
         print(msg, flush=True)
 
-    email = os.environ.get("MRT_EMAIL", "")
-    password = os.environ.get("MRT_PASSWORD", "")
-    if not email or not password:
-        log("[MRT] ⚠️ .env에 MRT_EMAIL/MRT_PASSWORD 없음")
-        return False
+    if not target_url or not target_url.startswith("http"):
+        log(f"[MRT API] 잘못된 URL: {target_url}")
+        return None
 
-    page.goto(LINK_GEN_URL, wait_until="domcontentloaded", timeout=30000)
-    time.sleep(3)
+    api_key = os.environ.get("MRT_API_KEY", "")
+    if not api_key:
+        log("[MRT API] MRT_API_KEY 없음 — .env 확인")
+        return None
 
-    # 로그인 여부 판단: URL 입력창이 있으면 이미 로그인됨
-    if page.locator(URL_INPUT_SEL).count() > 0:
-        log("[MRT] 파트너 포털 로그인 상태 확인됨")
-        return True
-
-    # 로그인 필요
-    log(f"[MRT] 파트너 포털 로그인 필요 → 자동 로그인 시도: {email}")
-
-    # 이메일 입력
-    for sel in ['input[type="email"]', 'input[name="email"]', 'input[placeholder*="이메일"]']:
-        loc = page.locator(sel)
-        if loc.count() > 0:
-            loc.first.click()
-            loc.first.fill(email)
-            break
-
-    # 비밀번호 입력
-    pw_loc = page.locator('input[type="password"]')
-    if pw_loc.count() > 0:
-        pw_loc.first.click()
-        pw_loc.first.fill(password)
-
-    # 로그인 버튼 클릭
-    for btn_sel in ['button:has-text("로그인")', 'button[type="submit"]']:
-        btn = page.locator(btn_sel)
-        if btn.count() > 0:
-            btn.first.click()
-            log("[MRT] 로그인 버튼 클릭")
-            break
-
-    time.sleep(4)
-
-    # 로그인 후 링크 생성 페이지로 이동
-    page.goto(LINK_GEN_URL, wait_until="domcontentloaded", timeout=20000)
-    time.sleep(3)
-
-    if page.locator(URL_INPUT_SEL).count() > 0:
-        log("[MRT] ✅ 자동 로그인 성공")
-        return True
-    else:
-        log(f"[MRT] ❌ 자동 로그인 실패 (URL: {page.url})")
-        return False
+    try:
+        body = json.dumps({"targetUrl": target_url}).encode()
+        req = urllib.request.Request(
+            f"{API_BASE}{MYLINK_PATH}",
+            data=body,
+            headers=_api_headers(),
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as r:
+            resp = json.loads(r.read().decode())
+            mylink = resp.get("data", {}).get("mylink")
+            if mylink:
+                log(f"[MRT API] ✅ 제휴 링크 생성: {target_url[:50]} → {mylink}")
+                return mylink
+            log(f"[MRT API] 응답에 mylink 없음: {resp}")
+            return None
+    except urllib.error.HTTPError as e:
+        body_err = e.read().decode()[:200]
+        log(f"[MRT API] HTTP {e.code}: {body_err}")
+        return None
+    except Exception as e:
+        log(f"[MRT API] 오류: {e}")
+        return None
 
 
-# ── 1. myrealtrip.com 상품 검색 ──────────────────────────────────────────────
+# ── Playwright: 상품 검색 (키워드 → URL 목록) ─────────────────────────────
 
 def _search_products(page, keyword: str, top_n: int = 5) -> list[dict]:
     """키워드로 상품 검색 → 상위 n개 {title, url} 반환."""
-    import urllib.parse
     q = urllib.parse.quote(keyword)
     page.goto(SEARCH_URL.format(query=q), wait_until="domcontentloaded", timeout=20000)
 
-    # JS 렌더링 대기 — 상품 링크 나타날 때까지 최대 10초 폴링
     for _ in range(10):
         time.sleep(1)
         count = page.evaluate("""() =>
@@ -112,10 +111,8 @@ def _search_products(page, keyword: str, top_n: int = 5) -> list[dict]:
     products = page.evaluate("""(topN) => {
         const seen = new Set();
         const items = [];
-        const links = [...document.querySelectorAll('a[href]')];
-        for (const el of links) {
+        for (const el of document.querySelectorAll('a[href]')) {
             const href = el.href || '';
-            // experiences.myrealtrip.com/products/{id} 또는 myrealtrip.com/offers/{id}
             if (!/(experiences|offers|products)/.test(href)) continue;
             if (!/\\/\\d{4,}/.test(href)) continue;
             if (seen.has(href)) continue;
@@ -131,111 +128,10 @@ def _search_products(page, keyword: str, top_n: int = 5) -> list[dict]:
     return products
 
 
-# ── 2. 파트너 제휴 링크 생성 ─────────────────────────────────────────────────
-
-def _generate_link(page, product_url: str, on_log=None) -> str | None:
-    """상품 URL → 파트너 제휴 링크 반환."""
-    def log(msg):
-        if on_log:
-            on_log(msg)
-        print(msg, flush=True)
-
-    # 링크 생성 페이지로 이동
-    # 링크 생성 페이지로 이동 (항상 새로 이동하여 상태 초기화)
-    page.goto(LINK_GEN_URL, wait_until="domcontentloaded", timeout=20000)
-    time.sleep(3)
-
-    # 입력창 대기
-    for _ in range(5):
-        if page.locator(URL_INPUT_SEL).count() > 0:
-            break
-        time.sleep(1)
-
-    # URL 입력
-    try:
-        inp = page.locator(URL_INPUT_SEL)
-        if inp.count() == 0:
-            log(f"  ⚠️ URL 입력창 없음 (URL: {page.url})")
-            return None
-        inp.first.click()
-        inp.first.press("Control+a")
-        inp.first.fill(product_url)
-        time.sleep(1)
-        log(f"  입력값 확인: {inp.first.input_value()[:60]}")
-    except Exception as e:
-        log(f"  URL 입력 실패: {e}")
-        return None
-
-    # "홍보 링크 만들기" 버튼 클릭 (Playwright locator 사용)
-    try:
-        # 여러 방법으로 버튼 탐색
-        btn = None
-        for sel in [
-            'button:has-text("홍보 링크 만들기")',
-            'button.css-6xm15k',
-            'button[type="submit"]:first-of-type',
-        ]:
-            loc = page.locator(sel)
-            if loc.count() > 0:
-                btn = loc.first
-                log(f"  버튼 셀렉터: {sel}")
-                break
-
-        if btn is None:
-            # 마지막 수단: 첫 번째 submit 버튼
-            all_btns = page.locator('button[type="submit"]')
-            log(f"  submit 버튼 수: {all_btns.count()}")
-            if all_btns.count() > 0:
-                btn = all_btns.first
-
-        if btn is None:
-            log("  ⚠️ 버튼 없음")
-            return None
-
-        btn.click()
-        log("  ✅ 홍보 링크 만들기 클릭")
-        time.sleep(3)
-    except Exception as e:
-        log(f"  버튼 클릭 실패: {e}")
-        return None
-
-    # 생성된 링크 추출: myrealt.rip 단축 링크 최우선
-    affiliate_url = page.evaluate("""() => {
-        // 방법1: 페이지 본문에서 myrealt.rip / mrt.im 단축 링크 탐색 (최우선)
-        const all = document.body.innerText;
-        const m = all.match(/https?:\\/\\/(?:myrealt\\.rip|mrt\\.im)\\/\\S+/);
-        if (m) return m[0];
-        // 방법2: readonly input (결과 필드)
-        const readonlyInp = document.querySelector('input[readonly]');
-        if (readonlyInp && readonlyInp.value.startsWith('http')) return readonlyInp.value;
-        // 방법3: 링크 복사 버튼 근처 input
-        const copyBtns = [...document.querySelectorAll('button')].filter(
-            b => b.innerText.includes('링크 복사') || b.innerText.includes('복사')
-        );
-        for (const btn of copyBtns) {
-            const parent = btn.closest('div');
-            if (parent) {
-                const inp = parent.querySelector('input');
-                if (inp && inp.value && inp.value.startsWith('http') && !inp.placeholder) return inp.value;
-            }
-        }
-        return null;
-    }""")
-
-    if affiliate_url:
-        log(f"  ✅ 제휴 링크: {affiliate_url}")
-        return affiliate_url
-
-    # 결과 못 찾으면 현재 페이지 상태 디버깅
-    page_text = page.evaluate("() => document.body.innerText.substring(0, 400)")
-    log(f"  ⚠️ 제휴 링크 추출 실패. 페이지 상태:\n{page_text}")
-    return None
-
-
 # ── 메인 함수 ─────────────────────────────────────────────────────────────────
 
 def get_affiliate_links(keyword: str, top_n: int = 3, on_log=None) -> list[dict]:
-    """키워드로 마이리얼트립 상품 검색 → 제휴 링크 반환.
+    """키워드로 MRT 상품 검색 → API로 제휴 링크 생성.
 
     Returns:
         [{"title": str, "original_url": str, "affiliate_url": str | None}, ...]
@@ -243,8 +139,7 @@ def get_affiliate_links(keyword: str, top_n: int = 3, on_log=None) -> list[dict]
     from browser import connect_cdp
 
     def log(msg):
-        if on_log:
-            on_log(msg)
+        if on_log: on_log(msg)
         print(msg, flush=True)
 
     results = []
@@ -254,55 +149,54 @@ def get_affiliate_links(keyword: str, top_n: int = 3, on_log=None) -> list[dict]
         ctx = browser.contexts[0] if browser.contexts else browser.new_context()
         page = ctx.new_page()
 
-        # 0. 파트너 포털 로그인 확인 (필요 시 자동 로그인)
-        if not _ensure_partner_login(page, on_log=on_log):
-            log("[MRT] ❌ 파트너 포털 로그인 불가 — 제휴 링크 생성 중단")
-            page.close()
-            return []
-
-        # 1. 상품 검색
+        # 1. 상품 검색 (Playwright)
         log(f"[MRT] '{keyword}' 검색 중...")
         products = _search_products(page, keyword, top_n=top_n)
         log(f"[MRT] 상품 {len(products)}개 발견")
         for p in products:
-            log(f"  - {p['title']} → {p['url']}")
-
-        if not products:
-            log("[MRT] ⚠️ 검색 결과 없음")
-            page.close()
-            return []
-
-        # 2. 각 상품 제휴 링크 생성
-        for product in products:
-            log(f"\n[MRT] 링크 생성: {product['title'][:40]}")
-            affiliate_url = _generate_link(page, product["url"], on_log=on_log)
-            results.append({
-                "title": product["title"],
-                "original_url": product["url"],
-                "affiliate_url": affiliate_url,
-            })
-            time.sleep(1)
+            log(f"  - {p['title'][:50]} → {p['url']}")
 
         page.close()
 
     except Exception as e:
-        log(f"[MRT] 오류: {e}")
+        log(f"[MRT] 검색 오류: {e}")
+        products = []
     finally:
         pw.stop()
 
-    log(f"\n[MRT] 완료: {len([r for r in results if r['affiliate_url']])}개 링크 생성")
+    if not products:
+        log("[MRT] ⚠️ 검색 결과 없음")
+        return []
+
+    # 2. API로 제휴 링크 생성 (Playwright 세션 종료 후)
+    for product in products:
+        log(f"\n[MRT] 링크 생성: {product['title'][:40]}")
+        affiliate_url = create_affiliate_link(product["url"], on_log=on_log)
+        results.append({
+            "title": product["title"],
+            "original_url": product["url"],
+            "affiliate_url": affiliate_url,
+        })
+
+    success = len([r for r in results if r['affiliate_url']])
+    log(f"\n[MRT] 완료: {success}/{len(results)}개 링크 생성")
     return results
+
+
+# ── 하위 호환: Playwright 기반 함수 (더 이상 사용 안 함) ─────────────────────
+
+def _ensure_partner_login(page, on_log=None) -> bool:
+    """[Deprecated] API 전환으로 더 이상 사용하지 않음. 항상 True 반환."""
+    return True
 
 
 # ── 직접 실행 테스트 ──────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import sys
-    keyword = sys.argv[1] if len(sys.argv) > 1 else "도쿄 디즈니랜드"
-    print(f"\n키워드: {keyword}")
-    links = get_affiliate_links(keyword, top_n=3)
+    kw = sys.argv[1] if len(sys.argv) > 1 else "도쿄 디즈니랜드"
+    links = get_affiliate_links(kw, top_n=3)
     print("\n=== 결과 ===")
-    for i, item in enumerate(links, 1):
-        print(f"\n{i}. {item['title']}")
-        print(f"   원본:   {item['original_url']}")
-        print(f"   제휴:   {item['affiliate_url'] or '생성 실패'}")
+    for l in links:
+        print(f"  {l['title'][:40]}")
+        print(f"  제휴: {l['affiliate_url']}")

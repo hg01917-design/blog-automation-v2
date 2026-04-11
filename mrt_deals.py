@@ -213,47 +213,11 @@ def extract_deals_from_post(page, post_url: str) -> list[dict]:
 
 # ── 제휴 링크 생성 ───────────────────────────────────────────────────────────
 
-def _get_affiliate_link_for_promo(page, promo_url: str) -> str:
-    """프로모션 URL → 파트너 제휴 링크 생성."""
-    from mrt_affiliate import _ensure_partner_login, LINK_GEN_URL, URL_INPUT_SEL
-
-    if not _ensure_partner_login(page, on_log=log):
-        log("[딜] 파트너 로그인 실패 — 원본 URL 사용")
-        return promo_url
-
-    page.goto(LINK_GEN_URL, wait_until="domcontentloaded", timeout=20000)
-    time.sleep(2)
-
-    inp = page.locator(URL_INPUT_SEL)
-    if inp.count() == 0:
-        return promo_url
-
-    inp.first.click()
-    inp.first.press("Control+a")
-    inp.first.fill(promo_url)
-    time.sleep(1)
-
-    for btn_sel in ['button:has-text("홍보 링크 만들기")', 'button[type="submit"]']:
-        btn = page.locator(btn_sel)
-        if btn.count() > 0:
-            btn.first.click()
-            break
-
-    time.sleep(4)
-
-    aff_url = page.evaluate("""() => {
-        const all = document.body.innerText;
-        const m = all.match(/https?:\\/\\/(?:myrealt\\.rip|mrt\\.im)\\/\\S+/);
-        if (m) return m[0];
-        const inp = document.querySelector('input[readonly]');
-        if (inp && inp.value.startsWith('http')) return inp.value;
-        return null;
-    }""")
-
-    if aff_url:
-        log(f"[딜] 제휴 링크 생성: {aff_url}")
-        return aff_url
-    return promo_url
+def _get_affiliate_link_for_promo(promo_url: str) -> str:
+    """프로모션 URL → MRT API로 제휴 링크 생성."""
+    from mrt_affiliate import create_affiliate_link
+    result = create_affiliate_link(promo_url, on_log=log)
+    return result if result else promo_url
 
 
 # ── 글 생성 ─────────────────────────────────────────────────────────────────
@@ -481,22 +445,12 @@ KNOWN_DEALS = [
 
 
 def _collect_affiliate_links(deals: list) -> dict:
-    """Playwright 세션 1회로 모든 딜의 제휴 링크를 한 번에 수집. {deal_id: affiliate_url}"""
-    from browser import connect_cdp
+    """API로 모든 딜의 제휴 링크를 수집. {deal_id: affiliate_url}"""
     result = {}
-    pw, browser = connect_cdp(on_log=log)
-    try:
-        ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-        page = ctx.new_page()
-        for deal in deals:
-            aff = _get_affiliate_link_for_promo(page, deal["url"])
-            result[deal["deal_id"]] = aff
-            log(f"[딜] {deal['deal_id']} → {aff}")
-        page.close()
-    except Exception as e:
-        log(f"[딜] 제휴링크 수집 오류: {e}")
-    finally:
-        pw.stop()
+    for deal in deals:
+        aff = _get_affiliate_link_for_promo(deal["url"])
+        result[deal["deal_id"]] = aff
+        log(f"[딜] {deal['deal_id']} → {aff}")
     return result
 
 
