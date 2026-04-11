@@ -24,10 +24,11 @@ SUPPLIER_ITEM_CODE = {
 }
 
 CDP_URL = "http://localhost:9223"
-MISSING_FILE = Path("/tmp/daonna_compare.json")
-PROGRESS_FILE = Path("/tmp/daonna_upload_progress.json")
-THUMB_DIR = Path("/tmp/daonna_thumbs")
-ID_MAP_FILE = Path(__file__).parent / "daonna_id_map.json"  # source_id → daonna_no 매핑
+_BASE = Path(__file__).parent
+MISSING_FILE = _BASE / "daonna_compare.json"          # 재부팅 후에도 유지
+PROGRESS_FILE = _BASE / "daonna_progress.json"        # /tmp → 프로젝트 디렉토리
+THUMB_DIR = _BASE / "daonna_thumbs"                   # /tmp → 프로젝트 디렉토리
+ID_MAP_FILE = _BASE / "daonna_id_map.json"            # source_id → daonna_no 매핑
 THUMB_DIR.mkdir(exist_ok=True)
 GEMINI_APP_URL = "https://gemini.google.com/app"
 REGISTER_URL = "https://domeggook.com/main/mySell/register/my_sellInfoForm.php?section=SELL"
@@ -1555,18 +1556,19 @@ async def main():
                         wait_until="domcontentloaded", timeout=20000
                     )
                     await asyncio.sleep(2)
-                    shown = await domeggook_page.evaluate(f"""
-                        () => {{
+                    # JS에 Python 변수 직접 삽입 대신 evaluate args로 안전하게 전달
+                    shown = await domeggook_page.evaluate("""
+                        ([pid, nameSnippet]) => {
                             const rows = [...document.querySelectorAll('tr')];
-                            const row = rows.find(r => r.innerHTML.includes('{pid}') || r.innerHTML.includes('{name[:20]}'));
+                            const row = rows.find(r => r.innerHTML.includes(pid) || r.innerHTML.includes(nameSnippet));
                             if (!row) return 'ROW_NOT_FOUND';
                             const btn = [...row.querySelectorAll('a')].find(a => a.textContent.includes('진열'));
                             if (!btn) return 'BTN_NOT_FOUND';
                             window.confirm = () => true;
                             btn.click();
                             return 'OK';
-                        }}
-                    """)
+                        }
+                    """, [pid, name[:20]])
                     print(f"  [진열하기] {shown}", flush=True)
                     await asyncio.sleep(2)
                 except Exception as e:

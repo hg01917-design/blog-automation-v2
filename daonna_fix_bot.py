@@ -14,14 +14,12 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).parent))
 from daonna_upload_bot import (
     CDP_URL, THUMB_DIR, download_image, make_detail_html,
-    make_seo_keywords, make_detail_html,
+    make_seo_keywords,
 )
 
-PROGRESS_FILE = Path("/tmp/daonna_upload_progress.json")
-# 프로젝트 파일 우선 (_img_url 포함), 없으면 /tmp 버전
-_prj = Path(__file__).parent / "daonna_compare.json"
-_tmp = Path("/tmp/daonna_compare.json")
-COMPARE_FILE = _prj if _prj.exists() else _tmp
+_BASE = Path(__file__).parent
+PROGRESS_FILE = _BASE / "daonna_progress.json"   # upload_bot과 동일 경로
+COMPARE_FILE  = _BASE / "daonna_compare.json"
 ID_MAP_FILE  = Path(__file__).parent / "daonna_id_map.json"  # source_id → daonna_no
 
 

@@ -184,10 +184,8 @@ async def main():
         # 3. 저장
         output = {"missing_in_daonna": matched, "total": len(matched)}
         OUTPUT_FILE.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
-        Path("/tmp/daonna_compare.json").write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
 
         print(f"\n✅ {OUTPUT_FILE} 저장 완료", flush=True)
-        print(f"✅ /tmp/daonna_compare.json 저장 완료", flush=True)
         print("\n등록할 상품 목록:", flush=True)
         for p in matched:
             print(f"  [{p['id']}] {p['name'][:40]} ({p['price']}원)", flush=True)
