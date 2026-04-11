@@ -984,8 +984,7 @@ def run_one_round(round_num):
     import time as _time
     import random as _rand
     # triplog는 nolja100보다 항상 먼저 — 같은 여행 카테고리에서 triplog 우선 배정
-    # me1091은 별도 독립 봇(me1091_bot.py)으로 분리 — overnight 루프에서 제외
-    _non_travel = ["salim1su", "baremi542", "goodisak", "woll100", "phn0502"]
+    _non_travel = ["salim1su", "baremi542", "goodisak", "woll100", "phn0502", "me1091"]
     _rand.shuffle(_non_travel)
     BLOGS = ["triplog", "nolja100"] + _non_travel
     log(f"\n{'='*60}")
