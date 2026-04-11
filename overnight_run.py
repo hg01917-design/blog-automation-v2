@@ -528,20 +528,33 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
                     log(f"[파이프라인] MRT 관련성 필터: {len(mrt_links)}개 → {len(relevant_links)}개 (지역: {dest_keywords})")
                 mrt_links = relevant_links[:3]
 
-            if mrt_links:
+            # affiliate_url이 None/빈 것 제거
+            valid_links = [p for p in mrt_links if p.get("affiliate_url")]
+            if not valid_links and mrt_links:
+                log(f"[파이프라인] ⚠️ MRT 제휴 링크 생성 실패 (로그인 필요 or 파트너 포털 오류) — 원본 URL 대체 사용")
+                valid_links = [
+                    {**p, "affiliate_url": p.get("original_url", "")}
+                    for p in mrt_links if p.get("original_url")
+                ]
+
+            if valid_links:
                 mrt_ctx = (
-                    "\n\n[마이리얼트립 제휴 상품 — 글 하단 '추천 투어' 섹션에 필수 포함]\n"
+                    "\n\n[마이리얼트립 제휴 상품 — 링크 2회 필수 삽입]\n"
                     "글 최상단(첫 문단 전)에 반드시 이 한 줄을 삽입해:\n"
                     "「이 글에는 마이리얼트립 파트너스 프로그램을 통해 소정의 수수료를 받을 수 있는 제휴 링크가 포함되어 있습니다.」\n\n"
-                    "글 맨 하단에 '## 추천 투어' 섹션을 만들고, 아래 상품을 반드시 HTML <a href> 링크로 삽입해.\n"
-                    "형식: <a href=\"{URL}\" target=\"_blank\">{상품명}</a> — {가격/설명}\n\n"
+                    "아래 제휴 상품 링크를 본문에 2회 삽입해 (CTR 최적화):\n"
+                    "  1회차: 첫 번째 소제목(##) 바로 아래 — 후킹 문구 1줄 + 링크\n"
+                    "         후킹 예시: '이 투어는 성수기에 금방 마감돼요 — 날짜 먼저 잡아두세요'\n"
+                    "  2회차: 맺음말 직전 — '지금 예약 확인해보세요' CTA + 링크\n"
+                    "링크 형식: <a href=\"URL\" target=\"_blank\" style=\"color:#1a73e8;font-weight:bold;\">상품명 예약하기</a>\n\n"
+                    "아래 상품 중 글 내용과 가장 관련된 것 1~2개 선택해서 삽입:\n"
                 )
-                for i, p in enumerate(mrt_links, 1):
+                for i, p in enumerate(valid_links, 1):
                     name = p["title"][:60]
                     aff_url = p.get('affiliate_url', '')
                     mrt_ctx += f"{i}. 상품명: {name}\n   URL: {aff_url}\n"
                 keyword_with_mrt = keyword + mrt_ctx
-                log(f"[파이프라인] MRT {len(mrt_links)}개 관련 제휴 링크 주입 완료")
+                log(f"[파이프라인] MRT {len(valid_links)}개 관련 제휴 링크 주입 완료")
             else:
                 log(f"[파이프라인] MRT 관련 상품 없음 — 제휴 섹션 생략")
         except Exception as e:
