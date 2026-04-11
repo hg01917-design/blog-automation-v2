@@ -135,26 +135,29 @@ TARGET_BLOGS_ME1091 = [
 def gen_comment(post_title, body, name):
     lines = [l.strip() for l in body.split('\n') if 15 < len(l.strip()) < 70]
     key1 = lines[0] if len(lines) > 0 else post_title[:30]
-    key2 = lines[1] if len(lines) > 1 else key1
+    key2 = lines[1] if len(lines) > 1 else (lines[0] if lines else post_title[:30])
     nums = re.findall(r'\d+(?:만|천|원|%|개|가지|번|분|시간)', body)
     num_str = nums[0] if nums else ""
+    has_num = bool(num_str)
 
-    reactions = ["아 진짜요?", "맞아요ㅠㅠ", "저도 그랬는데", "완전 공감이에요", "헉 이거 몰랐어요"]
-    endings = [
-        "저도 써봐야겠어요. 좋은 글 감사해요!",
-        "저한테 딱 필요한 정보였어요 감사합니다 :)",
-        "이렇게 자세히 써주셔서 너무 도움됐어요!",
-        "다음 글도 기대할게요~",
-        "북마크 해뒀어요 ㅎㅎ",
-    ]
-
+    # 각 템플릿은 구조·어투가 완전히 다르게
     options = [
-        # 본문 첫 문장 인용 + 공감
-        f'"{key1[:38]}" — 이 부분에서 멈춰서 두 번 읽었어요. {random.choice(reactions)} {num_str + "이라는 수치도 놀랍고요. " if num_str else ""}{random.choice(endings)}',
-        # 두 번째 문장 언급 + 질문 느낌
-        f'{key1[:30]} 이야기 읽으면서 저도 비슷한 상황이었던 게 생각났어요. 특히 {key2[:28]} 부분이 현실적이어서 더 와닿았어요. {random.choice(endings)}',
-        # 구체적 수치/내용 언급
-        f'글 읽다가 {key1[:32]} 이 대목에서 완전 공감했어요. {"" + num_str + " " if num_str else ""}{"이 부분 특히 유용했고요. " if num_str else ""}{random.choice(endings)}',
+        # 1. 짧고 솔직한 반응
+        f'오늘 우연히 들어왔는데 {key1[:28]} 이 부분 읽으면서 아 나만 이런 거 아니었구나 싶었어요. 공감 가는 글 감사해요!',
+        # 2. 정보성 칭찬
+        f'{"" + num_str + " " if has_num else ""}{key1[:30]} 덕분에 몰랐던 거 하나 알고 가요. 이런 정보 찾기 힘든데 정리해주셔서 감사합니다 :)',
+        # 3. 개인 경험 연결
+        f'저도 {key2[:25]} 이런 거 고민했던 적 있는데 글 보고 도움 많이 됐어요. 실용적으로 써주셔서 좋았어요~',
+        # 4. 가볍고 친근한 톤
+        f'헉 {key1[:28]} 저 이거 진짜 몰랐어요ㅠ {"" + num_str + "이나 " if has_num else ""}이런 팁 알려주셔서 감사해요 ㅎㅎ 잘 보고 갑니다!',
+        # 5. 공감 + 저장
+        f'{key1[:30]} 부분 공감 100%예요. 스크랩해두고 나중에 다시 봐야겠어요. 좋은 글 써주셔서 감사합니다!',
+        # 6. 질문 느낌
+        f'글 읽으면서 {key2[:28]} 이 내용이 제 상황이랑 너무 비슷해서 반가웠어요. {"" + num_str + " 부분도 인상적이었고요. " if has_num else ""}다음 글도 기대할게요 :)',
+        # 7. 담백한 감사
+        f'바쁜데 이렇게 꼼꼼하게 써주셨군요. {key1[:25]} 내용 덕분에 저도 한번 시도해볼 용기가 생겼어요. 감사해요!',
+        # 8. 발견한 느낌
+        f'검색하다가 우연히 들어왔는데 딱 제가 찾던 내용이었어요. 특히 {key1[:25]} 이 부분이요. 북마크하고 갑니다~',
     ]
     return random.choice(options)
 
@@ -402,8 +405,8 @@ page = ctx.new_page()
 if ACCOUNT == "me1091":
     from login_playwright import login_naver
     print("[이웃추가] me1091 네이버 로그인 확인 중...")
-    login_naver(naver_id="me1091")  # 내부적으로 CDP 재연결 + 계정 전환 처리
-    # 로그인 후 새 세션용 페이지 초기화
+    # 기존 page 넘겨서 새 Playwright 세션 충돌 방지
+    login_naver(naver_id="me1091", page=page)
     page.goto('https://blog.naver.com/me1091', wait_until='domcontentloaded', timeout=15000)
 else:
     page.goto('https://blog.naver.com', wait_until='domcontentloaded', timeout=10000)
@@ -433,6 +436,9 @@ try:
             break
 
         blog_id = blog['blog_id']
+        # 이미 서로이웃 완료된 계정 스킵
+        if blog.get('done'):
+            continue
         if blog_id in visited:
             print(f"\n[스킵] {blog.get('name', blog_id)} — 이미 방문함 ({visited[blog_id].get('date','')})")
             continue

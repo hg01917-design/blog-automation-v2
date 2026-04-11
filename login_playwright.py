@@ -194,21 +194,27 @@ def login_tistory(blog_id: str, on_log=None):
         pw.stop()
 
 
-def login_naver(naver_id=None, on_log=None):
+def login_naver(naver_id=None, on_log=None, page=None):
     """네이버 로그인 — Chrome 저장된 계정 자동완성 활용
 
     naver_id: 로그인할 네이버 ID. 자동완성 계정과 다를 경우 교체.
+    page: 기존 Playwright page 객체. 전달 시 새 세션 생성 없이 재사용.
     """
     def log(msg):
         if on_log:
             on_log(msg)
 
-    pw, browser = connect_cdp(on_log)
-    page = None
+    # 기존 page가 전달된 경우: 새 Playwright 세션 없이 재사용
+    _owns_session = page is None
+    pw = None
+    if _owns_session:
+        pw, browser = connect_cdp(on_log)
+        page = get_or_create_page(browser, navigate_to=NAVER_LOGIN_URL)
+    else:
+        page.goto(NAVER_LOGIN_URL, wait_until='domcontentloaded', timeout=15000)
 
     try:
         log("[1/4] 네이버 로그인 페이지 접속 중...")
-        page = get_or_create_page(browser, navigate_to=NAVER_LOGIN_URL)
         _rand_delay(page, 2000, 3000)
 
         if "nidlogin" not in page.url:
@@ -263,12 +269,14 @@ def login_naver(naver_id=None, on_log=None):
         return False
 
     finally:
-        try:
-            if page:
-                page.close()
-        except Exception:
-            pass
-        pw.stop()
+        if _owns_session:
+            try:
+                if page:
+                    page.close()
+            except Exception:
+                pass
+            if pw:
+                pw.stop()
 
 
 def logout_tistory(on_log=None):
