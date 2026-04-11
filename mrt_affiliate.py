@@ -53,8 +53,10 @@ def _api_headers() -> dict:
 def create_affiliate_link(target_url: str, on_log=None) -> str | None:
     """MRT 공식 API로 targetUrl → myrealt.rip 단축 제휴 링크 생성."""
     def log(msg):
-        if on_log: on_log(msg)
-        print(msg, flush=True)
+        if on_log:
+            on_log(msg)
+        else:
+            print(msg, flush=True)
 
     if not target_url or not target_url.startswith("http"):
         log(f"[MRT API] 잘못된 URL: {target_url}")
@@ -139,8 +141,10 @@ def get_affiliate_links(keyword: str, top_n: int = 3, on_log=None) -> list[dict]
     from browser import connect_cdp
 
     def log(msg):
-        if on_log: on_log(msg)
-        print(msg, flush=True)
+        if on_log:
+            on_log(msg)
+        else:
+            print(msg, flush=True)
 
     results = []
     pw, browser = connect_cdp(on_log=on_log)

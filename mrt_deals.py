@@ -374,8 +374,9 @@ def run_deal_check(dry_run: bool = False) -> int:
                     for i in range(1, 4)
                 ]
                 image_paths, image_infos_out = generate_images_for_blog(
-                    blog_id=BLOG_ID, keyword=promo_type,
-                    image_infos=image_infos, skip_webp=False, on_log=log
+                    blog_id=BLOG_ID,
+                    image_infos=image_infos, skip_webp=False, on_log=log,
+                    title=promo_type
                 )
 
                 ok = post_single(
@@ -454,9 +455,13 @@ def _collect_affiliate_links(deals: list) -> dict:
     return result
 
 
+DEAL_INTERVAL_HOURS = 3  # 딜 포스트 간 간격 (시간)
+
+
 def run_known_deals(dry_run: bool = False) -> int:
     """미리 알고 있는 딜 목록으로 직접 글 생성 (파트너 블로그 스캔 없이).
     Playwright 충돌 방지: 제휴링크 수집 → pw.stop() → Claude 글생성 → 임시저장 순서로 실행.
+    딜 포스트 간 DEAL_INTERVAL_HOURS 시간 간격 유지.
     """
     # 처리할 딜만 필터
     pending = [d for d in KNOWN_DEALS if not is_deal_written(d["deal_id"])]
@@ -468,12 +473,12 @@ def run_known_deals(dry_run: bool = False) -> int:
     log(f"[딜] 제휴 링크 수집: {len(pending)}개")
     aff_map = _collect_affiliate_links(pending)
 
-    # Step 2: Claude 글 생성 + 임시저장 (별도 Playwright 세션)
+    # Step 2: Claude 글 생성 + 임시저장 (딜 간 3시간 간격)
     written_count = 0
-    for deal in pending:
+    for idx, deal in enumerate(pending):
         deal_id = deal["deal_id"]
         affiliate_url = aff_map.get(deal_id, deal["url"])
-        log(f"\n[딜] 처리: {deal['post_title']} | 제휴링크: {affiliate_url}")
+        log(f"\n[딜] 처리 {idx+1}/{len(pending)}: {deal['post_title']} | 제휴링크: {affiliate_url}")
 
         title, content, tags = generate_deal_post(deal, affiliate_url)
         if not title or not content:
@@ -483,6 +488,9 @@ def run_known_deals(dry_run: bool = False) -> int:
             log(f"[DRY RUN] 제목: {title}")
             mark_deal_written(deal_id, deal["post_title"], deal["url"], title)
             written_count += 1
+            # dry-run도 간격 표시만
+            if idx < len(pending) - 1:
+                log(f"[DRY RUN] 다음 딜까지 {DEAL_INTERVAL_HOURS}시간 대기 (dry-run: 스킵)")
             continue
 
         try:
@@ -500,8 +508,9 @@ def run_known_deals(dry_run: bool = False) -> int:
                 for i in range(1, 4)
             ]
             image_paths, image_infos_out = generate_images_for_blog(
-                blog_id=BLOG_ID, keyword=promo_type,
-                image_infos=image_infos, skip_webp=False, on_log=log
+                blog_id=BLOG_ID,
+                image_infos=image_infos, skip_webp=False, on_log=log,
+                title=promo_type
             )
             ok = post_single(
                 blog_id=BLOG_ID, title=title, content=content,
@@ -517,6 +526,14 @@ def run_known_deals(dry_run: bool = False) -> int:
                     send_telegram(f"🔥 MRT 딜 글 임시저장\n블로그: triplog\n제목: {title}")
                 except Exception:
                     pass
+
+                # 다음 딜까지 간격 대기 (마지막 딜은 대기 불필요)
+                if idx < len(pending) - 1:
+                    from datetime import timedelta
+                    next_dt = datetime.now() + timedelta(hours=DEAL_INTERVAL_HOURS)
+                    log(f"[딜] ⏰ 다음 딜까지 {DEAL_INTERVAL_HOURS}시간 대기 → 예상 발행: {next_dt.strftime('%H:%M')}")
+                    time.sleep(DEAL_INTERVAL_HOURS * 3600)
+
         except Exception as e:
             log(f"[딜] 포스팅 오류: {e}")
             import traceback; traceback.print_exc()

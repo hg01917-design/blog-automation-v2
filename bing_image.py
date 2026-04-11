@@ -195,18 +195,20 @@ def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_
             log("[Bing] 로딩 60초 초과")
 
     # 이미지 생성 완료 대기 (최대 30초 추가 확인)
-    img_url = None
+    all_new_urls = []
     for i in range(30):
         page.wait_for_timeout(1000)
         urls = _safe_get_oig()
         # 페이지 기존 + 세션 내 이미 생성된 OIG 모두 제외
         new_urls = [u for u in urls if u not in exclude_oigs and _extract_oig_id(u) not in {_extract_oig_id(s) for s in session_used}]
-        result = new_urls[0] if new_urls else None
 
-        if result:
-            img_url = result
-            log(f"[Bing] 이미지 감지 ({i+1}초): {img_url[:60]}")
+        # 4장 모두 로딩될 때까지 대기 (최대 30초)
+        if len(new_urls) >= 4 or (new_urls and i >= 10):
+            all_new_urls = new_urls
+            log(f"[Bing] 이미지 {len(all_new_urls)}장 감지 ({i+1}초)")
             break
+        elif new_urls and not all_new_urls:
+            all_new_urls = new_urls  # 일단 저장, 더 로딩 기다림
 
         # 에러 메시지 확인
         err = _safe_eval("""() => {
@@ -217,23 +219,23 @@ def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_
             log(f"[Bing] 쿼터 한계: {err[:80]}")
             return None
 
-    if not img_url:
+    if not all_new_urls:
         log("[Bing] 이미지 URL 감지 실패 (60초 초과)")
         return None
 
-    # 사용된 OIG ID 기록 (세션 내 + 파일 영구 기록)
-    oig_id = _extract_oig_id(img_url)
-    session_used.add(img_url)  # 세션 내 중복 방지
-    _save_used_oig(oig_id)
-    log(f"[Bing] OIG ID 기록: {oig_id}")
+    # 1장 모드: 첫 번째 이미지만 저장 (기존 _generate_one 호환)
+    img_url = all_new_urls[0]
 
-    # 고해상도 URL로 변환: ?w=100&h= 같은 크기 제한 파라미터 제거
+    # 사용된 OIG ID 기록
+    for u in all_new_urls:
+        session_used.add(u)
+        _save_used_oig(_extract_oig_id(u))
+    log(f"[Bing] OIG {len(all_new_urls)}장 기록")
+
+    # 고해상도 URL로 변환
     if 'th.bing.com' in img_url:
-        # OIG 이미지: 쿼리 파라미터 제거 → 원본 크기
-        base = img_url.split('?')[0]
-        img_url = base  # 파라미터 없이 요청하면 최대 해상도
+        img_url = img_url.split('?')[0]
 
-    # 다운로드
     ok = _download_image(img_url, out_path, on_log)
     if ok:
         return out_path
@@ -245,6 +247,150 @@ def _generate_one(page, prompt: str, filename: str, skip_webp: bool = False, on_
     except Exception:
         pass
     return None
+
+
+def _generate_all_four(page, prompt: str, base_filename: str, skip_webp: bool = False,
+                        on_log=None, session_used: set = None, output_dir=None) -> list[str]:
+    """Bing 1회 요청으로 생성된 이미지 최대 4장 전부 다운로드. 경로 리스트 반환."""
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    if session_used is None:
+        session_used = set()
+
+    save_dir = Path(output_dir) if output_dir else IMAGES_DIR
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    ext = '.jpg' if skip_webp else '.webp'
+    base_stem = re.sub(r'[^\w\-]', '-', Path(base_filename).stem)
+    base_stem = re.sub(r'-+', '-', base_stem).strip('-')
+
+    # Bing 이미지 생성 페이지로 이동
+    page.goto(BING_URL, wait_until='domcontentloaded')
+    page.wait_for_timeout(3000)
+
+    if 'login' in page.url.lower() or 'signin' in page.url.lower():
+        log("[Bing] 로그인 필요")
+        return []
+
+    JS_GET_OIG = """() => {
+        const selectors = [
+            '.giic_img img', '.giic_list img', 'img.mimg',
+            '.imgpt img', 'a.iusc img', 'img[src*="th.bing.com"]',
+        ];
+        const found = [];
+        for (const sel of selectors) {
+            for (const img of document.querySelectorAll(sel)) {
+                const src = img.src || img.getAttribute('data-src') || '';
+                if (src && src.includes('OIG')) found.push(src);
+            }
+        }
+        for (const sel of selectors) {
+            for (const img of document.querySelectorAll(sel)) {
+                const src = img.src || img.getAttribute('data-src') || '';
+                if (src && src.includes('blob.core.windows.net')) found.push(src);
+            }
+        }
+        return [...new Set(found)];
+    }"""
+
+    def _safe_get_oig():
+        try:
+            return set(page.evaluate(JS_GET_OIG))
+        except Exception:
+            return set()
+
+    def _safe_eval(js):
+        try:
+            return page.evaluate(js)
+        except Exception:
+            return None
+
+    page_oig = _safe_get_oig()
+    exclude_oigs = page_oig | session_used
+
+    # 입력창 찾기
+    inp = page.query_selector('#gi_form_q')
+    if not inp:
+        for sel in ['textarea.gi_sb', 'textarea[name="q"]', '#gipc_textbox']:
+            inp = page.query_selector(sel)
+            if inp:
+                break
+    if not inp:
+        log("[Bing] 입력창 없음")
+        return []
+
+    inp.click()
+    page.wait_for_timeout(300)
+    inp.fill(prompt)
+    page.wait_for_timeout(500)
+
+    create_btn = page.query_selector('#create_btn_c, button.gi_submit, button[aria-label*="Create"]')
+    if create_btn:
+        create_btn.click()
+    else:
+        inp.press('Enter')
+    log(f"[Bing] 프롬프트 전송 (4장 모드): {prompt[:50]}")
+    page.wait_for_timeout(5000)
+
+    try:
+        page.wait_for_load_state('domcontentloaded', timeout=10000)
+    except Exception:
+        pass
+
+    # 로딩 대기
+    for _ in range(15):
+        page.wait_for_timeout(1000)
+        if _safe_eval("""() => !!(document.querySelector('.gil_status, .giic_loading, [class*="loading"]'))"""):
+            log("[Bing] 로딩 감지됨, 4장 대기 중...")
+            break
+
+    for _ in range(60):
+        page.wait_for_timeout(1000)
+        if not _safe_eval("""() => !!(document.querySelector('.gil_status, .giic_loading, [class*="loading"]'))"""):
+            break
+
+    # 4장 수집 (최대 15초 대기)
+    all_new_urls = []
+    for i in range(15):
+        page.wait_for_timeout(1000)
+        urls = _safe_get_oig()
+        new_urls = [u for u in urls if u not in exclude_oigs
+                    and _extract_oig_id(u) not in {_extract_oig_id(s) for s in session_used}]
+        if len(new_urls) >= 4:
+            all_new_urls = new_urls[:4]
+            log(f"[Bing] 4장 모두 감지 ({i+1}초)")
+            break
+        if new_urls:
+            all_new_urls = new_urls
+
+    if not all_new_urls:
+        log("[Bing] 이미지 감지 실패")
+        return []
+
+    log(f"[Bing] {len(all_new_urls)}장 다운로드 시작")
+
+    paths = []
+    for n, img_url in enumerate(all_new_urls, start=1):
+        fname = f"{base_stem}-{n}{ext}"
+        out_path = str(save_dir / fname)
+
+        if 'th.bing.com' in img_url:
+            img_url = img_url.split('?')[0]
+
+        session_used.add(img_url)
+        _save_used_oig(_extract_oig_id(img_url))
+
+        ok = _download_image(img_url, out_path, on_log)
+        if ok:
+            paths.append(out_path)
+            log(f"[Bing] [{n}/4] 저장: {fname}")
+        else:
+            log(f"[Bing] [{n}/4] 다운로드 실패: {img_url[:60]}")
+
+    log(f"[Bing] 4장 모드 완료: {len(paths)}장 저장")
+    return paths
 
 
 def generate_images_bing(image_infos: list, skip_webp: bool = False, on_log=None, output_dir=None) -> dict:
@@ -272,20 +418,40 @@ def generate_images_bing(image_infos: list, skip_webp: bool = False, on_log=None
         page = get_or_create_page(browser, url_contains="bing.com", navigate_to=BING_URL)
         page.wait_for_timeout(3000)
 
-        for info in image_infos:
-            idx = info['index']
-            prompt = info['prompt']
-            filename = info['filename']
+        # ★ 4장 이하 요청 → Bing 1회 호출로 전부 해결 (크레딧 절약)
+        if len(image_infos) <= 4:
+            first = image_infos[0]
+            log(f"[Bing] 4장 모드: 1회 요청으로 {len(image_infos)}장 생성")
+            paths = _generate_all_four(
+                page, first['prompt'], first['filename'],
+                skip_webp, on_log, session_used, output_dir=output_dir
+            )
+            for i, info in enumerate(image_infos):
+                if i < len(paths):
+                    results[info['index']] = paths[i]
+                    log(f"[Bing] [{info['index']}] ✓ 저장: {paths[i]}")
+                else:
+                    log(f"[Bing] [{info['index']}] 이미지 부족 — 추가 생성")
+                    path = _generate_one(page, info['prompt'], info['filename'],
+                                         skip_webp, on_log, session_used, output_dir=output_dir)
+                    if path:
+                        results[info['index']] = path
+        else:
+            # 5장 이상: 기존 방식 (각각 1장씩 생성)
+            for info in image_infos:
+                idx = info['index']
+                prompt = info['prompt']
+                filename = info['filename']
 
-            log(f"[Bing] [{idx}] 생성 중: {prompt[:60]}")
-            path = _generate_one(page, prompt, filename, skip_webp, on_log, session_used, output_dir=output_dir)
-            if path:
-                results[idx] = path
-                log(f"[Bing] [{idx}] ✓ 저장: {path}")
-            else:
-                log(f"[Bing] [{idx}] 생성 실패")
+                log(f"[Bing] [{idx}] 생성 중: {prompt[:60]}")
+                path = _generate_one(page, prompt, filename, skip_webp, on_log, session_used, output_dir=output_dir)
+                if path:
+                    results[idx] = path
+                    log(f"[Bing] [{idx}] ✓ 저장: {path}")
+                else:
+                    log(f"[Bing] [{idx}] 생성 실패")
 
-            time.sleep(2)
+                time.sleep(2)
     finally:
         # Bing 탭 닫기 (탭 누적 방지)
         try:
