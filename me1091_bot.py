@@ -156,30 +156,118 @@ def fetch_notion_products() -> list:
 
 
 # ─── SQLite: 처리된 상품 추적 ─────────────────────────────────────────────
+# ─── 글 각도(angle) 정의 — 같은 링크로 다른 글 쓰기 ────────────────────
+# (angle_id, title_hint, writing_instruction)
+PRODUCT_ANGLES = [
+    (
+        "가격후기",
+        "쿠팡 가격 와우할인 직접 확인한 후기",
+        "이 글의 포커스: 쿠팡 가격과 와우 회원 할인 혜택이 핵심이야.\n"
+        "인트로에서 '비슷한 제품 중 쿠팡이 제일 저렴하더라'는 발견 경험으로 시작.\n"
+        "가격 앵커링(정가 vs 쿠팡가 vs 와우가 차이)을 표로 시각화해서 명확히 보여줘.\n"
+        "로켓배송 빠름 + 와우 할인 = 결론적으로 어디서 사는 게 이득인지 정리로 마무리."
+    ),
+    (
+        "장단점",
+        "솔직한 장단점 직접 써본 후기",
+        "이 글의 포커스: 장점 위주지만 아쉬운 점 1-2가지를 솔직하게 인정하는 구조.\n"
+        "'좋은 점만 쓰는 리뷰는 믿기 어렵잖아요'라는 공감으로 시작.\n"
+        "장점 3-4개 구체적 사용 경험으로, 단점은 '이런 분에겐 불편할 수도'로 부드럽게.\n"
+        "결론: '그래도 이 가격에 이 품질이면 괜찮다'는 합리화로 구매 유도."
+    ),
+    (
+        "사용법",
+        "처음 써봤을 때 이것만 알면 됩니다",
+        "이 글의 포커스: '어떻게 쓰는 건지 몰라서 찾아봤어요'라는 독자 니즈 공략.\n"
+        "처음 쓸 때 헷갈렸던 것, 알고 나서 훨씬 편해진 점 중심으로 구성.\n"
+        "단계별 사용법 또는 처음엔 몰랐던 꿀팁을 실사용 경험처럼 자연스럽게 서술.\n"
+        "맺음말: '이거 알고 쓰면 훨씬 다르더라'는 문장으로 구매 후 만족감 강조."
+    ),
+    (
+        "추천대상",
+        "이런 분들께 딱 맞는 제품입니다",
+        "이 글의 포커스: 어떤 사람에게 이 제품이 맞는지 구체적 대상 설정.\n"
+        "'자취하는 분', '선물용', '가성비 중시', '특정 용도' 등 3가지 유형으로 나눠 설명.\n"
+        "각 유형마다 왜 이 제품이 맞는지 이유를 구체적으로 서술.\n"
+        "반대로 '이런 분께는 안 맞을 수도 있어요'를 1가지 솔직하게 언급해서 신뢰도 확보.\n"
+        "맺음말: '결국 내 상황에 맞는지 한 번만 확인해보세요 + 링크' CTA."
+    ),
+    (
+        "비교",
+        "비슷한 제품이랑 비교해봤어요",
+        "이 글의 포커스: 이 제품과 경쟁 제품(가격대 또는 브랜드) 비교.\n"
+        "'어떤 걸 살까 고민하다가 결국 이걸로 결정했어요'라는 선택 스토리로 시작.\n"
+        "비교 대상 1-2개와 가격·기능·품질 차이를 간단 표 or 나열로 정리.\n"
+        "결론: '이 가격대면 이게 더 낫더라'는 명확한 선택 이유로 마무리."
+    ),
+    (
+        "재구매",
+        "다시 산다면 또 이걸 살 것 같아요",
+        "이 글의 포커스: 이미 한 번 써본 후 재구매 의사를 묻는 구조.\n"
+        "'쓰다 보니까 이게 생각보다 좋더라고요'라는 사후 만족감 공유로 시작.\n"
+        "초반엔 반신반의했지만 실제로 써보니 달랐던 경험을 구체적으로 서술.\n"
+        "'다음에도 이 브랜드·제품 계속 쓸 것 같다'는 재구매 의사 표명으로 마무리.\n"
+        "이미 구매 경험이 있는 독자에게 '맞아, 나도'를 유발하는 공감 포커스."
+    ),
+]
+
+
 def _db_conn():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS me1091_published (
-            product_name TEXT PRIMARY KEY,
+            product_name TEXT,
+            angle        TEXT DEFAULT '',
             coupang_link TEXT,
             blog_url     TEXT,
-            published_at TEXT
+            published_at TEXT,
+            PRIMARY KEY (product_name, angle)
         )
     """)
+    # 기존 테이블에 angle 컬럼이 없으면 추가 (마이그레이션)
+    try:
+        conn.execute("ALTER TABLE me1091_published ADD COLUMN angle TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:
+        pass  # 이미 있으면 무시
     conn.commit()
     return conn
 
-def is_already_done(name: str) -> bool:
-    with _db_conn() as c:
-        row = c.execute("SELECT 1 FROM me1091_published WHERE product_name=?", (name,)).fetchone()
-    return row is not None
 
-def mark_done(name: str, link: str, blog_url: str = ""):
+def get_next_angle(name: str) -> tuple | None:
+    """상품명에 대해 아직 사용하지 않은 다음 angle 반환. 모두 소진 시 가장 오래된 것 재사용."""
+    with _db_conn() as c:
+        used = {
+            row[0]
+            for row in c.execute(
+                "SELECT angle FROM me1091_published WHERE product_name=?", (name,)
+            ).fetchall()
+        }
+    all_ids = [a[0] for a in PRODUCT_ANGLES]
+    # 미사용 각도 우선
+    for angle_id, title_hint, instruction in PRODUCT_ANGLES:
+        if angle_id not in used:
+            return angle_id, title_hint, instruction
+    # 전부 소진 → 가장 먼저 쓴 각도부터 순환
+    with _db_conn() as c:
+        oldest = c.execute(
+            "SELECT angle FROM me1091_published WHERE product_name=? ORDER BY published_at ASC LIMIT 1",
+            (name,)
+        ).fetchone()
+    if oldest:
+        recycle_id = oldest[0]
+        for angle_id, title_hint, instruction in PRODUCT_ANGLES:
+            if angle_id == recycle_id:
+                return angle_id, title_hint, instruction
+    return PRODUCT_ANGLES[0][0], PRODUCT_ANGLES[0][1], PRODUCT_ANGLES[0][2]
+
+
+def mark_done(name: str, link: str, angle: str = "", blog_url: str = ""):
     with _db_conn() as c:
         c.execute("""
-            INSERT OR REPLACE INTO me1091_published(product_name, coupang_link, blog_url, published_at)
-            VALUES (?, ?, ?, ?)
-        """, (name, link, blog_url, datetime.now().isoformat()))
+            INSERT OR REPLACE INTO me1091_published(product_name, angle, coupang_link, blog_url, published_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (name, angle, link, blog_url, datetime.now().isoformat()))
         c.commit()
 
 
@@ -475,7 +563,8 @@ def prepare_images_with_gemini(product_info: dict, keyword: str) -> tuple:
 
 
 # ─── Claude.ai 글 생성 ───────────────────────────────────────────────────
-def generate_review_post(product_info: dict, coupang_link: str) -> tuple:
+def generate_review_post(product_info: dict, coupang_link: str,
+                         angle_id: str = "", angle_hint: str = "", angle_instruction: str = "") -> tuple:
     """Claude.ai me1091 프로젝트로 리뷰 글 생성. (title, content, tags) 반환."""
     from claude_playwright import generate_text
 
@@ -499,6 +588,28 @@ def generate_review_post(product_info: dict, coupang_link: str) -> tuple:
         for i, rv in enumerate(reviews, 1):
             reviews_str += f"리뷰{i}: {rv[:300]}\n\n"
 
+    # 각도 지시문
+    angle_section = ""
+    if angle_instruction:
+        angle_section = f"\n[이번 글 포커스 — 반드시 따를 것]\n{angle_instruction}\n"
+
+    # 제목 힌트 (각도별 다른 방향)
+    title_direction = ""
+    if angle_hint:
+        title_direction = (
+            f"이번 글 각도: '{angle_hint}'\n"
+            f"제목은 이 각도를 반영한 구체적 검색어 형태로 작성 (상품명 + 각도 키워드 조합).\n"
+            f"예시 방향: '{name[:15]} {angle_hint}'\n"
+            f"단, 매번 새로운 형태의 제목이 나오도록 단순 복붙 금지."
+        )
+    else:
+        title_direction = (
+            "핵심 원칙: 사람들이 이 제품을 검색할 때 실제로 가지는 궁금증이나 고민을 제목에 담을 것.\n"
+            "질문, 결과, 비교, 고민해결, 타깃 독자 명시 등 다양한 방식으로 자유롭게 응용하되\n"
+            "매번 다른 형태의 제목이 나오도록 창의적으로 작성.\n"
+            "'직접 써본 후기', '사용기', '직접 써봤어요' 같은 단순 후기형 제목은 사용 금지."
+        )
+
     # 상품 정보를 extra_context로 전달 → 노션 프로젝트 프롬프트와 합쳐짐
     extra = f"""[상품 정보]
 상품명: {name}
@@ -506,19 +617,16 @@ def generate_review_post(product_info: dict, coupang_link: str) -> tuple:
 가격: {price_str}
 스펙: {spec[:300] if spec else '없음'}
 쿠팡파트너스 링크: {coupang_link}
-{reviews_str}
+{reviews_str}{angle_section}
 [링크 삽입 형식]
-본문 중간 + 말미에 아래 형식으로 자연스럽게 삽입:
+본문 상단 첫 소제목 아래 + 말미에 아래 형식으로 반드시 2회 삽입:
 👉 [쿠팡에서 최저가 확인하기]({coupang_link})
 ※ 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 일정액의 수수료를 제공받습니다.
 
 [출력 형식 — 반드시 아래 마커 사용]
 ===제목===
 (SEO 최적화 제목 — 30~45자, 상품명 포함.
- 핵심 원칙: 사람들이 이 제품을 검색할 때 실제로 가지는 궁금증이나 고민을 제목에 담을 것.
- 질문, 결과, 비교, 고민해결, 타깃 독자 명시 등 다양한 방식으로 자유롭게 응용하되
- 매번 다른 형태의 제목이 나오도록 창의적으로 작성.
- '직접 써본 후기', '사용기', '직접 써봤어요' 같은 단순 후기형 제목은 사용 금지.)
+{title_direction})
 ===제목끝===
 
 ===본문===
@@ -530,7 +638,7 @@ def generate_review_post(product_info: dict, coupang_link: str) -> tuple:
 ===태그끝===
 """
 
-    log(f"[Claude] {BLOG_ID} 글 생성 시작: {name[:40]}")
+    log(f"[Claude] {BLOG_ID} 글 생성 시작: {name[:40]} (각도: {angle_id or '기본'})")
     raw = generate_text("", blog_id=BLOG_ID, keyword=name, on_log=log, extra_context=extra)
     if not raw or "추출 실패" in raw:
         log("[Claude] 글 생성 실패")
@@ -552,24 +660,60 @@ def generate_review_post(product_info: dict, coupang_link: str) -> tuple:
 
 # ─── 단일 상품 처리 (overnight_run.py에서 호출) ─────────────────────────
 def run_one_product(on_log=None) -> bool:
-    """Notion에서 미처리 상품 1개를 처리. overnight_run.py의 post_one_blog에서 호출."""
+    """Notion 상품 풀에서 다음 (상품, 각도) 조합을 처리. overnight_run.py에서 호출."""
     def _log(m):
         if on_log: on_log(m)
         log(m)
 
     products = fetch_notion_products()
-    pending = [p for p in products if not is_already_done(p["name"])]
-    if not pending:
+    if not products:
         _log("[me1091] 처리할 Notion 상품 없음")
         return False
 
-    product = pending[0]
-    name = product["name"]
-    link = product["link"]
-    _log(f"[me1091] 처리: {name[:50]}")
+    # 모든 상품에 대해 사용 가능한 각도가 있는 것 우선 선택
+    # 우선순위: 1) 미사용 각도 있는 상품 → 2) 가장 오래된 각도 순환 상품
+    selected_product = None
+    selected_angle = None
+
+    # 1순위: 미사용 각도가 있는 상품 (DB에 없거나 일부만 사용한 상품)
+    for product in products:
+        name = product["name"]
+        angle_info = get_next_angle(name)
+        if angle_info is None:
+            continue
+        angle_id, angle_hint, angle_instruction = angle_info
+        # 이 (name, angle_id) 조합이 실제로 미사용인지 확인
+        with _db_conn() as c:
+            used = c.execute(
+                "SELECT 1 FROM me1091_published WHERE product_name=? AND angle=?",
+                (name, angle_id)
+            ).fetchone()
+        if not used:
+            selected_product = product
+            selected_angle = (angle_id, angle_hint, angle_instruction)
+            break
+
+    # 2순위: 전체 각도 소진 시 가장 오래된 것 순환
+    if selected_product is None:
+        for product in products:
+            name = product["name"]
+            angle_info = get_next_angle(name)
+            if angle_info:
+                selected_product = product
+                selected_angle = angle_info
+                break
+
+    if selected_product is None:
+        _log("[me1091] 사용 가능한 상품·각도 조합 없음")
+        return False
+
+    name = selected_product["name"]
+    link = selected_product["link"]
+    angle_id, angle_hint, angle_instruction = selected_angle
+    _log(f"[me1091] 처리: {name[:40]} | 각도: {angle_id}")
 
     product_info = scrape_coupang_product(link, on_log=_log)
-    product_info["category"] = product.get("category", "")
+    product_info["category"] = selected_product.get("category", "")
     if not product_info.get("name"):
         product_info["name"] = name
 
@@ -578,7 +722,10 @@ def run_one_product(on_log=None) -> bool:
     # 쿠팡 이미지(리뷰+상품) 참고 → Gemini 실사진 재생성
     image_paths, image_infos_list = prepare_images_with_gemini(product_info, keyword)
 
-    title, content, tags = generate_review_post(product_info, link)
+    title, content, tags = generate_review_post(
+        product_info, link,
+        angle_id=angle_id, angle_hint=angle_hint, angle_instruction=angle_instruction
+    )
     if not title or not content:
         _log(f"[me1091] 글 생성 실패: {name[:40]}")
         return False
@@ -601,8 +748,8 @@ def run_one_product(on_log=None) -> bool:
             on_log=_log,
         )
         if ok:
-            mark_done(name, link)
-            _log(f"[me1091] ✅ 임시저장 완료: {title}")
+            mark_done(name, link, angle=angle_id)
+            _log(f"[me1091] ✅ 임시저장 완료: {title} (각도: {angle_id})")
         return ok
     except Exception as e:
         _log(f"[me1091] 포스팅 오류: {e}")
@@ -628,12 +775,24 @@ def run():
         name = product["name"]
         link = product["link"]
 
-        if is_already_done(name):
-            log(f"[스킵] 이미 처리됨: {name[:40]}")
+        angle_info = get_next_angle(name)
+        if angle_info is None:
+            log(f"[스킵] 각도 없음: {name[:40]}")
+            continue
+        angle_id, angle_hint, angle_instruction = angle_info
+
+        # 이미 사용한 (name, angle_id) 조합이면 스킵
+        with _db_conn() as c:
+            already = c.execute(
+                "SELECT 1 FROM me1091_published WHERE product_name=? AND angle=?",
+                (name, angle_id)
+            ).fetchone()
+        if already:
+            log(f"[스킵] 모든 각도 소진: {name[:40]}")
             continue
 
         log(f"\n{'='*45}")
-        log(f"[처리] {name[:50]}")
+        log(f"[처리] {name[:50]} | 각도: {angle_id}")
         log(f"[처리] 링크: {link}")
 
         # 2. 쿠팡 상품 크롤링
@@ -647,8 +806,11 @@ def run():
         keyword = product_info.get("name") or name
         image_paths, image_infos_list = prepare_images_with_gemini(product_info, keyword)
 
-        # 4. 글 생성 (리뷰 텍스트 컨텍스트 포함)
-        title, content, tags = generate_review_post(product_info, link)
+        # 4. 글 생성 (각도 적용)
+        title, content, tags = generate_review_post(
+            product_info, link,
+            angle_id=angle_id, angle_hint=angle_hint, angle_instruction=angle_instruction
+        )
         if not title or not content:
             log(f"[스킵] 글 생성 실패: {name[:40]}")
             continue
@@ -674,15 +836,15 @@ def run():
             )
 
             if ok:
-                mark_done(name, link)
+                mark_done(name, link, angle=angle_id)
                 processed += 1
-                log(f"[완료] ✅ {name[:40]} 임시저장 완료")
+                log(f"[완료] ✅ {name[:40]} (각도: {angle_id}) 임시저장 완료")
 
                 # 텔레그램 보고
                 try:
                     from notify import send_telegram
                     send_telegram(
-                        f"✅ me1091 임시저장 완료\n상품: {name[:40]}\n제목: {title}"
+                        f"✅ me1091 임시저장 완료\n상품: {name[:40]}\n각도: {angle_id}\n제목: {title}"
                     )
                 except Exception:
                     pass
