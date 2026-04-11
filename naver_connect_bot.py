@@ -553,7 +553,7 @@ def run_one_product():
                 {"prompt": f"{name} 생활용품 실사용 모습 깔끔한 인테리어", "alt": name, "index": i}
                 for i in range(1, 4)
             ]
-            image_paths, image_infos_out = generate_images_for_blog(
+            image_paths = generate_images_for_blog(
                 blog_id=BLOG_ID,
                 image_infos=image_infos,
                 skip_webp=True,
@@ -569,7 +569,7 @@ def run_one_product():
             content=content,
             tags=tags,
             image_paths=image_paths,
-            image_infos=image_infos_out,
+            image_infos=image_infos,
             keyword=name,
             on_log=log,
         )

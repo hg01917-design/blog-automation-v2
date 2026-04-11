@@ -373,7 +373,7 @@ def run_deal_check(dry_run: bool = False) -> int:
                     {"prompt": f"travel deal promotion flight hotel discount vibrant colorful poster style", "alt": f"{promo_type} 마이리얼트립", "index": i}
                     for i in range(1, 4)
                 ]
-                image_paths, image_infos_out = generate_images_for_blog(
+                image_paths = generate_images_for_blog(
                     blog_id=BLOG_ID,
                     image_infos=image_infos, skip_webp=False, on_log=log,
                     title=promo_type
@@ -385,7 +385,7 @@ def run_deal_check(dry_run: bool = False) -> int:
                     content=content,
                     tags=tags,
                     image_paths=image_paths,
-                    image_infos=image_infos_out,
+                    image_infos=image_infos,
                     keyword=promo_type,
                     on_log=log,
                 )
@@ -507,14 +507,14 @@ def run_known_deals(dry_run: bool = False) -> int:
                 }
                 for i in range(1, 4)
             ]
-            image_paths, image_infos_out = generate_images_for_blog(
+            image_paths = generate_images_for_blog(
                 blog_id=BLOG_ID,
                 image_infos=image_infos, skip_webp=False, on_log=log,
                 title=promo_type
             )
             ok = post_single(
                 blog_id=BLOG_ID, title=title, content=content,
-                tags=tags, image_paths=image_paths, image_infos=image_infos_out,
+                tags=tags, image_paths=image_paths, image_infos=image_infos,
                 keyword=promo_type, on_log=log,
             )
             if ok:
