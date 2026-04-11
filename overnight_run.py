@@ -528,14 +528,10 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
                     log(f"[파이프라인] MRT 관련성 필터: {len(mrt_links)}개 → {len(relevant_links)}개 (지역: {dest_keywords})")
                 mrt_links = relevant_links[:3]
 
-            # affiliate_url이 None/빈 것 제거
+            # affiliate_url이 None/빈 것 제거 (원본 URL 폴백 없음 — 제휴링크만 허용)
             valid_links = [p for p in mrt_links if p.get("affiliate_url")]
             if not valid_links and mrt_links:
-                log(f"[파이프라인] ⚠️ MRT 제휴 링크 생성 실패 (로그인 필요 or 파트너 포털 오류) — 원본 URL 대체 사용")
-                valid_links = [
-                    {**p, "affiliate_url": p.get("original_url", "")}
-                    for p in mrt_links if p.get("original_url")
-                ]
+                log(f"[파이프라인] ⚠️ MRT 제휴 링크 생성 실패 — triplog 발행 스킵")
 
             if valid_links:
                 mrt_ctx = (
@@ -1067,6 +1063,13 @@ def run_one_round(round_num):
         run_refresh()
     except Exception as e:
         log(f"[리프레시] 스킵: {e}")
+
+    # MRT 파트너 블로그 딜 모니터링 (triplog용 프로모션 글 자동 생성)
+    try:
+        from mrt_deals import run_deal_check
+        run_deal_check()
+    except Exception as e:
+        log(f"[딜모니터] 스킵: {e}")
 
 
 # ─── 메인 실행 ───

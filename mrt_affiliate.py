@@ -25,8 +25,68 @@ if _env.exists():
 
 SEARCH_URL     = "https://www.myrealtrip.com/offers?q={query}"
 LINK_GEN_URL   = "https://partner.myrealtrip.com/partnership-marketing/link-generator"
+PARTNER_LOGIN_URL = "https://partner.myrealtrip.com/login"
 URL_INPUT_SEL  = 'input[placeholder*="마이리얼트립 상품 주소"]'
 MAKE_LINK_BTN  = 'button[type="submit"]:has-text("홍보 링크 만들기")'
+
+
+def _ensure_partner_login(page, on_log=None) -> bool:
+    """파트너 포털 로그인 상태 확인 후 필요 시 자동 로그인. 성공 여부 반환."""
+    def log(msg):
+        if on_log: on_log(msg)
+        print(msg, flush=True)
+
+    email = os.environ.get("MRT_EMAIL", "")
+    password = os.environ.get("MRT_PASSWORD", "")
+    if not email or not password:
+        log("[MRT] ⚠️ .env에 MRT_EMAIL/MRT_PASSWORD 없음")
+        return False
+
+    page.goto(LINK_GEN_URL, wait_until="domcontentloaded", timeout=30000)
+    time.sleep(3)
+
+    # 로그인 여부 판단: URL 입력창이 있으면 이미 로그인됨
+    if page.locator(URL_INPUT_SEL).count() > 0:
+        log("[MRT] 파트너 포털 로그인 상태 확인됨")
+        return True
+
+    # 로그인 필요
+    log(f"[MRT] 파트너 포털 로그인 필요 → 자동 로그인 시도: {email}")
+
+    # 이메일 입력
+    for sel in ['input[type="email"]', 'input[name="email"]', 'input[placeholder*="이메일"]']:
+        loc = page.locator(sel)
+        if loc.count() > 0:
+            loc.first.click()
+            loc.first.fill(email)
+            break
+
+    # 비밀번호 입력
+    pw_loc = page.locator('input[type="password"]')
+    if pw_loc.count() > 0:
+        pw_loc.first.click()
+        pw_loc.first.fill(password)
+
+    # 로그인 버튼 클릭
+    for btn_sel in ['button:has-text("로그인")', 'button[type="submit"]']:
+        btn = page.locator(btn_sel)
+        if btn.count() > 0:
+            btn.first.click()
+            log("[MRT] 로그인 버튼 클릭")
+            break
+
+    time.sleep(4)
+
+    # 로그인 후 링크 생성 페이지로 이동
+    page.goto(LINK_GEN_URL, wait_until="domcontentloaded", timeout=20000)
+    time.sleep(3)
+
+    if page.locator(URL_INPUT_SEL).count() > 0:
+        log("[MRT] ✅ 자동 로그인 성공")
+        return True
+    else:
+        log(f"[MRT] ❌ 자동 로그인 실패 (URL: {page.url})")
+        return False
 
 
 # ── 1. myrealtrip.com 상품 검색 ──────────────────────────────────────────────
@@ -193,6 +253,12 @@ def get_affiliate_links(keyword: str, top_n: int = 3, on_log=None) -> list[dict]
     try:
         ctx = browser.contexts[0] if browser.contexts else browser.new_context()
         page = ctx.new_page()
+
+        # 0. 파트너 포털 로그인 확인 (필요 시 자동 로그인)
+        if not _ensure_partner_login(page, on_log=on_log):
+            log("[MRT] ❌ 파트너 포털 로그인 불가 — 제휴 링크 생성 중단")
+            page.close()
+            return []
 
         # 1. 상품 검색
         log(f"[MRT] '{keyword}' 검색 중...")
