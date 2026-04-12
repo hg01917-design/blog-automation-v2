@@ -676,6 +676,8 @@ def run_one_product(on_log=None) -> bool:
 
     # 모든 상품에 대해 사용 가능한 각도가 있는 것 우선 선택
     # 우선순위: 1) 미사용 각도 있는 상품 → 2) 가장 오래된 각도 순환 상품
+    import random as _rand
+    _rand.shuffle(products)  # Notion 순서 무관하게 랜덤 선택
     selected_product = None
     selected_angle = None
 
