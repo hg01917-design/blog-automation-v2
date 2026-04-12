@@ -243,6 +243,8 @@ def login_naver(naver_id=None, on_log=None, page=None):
             id_input.press("Control+a")
             id_input.press("Backspace")
             _rand_delay(page, 200, 400)
+            id_input.fill("")
+            _rand_delay(page, 100, 200)
             id_input.type(naver_id, delay=random.randint(60, 120))
             _rand_delay(page, 500, 800)
 
