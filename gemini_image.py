@@ -360,13 +360,17 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
         pass
 
     # ── 네트워크 인터셉트 설정 (전송 후 도착하는 이미지만 캡처, DOM 무관) ──
-    _sent = [False]
+    import time as _time
+    _sent_at = [0.0]
     _captured: list[tuple[bytes, str]] = []   # (image_bytes, content_type)
     _SKIP_URL_TOKENS = ["favicon", "/icon-", "avatar", "/a/", "logo", "profile",
                         "sprite", "badge", "emoji"]
 
     def _on_response(resp):
-        if not _sent[0]:
+        if not _sent_at[0]:
+            return
+        # 전송 후 5초 이내 캡처는 이전 대화 이미지 lazy-load → 무시
+        if _time.time() - _sent_at[0] < 5.0:
             return
         try:
             ct = resp.headers.get("content-type", "")
@@ -385,7 +389,7 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
 
     page.on("response", _on_response)
     send_btn.click(timeout=15000)
-    _sent[0] = True
+    _sent_at[0] = _time.time()
     log("[이미지] 프롬프트 전송, 네트워크 캡처 대기...")
 
     _QUOTA_KEYWORDS = [
@@ -437,8 +441,8 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
 
     # ── 1차: 네트워크 캡처 이미지 직접 저장 (DOM 셀렉터 완전 제거) ──
     if _captured:
-        # 캡처된 것 중 가장 큰 파일 선택 (생성 이미지 > 썸네일)
-        body, ct = max(_captured, key=lambda x: len(x[0]))
+        # 가장 마지막에 도착한 이미지 선택 (생성 이미지는 항상 마지막)
+        body, ct = _captured[-1]
         try:
             img = Image.open(io.BytesIO(body))
             w, h = img.size
