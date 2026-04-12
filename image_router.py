@@ -283,6 +283,11 @@ _PROMPT_STYLE = {
         "blue sky or sunset backdrop, wide establishing shot, "
         "vibrant natural colors, professional travel magazine style, no people, no faces, 4K quality"
     ),
+    "issue01": (
+        "photorealistic editorial photography, Korean daily life or social scene, "
+        "clean bright natural lighting, journalistic composition, "
+        "neutral background, no text overlay, no people faces, 4K quality"
+    ),
 }
 
 # 구도 변형자 — 같은 글 내 이미지 중복 방지 (index 기반 순환)

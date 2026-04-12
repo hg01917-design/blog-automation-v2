@@ -86,6 +86,15 @@ ACCOUNTS = [
         "editor_url": "https://phn0502.tistory.com/manage/newpost",
         "category": "영화",
     },
+    # ─── 이슈봇 전용 블로그 (새로 생성 후 아래 값 수정) ───
+    # blog URL, kakao_id는 실제 블로그 생성 후 수정 필요
+    {
+        "blog": "issue01",
+        "platform": "tistory",
+        "kakao_id": "baremi542",   # TODO: 실제 카카오 계정으로 변경
+        "editor_url": "https://issue01.tistory.com/manage/newpost",  # TODO: 실제 URL로 변경
+        "category": "이슈",
+    },
 ]
 
 # 계정별 빠른 조회용
