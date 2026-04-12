@@ -493,8 +493,7 @@ def generate_thumbnail(blog_id: str, keyword: str, title: str, on_log=None) -> s
 
 
 def _generate_naver(image_infos: list, skip_webp: bool, log, reference_images: list = None, output_dir=None) -> dict:
-    """Naver(salim1su/me1091): Gemini → Pollinations (Bing 사용 안 함)"""
-    # 1단계: Gemini
+    """Naver(salim1su/me1091): Gemini만 사용. 실패 시 폴백 없음."""
     try:
         from gemini_image import generate_images, _quota_blocked_until
         blocked = _quota_blocked_until()
@@ -504,21 +503,14 @@ def _generate_naver(image_infos: list, skip_webp: bool, log, reference_images: l
                                       reference_images=reference_images, output_dir=output_dir)
             if results:
                 log(f"[Router] Gemini 성공: {len(results)}장")
-                failed = [info for info in image_infos if info['index'] not in results]
-                if not failed:
-                    return results
-                log(f"[Router] Gemini 실패 {len(failed)}장 → Pollinations 폴백")
-                poll_res = _try_pollinations(failed, log, output_dir=output_dir)
-                results.update(poll_res)
                 return results
+            log("[Router] Gemini 실패 — Naver는 폴백 없음, 이미지 생성 중단")
         else:
-            log(f"[Router] Gemini 쿼터 차단({blocked.strftime('%m/%d %H:%M')}) → Pollinations 폴백")
+            log(f"[Router] Gemini 쿼터 차단({blocked.strftime('%m/%d %H:%M')}) — Naver는 폴백 없음")
     except Exception as e:
         log(f"[Router] Gemini 오류: {e}")
 
-    # 2단계: Pollinations (Naver는 Bing 사용 안 함)
-    log("[Router] Naver: Pollinations 폴백")
-    return _try_pollinations(image_infos, log, output_dir=output_dir)
+    return {}
 
 
 def _loremflickr_image(prompt: str, filepath: str, on_log=None) -> bool:
