@@ -125,15 +125,36 @@ def run(keyword: str, on_log=None, on_status=None):
             on_status("writer", "failed")
         return None
 
-    # Gemini 이미지 생성
+    # PIL 인포그래픽 카드 생성 (Gemini 대신 로컬 생성 — 무제한, 빠름)
     image_paths = {}
-    if result["images"]:
-        log(f"[작성] 이미지 {len(result['images'])}개 생성 시작")
+    try:
+        from issue_card import generate_issue_cards
+        card_paths = generate_issue_cards(
+            title=result["title"],
+            keyword=keyword,
+            body=result["body"],
+            count=3,
+            on_log=log,
+        )
+        if card_paths:
+            image_paths = card_paths
+            # images 리스트를 카드 파일에 맞게 업데이트
+            result["images"] = [
+                {"index": idx, "prompt": "", "filename": Path(p).name, "alt": f"{keyword} 카드 {idx}"}
+                for idx, p in card_paths.items()
+            ]
+            log(f"[작성] PIL 카드 {len(image_paths)}장 생성 완료")
+    except Exception as e:
+        log(f"[작성] PIL 카드 실패({e}) — Gemini 폴백")
+
+    # Gemini 폴백 (PIL 실패 시)
+    if not image_paths and result["images"]:
+        log(f"[작성] Gemini 이미지 {len(result['images'])}개 생성 시작 (폴백)")
         image_paths = _img_router(
             blog_id, result["images"], skip_webp=False, on_log=log,
             title=result.get("title", "")
         )
-        log(f"[작성] 이미지 {len(image_paths)}개 생성 완료")
+        log(f"[작성] Gemini 이미지 {len(image_paths)}개 생성 완료")
 
         failed = [img for img in result["images"] if img["index"] not in image_paths]
         if failed:
