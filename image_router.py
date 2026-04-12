@@ -493,23 +493,41 @@ def generate_thumbnail(blog_id: str, keyword: str, title: str, on_log=None) -> s
 
 
 def _generate_naver(image_infos: list, skip_webp: bool, log, reference_images: list = None, output_dir=None) -> dict:
-    """Naver(salim1su/me1091): Gemini만 사용. 실패 시 폴백 없음."""
+    """Naver(salim1su/me1091): Gemini만 사용. 실패 시 최대 3회 재시도."""
+    import time as _t
     try:
         from gemini_image import generate_images, _quota_blocked_until
-        blocked = _quota_blocked_until()
-        if not blocked:
-            log("[Router] Naver: Gemini 시도")
+    except Exception as e:
+        log(f"[Router] Gemini import 오류: {e}")
+        return {}
+
+    for attempt in range(1, 4):
+        try:
+            blocked = _quota_blocked_until()
+            if blocked:
+                wait_sec = (blocked - __import__('datetime').datetime.now()).total_seconds()
+                if wait_sec > 0:
+                    log(f"[Router] Gemini 쿼터 차단 — {blocked.strftime('%H:%M')} 해제 예정, {int(wait_sec)}초 대기 후 재시도")
+                    _t.sleep(min(wait_sec + 5, 300))  # 최대 5분만 대기
+                    continue
+
+            log(f"[Router] Naver: Gemini 시도 ({attempt}/3)")
             results = generate_images(image_infos, on_log=log, skip_webp=skip_webp,
                                       reference_images=reference_images, output_dir=output_dir)
             if results:
                 log(f"[Router] Gemini 성공: {len(results)}장")
                 return results
-            log("[Router] Gemini 실패 — Naver는 폴백 없음, 이미지 생성 중단")
-        else:
-            log(f"[Router] Gemini 쿼터 차단({blocked.strftime('%m/%d %H:%M')}) — Naver는 폴백 없음")
-    except Exception as e:
-        log(f"[Router] Gemini 오류: {e}")
 
+            log(f"[Router] Gemini {attempt}회 실패" + (" — 재시도" if attempt < 3 else " — 포기"))
+            if attempt < 3:
+                _t.sleep(30)
+
+        except Exception as e:
+            log(f"[Router] Gemini 오류 ({attempt}/3): {e}")
+            if attempt < 3:
+                _t.sleep(30)
+
+    log("[Router] Naver: Gemini 3회 모두 실패 — 이미지 없이 진행 불가")
     return {}
 
 
