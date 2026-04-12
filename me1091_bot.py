@@ -674,21 +674,32 @@ def run_one_product(on_log=None) -> bool:
         _log("[me1091] 처리할 Notion 상품 없음")
         return False
 
-    # 모든 상품에 대해 사용 가능한 각도가 있는 것 우선 선택
-    # 우선순위: 1) 미사용 각도 있는 상품 → 2) 가장 오래된 각도 순환 상품
+    # 상품 선택 전략: 한 번도 발행 안 한 상품 우선 → 발행 횟수 적은 순 → 각도 순환
     import random as _rand
-    _rand.shuffle(products)  # Notion 순서 무관하게 랜덤 선택
+    _rand.shuffle(products)  # Notion 순서 편향 방지
+
+    # 각 상품별 발행 횟수 조회
+    with _db_conn() as c:
+        pub_counts = {}
+        for product in products:
+            cnt = c.execute(
+                "SELECT COUNT(*) FROM me1091_published WHERE product_name=?",
+                (product["name"],)
+            ).fetchone()[0]
+            pub_counts[product["name"]] = cnt
+
+    # 발행 횟수 오름차순 정렬 (0회 상품 먼저)
+    products_sorted = sorted(products, key=lambda p: pub_counts[p["name"]])
+
     selected_product = None
     selected_angle = None
 
-    # 1순위: 미사용 각도가 있는 상품 (DB에 없거나 일부만 사용한 상품)
-    for product in products:
+    for product in products_sorted:
         name = product["name"]
         angle_info = get_next_angle(name)
         if angle_info is None:
             continue
         angle_id, angle_hint, angle_instruction = angle_info
-        # 이 (name, angle_id) 조합이 실제로 미사용인지 확인
         with _db_conn() as c:
             used = c.execute(
                 "SELECT 1 FROM me1091_published WHERE product_name=? AND angle=?",
@@ -699,11 +710,10 @@ def run_one_product(on_log=None) -> bool:
             selected_angle = (angle_id, angle_hint, angle_instruction)
             break
 
-    # 2순위: 전체 각도 소진 시 가장 오래된 것 순환
+    # 전체 각도 소진 시 발행 횟수 최소 상품으로 순환
     if selected_product is None:
-        for product in products:
-            name = product["name"]
-            angle_info = get_next_angle(name)
+        for product in products_sorted:
+            angle_info = get_next_angle(product["name"])
             if angle_info:
                 selected_product = product
                 selected_angle = angle_info
