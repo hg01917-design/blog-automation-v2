@@ -268,7 +268,7 @@ def _generate_all_four(page, prompt: str, base_filename: str, skip_webp: bool = 
 
     # Bing 이미지 생성 페이지로 이동
     page.goto(BING_URL, wait_until='domcontentloaded')
-    page.wait_for_timeout(3000)
+    page.wait_for_timeout(6000)  # lazy load 이미지 충분히 대기
 
     if 'login' in page.url.lower() or 'signin' in page.url.lower():
         log("[Bing] 로그인 필요")
@@ -307,8 +307,24 @@ def _generate_all_four(page, prompt: str, base_filename: str, skip_webp: bool = 
         except Exception:
             return None
 
+    # 스크롤해서 lazy 이미지 강제 로드 후 캡처
+    try:
+        page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+        page.wait_for_timeout(2000)
+        page.evaluate("() => window.scrollTo(0, 0)")
+        page.wait_for_timeout(1000)
+    except Exception:
+        pass
     page_oig = _safe_get_oig()
+    # 이전 세션 생성 OIG ID도 exclude에 포함
+    _prev_oig_ids = _load_used_oig()
+    exclude_oig_ids = (
+        {_extract_oig_id(u) for u in page_oig}
+        | {_extract_oig_id(u) for u in session_used}
+        | _prev_oig_ids
+    )
     exclude_oigs = page_oig | session_used
+    log(f"[Bing] 기존 OIG {len(page_oig)}개, 이전세션 ID {len(_prev_oig_ids)}개 exclude")
 
     # 입력창 찾기
     inp = page.query_selector('#gi_form_q')
@@ -357,7 +373,7 @@ def _generate_all_four(page, prompt: str, base_filename: str, skip_webp: bool = 
         page.wait_for_timeout(1000)
         urls = _safe_get_oig()
         new_urls = [u for u in urls if u not in exclude_oigs
-                    and _extract_oig_id(u) not in {_extract_oig_id(s) for s in session_used}]
+                    and _extract_oig_id(u) not in exclude_oig_ids]
         if len(new_urls) >= 4:
             all_new_urls = new_urls[:4]
             log(f"[Bing] 4장 모두 감지 ({i+1}초)")
