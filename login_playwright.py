@@ -235,18 +235,55 @@ def login_naver(naver_id=None, on_log=None, page=None):
         else:
             log("[2/4] 자동완성 계정 없음")
 
-        # 기대 계정과 다를 경우 — ID 필드 지우고 직접 입력 (다중 네이버 계정 지원)
+        # 기대 계정과 다를 경우 — 저장된 계정 목록에서 선택 시도
         if naver_id and current_id != naver_id:
-            log(f"[2/4] ⚠ 계정 불일치: 자동완성={current_id}, 필요={naver_id} — ID 직접 입력 시도")
-            id_input.click(click_count=3)
-            _rand_delay(page, 300, 500)
-            id_input.press("Control+a")
-            id_input.press("Backspace")
-            _rand_delay(page, 200, 400)
-            id_input.fill("")
-            _rand_delay(page, 100, 200)
-            id_input.type(naver_id, delay=random.randint(60, 120))
-            _rand_delay(page, 500, 800)
+            log(f"[2/4] ⚠ 계정 불일치: 자동완성={current_id}, 필요={naver_id} — 계정 목록에서 선택 시도")
+            selected = False
+
+            # 저장된 계정 목록 드롭다운 탐색 (여러 셀렉터 시도)
+            for selector in [
+                f'.account_list [data-id="{naver_id}"]',
+                f'.account_list a[title="{naver_id}"]',
+                f'#savedAccountList [data-id="{naver_id}"]',
+                f'ul.account_list li a',
+            ]:
+                items = page.locator(selector)
+                try:
+                    count = items.count()
+                except Exception:
+                    continue
+
+                if selector.endswith('li a'):
+                    # 텍스트로 매칭
+                    for i in range(count):
+                        item = items.nth(i)
+                        try:
+                            text = item.inner_text(timeout=1000).strip()
+                            if naver_id in text:
+                                item.click(timeout=3000)
+                                log(f"[2/4] 계정 목록에서 '{naver_id}' 선택 완료")
+                                selected = True
+                                _rand_delay(page, 800, 1200)
+                                break
+                        except Exception:
+                            continue
+                elif count > 0:
+                    items.first.click(timeout=3000)
+                    log(f"[2/4] 계정 목록에서 '{naver_id}' 선택 완료")
+                    selected = True
+                    _rand_delay(page, 800, 1200)
+
+                if selected:
+                    break
+
+            if not selected:
+                log(f"[2/4] 계정 목록에서 찾지 못함 — ID 필드 직접 입력")
+                id_input.click(click_count=3)
+                _rand_delay(page, 300, 500)
+                id_input.fill("")
+                _rand_delay(page, 100, 200)
+                id_input.type(naver_id, delay=random.randint(60, 120))
+                _rand_delay(page, 500, 800)
 
         log("[3/5] 비밀번호 자동완성 트리거...")
         pw_input = page.locator('#pw')
