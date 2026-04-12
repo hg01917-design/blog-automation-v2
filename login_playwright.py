@@ -277,13 +277,8 @@ def login_naver(naver_id=None, on_log=None, page=None):
                     break
 
             if not selected:
-                log(f"[2/4] 계정 목록에서 찾지 못함 — ID 필드 직접 입력")
-                id_input.click(click_count=3)
-                _rand_delay(page, 300, 500)
-                id_input.fill("")
-                _rand_delay(page, 100, 200)
-                id_input.type(naver_id, delay=random.randint(60, 120))
-                _rand_delay(page, 500, 800)
+                log(f"[2/4] 계정 목록에서 '{naver_id}' 찾지 못함 — 로그인 중단")
+                return False
 
         log("[3/5] 비밀번호 자동완성 트리거...")
         pw_input = page.locator('#pw')
