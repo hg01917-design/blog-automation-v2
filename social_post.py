@@ -163,15 +163,33 @@ def _extract_images(item_elem, max_images: int = 2) -> list[str]:
     if len(urls) >= max_images:
         return urls
 
-    # 3. description/content:encoded 내 <img> 태그 전체 추출
+    # 3. description/content:encoded 내 이미지 추출
     desc = (
         item_elem.findtext("description", "")
         or item_elem.findtext("{http://purl.org/rss/1.0/modules/content/}encoded", "")
         or item_elem.findtext("content:encoded", "")
     )
+
+    def _normalize_url(u: str) -> str:
+        """프로토콜 상대 URL(//...)을 https://로 변환."""
+        if u.startswith("//"):
+            return "https:" + u
+        return u
+
+    _PLACEHOLDER = "no-image-v1.png"
+
+    # 3-1. Tistory figure의 data-url (실제 이미지, <img src>보다 우선)
+    for m in re.finditer(r'data-url=["\']([^"\']+)["\']', desc, re.IGNORECASE):
+        url = _normalize_url(m.group(1))
+        if url and _PLACEHOLDER not in url and url not in urls:
+            urls.append(url)
+        if len(urls) >= max_images:
+            return urls
+
+    # 3-2. <img src> (플레이스홀더 제외)
     for m in re.finditer(r'<img[^>]+src=["\']([^"\']+)["\']', desc, re.IGNORECASE):
-        url = m.group(1)
-        if url and url not in urls:
+        url = _normalize_url(m.group(1))
+        if url and _PLACEHOLDER not in url and url not in urls:
             urls.append(url)
         if len(urls) >= max_images:
             break
