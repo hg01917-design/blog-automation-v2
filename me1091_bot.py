@@ -485,13 +485,33 @@ def _ask_claude_for_gemini_prompt(image_path: str, keyword: str) -> str:
     log(f"[Claude] 이미지 분석 → Gemini 프롬프트 요청: {Path(image_path).name}")
     prompt = ask_with_image(image_path, question, blog_id=BLOG_ID, on_log=log)
 
+    _FALLBACK = (
+        f"{keyword} actual product in use, Korean home interior setting, "
+        f"photorealistic real photo style, natural window light, clean minimal background, "
+        f"no text, no faces, no logos, 4K quality"
+    )
+
     if not prompt or len(prompt) < 20:
         log("[Claude] 프롬프트 생성 실패 → 기본 프롬프트 사용")
-        return (
-            f"{keyword} actual product in use, Korean home interior setting, "
-            f"photorealistic real photo style, natural window light, clean minimal background, "
-            f"no text, no faces, no logos, 4K quality"
-        )
+        return _FALLBACK
+
+    # Claude가 이미지를 못 봤을 때 반환하는 에러 메시지 감지
+    _ERROR_PHRASES = [
+        "이미지가 보이지", "이미지를 볼 수", "첨부된 이미지", "참고할 이미지",
+        "이미지를 업로드", "업로드해주세요", "이미지를 첨부", "이미지 파일",
+        "죄송합니다", "cannot see", "can't see", "i cannot", "i can't",
+        "no image", "image not", "please upload", "please attach",
+    ]
+    prompt_lower = prompt.lower()
+    if any(phrase.lower() in prompt_lower for phrase in _ERROR_PHRASES):
+        log(f"[Claude] 이미지 인식 실패 응답 감지 → 기본 프롬프트 사용: {prompt[:60]}")
+        return _FALLBACK
+
+    # 영문 프롬프트가 아닌 경우 (한국어 응답 등) 폴백
+    english_ratio = sum(1 for c in prompt if ord(c) < 128) / max(len(prompt), 1)
+    if english_ratio < 0.5:
+        log(f"[Claude] 영문 프롬프트 아님 (영문비율 {english_ratio:.0%}) → 기본 프롬프트 사용")
+        return _FALLBACK
 
     # 코드블록/따옴표 등 불필요한 래퍼 제거
     prompt = re.sub(r'^```[^\n]*\n?', '', prompt.strip())

@@ -913,7 +913,23 @@ def _hours_since_last_post(blog_id: str) -> float:
         except Exception:
             pass
 
-    # 2순위: SQLite draft_saved 시각
+    # 2순위: me1091은 별도 SQLite 테이블 (me1091_published) 사용
+    if blog_id == "me1091":
+        import sqlite3 as _sq
+        _db_path = Path(__file__).parent / "keyword_engine" / "engine.db"
+        try:
+            with _sq.connect(_db_path) as db:
+                row = db.execute(
+                    "SELECT published_at FROM me1091_published ORDER BY published_at DESC LIMIT 1"
+                ).fetchone()
+            if row:
+                last_time = _dt.fromisoformat(row[0])
+                return (_dt.now() - last_time).total_seconds() / 3600
+        except Exception:
+            pass
+        return 999.0
+
+    # 3순위: SQLite draft_saved 시각
     from keyword_engine.db_handler import _conn
     with _conn() as db:
         row = db.execute(
@@ -959,6 +975,10 @@ def _post_one_blog_inner(blog_id):
     """post_one_blog 실제 로직 (락 획득 후 호출)"""
     # me1091: Notion 상품 기반 Coupang 리뷰 파이프라인 (키워드 DB 사용 안 함)
     if blog_id == "me1091":
+        elapsed = _hours_since_last_post("me1091")
+        if elapsed < MIN_POST_GAP_HOURS:
+            log(f"[me1091] 마지막 포스팅 {elapsed:.1f}시간 전 — 최소 {MIN_POST_GAP_HOURS}시간 필요, 스킵")
+            return False
         try:
             from me1091_bot import run_one_product
             return run_one_product(on_log=log)
