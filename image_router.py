@@ -493,7 +493,7 @@ def generate_thumbnail(blog_id: str, keyword: str, title: str, on_log=None) -> s
 
 
 def _generate_naver(image_infos: list, skip_webp: bool, log, reference_images: list = None, output_dir=None) -> dict:
-    """Naver(salim1su/me1091): Gemini → Bing → Pollinations"""
+    """Naver(salim1su/me1091): Gemini → Pollinations (Bing 사용 안 함)"""
     # 1단계: Gemini
     try:
         from gemini_image import generate_images, _quota_blocked_until
@@ -504,37 +504,20 @@ def _generate_naver(image_infos: list, skip_webp: bool, log, reference_images: l
                                       reference_images=reference_images, output_dir=output_dir)
             if results:
                 log(f"[Router] Gemini 성공: {len(results)}장")
-                # 실패한 것만 폴백
                 failed = [info for info in image_infos if info['index'] not in results]
                 if not failed:
                     return results
-                log(f"[Router] Gemini 실패 {len(failed)}장 → Bing 폴백")
-                bing_res = _try_bing(failed, skip_webp, log, output_dir=output_dir)
-                results.update(bing_res)
-                # 여전히 실패한 것 → Pollinations
-                still_failed = [info for info in failed if info['index'] not in bing_res]
-                if still_failed:
-                    poll_res = _try_pollinations(still_failed, log, output_dir=output_dir)
-                    results.update(poll_res)
+                log(f"[Router] Gemini 실패 {len(failed)}장 → Pollinations 폴백")
+                poll_res = _try_pollinations(failed, log, output_dir=output_dir)
+                results.update(poll_res)
                 return results
         else:
-            log(f"[Router] Gemini 쿼터 차단({blocked.strftime('%m/%d %H:%M')}) → Bing 시도")
+            log(f"[Router] Gemini 쿼터 차단({blocked.strftime('%m/%d %H:%M')}) → Pollinations 폴백")
     except Exception as e:
         log(f"[Router] Gemini 오류: {e}")
 
-    # 2단계: Bing(Copilot)
-    bing_res = _try_bing(image_infos, skip_webp, log, output_dir=output_dir)
-    if bing_res:
-        failed = [info for info in image_infos if info['index'] not in bing_res]
-        if not failed:
-            return bing_res
-        log(f"[Router] Bing 실패 {len(failed)}장 → Pollinations 폴백")
-        poll_res = _try_pollinations(failed, log, output_dir=output_dir)
-        bing_res.update(poll_res)
-        return bing_res
-
-    # 3단계: Pollinations
-    log("[Router] Bing 전체 실패 → Pollinations 폴백")
+    # 2단계: Pollinations (Naver는 Bing 사용 안 함)
+    log("[Router] Naver: Pollinations 폴백")
     return _try_pollinations(image_infos, log, output_dir=output_dir)
 
 
