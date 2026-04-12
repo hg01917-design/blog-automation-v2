@@ -358,8 +358,35 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
         """, timeout=20000)
     except Exception:
         pass
+
+    # ── 네트워크 인터셉트 설정 (전송 후 도착하는 이미지만 캡처, DOM 무관) ──
+    _sent = [False]
+    _captured: list[tuple[bytes, str]] = []   # (image_bytes, content_type)
+    _SKIP_URL_TOKENS = ["favicon", "/icon-", "avatar", "/a/", "logo", "profile",
+                        "sprite", "badge", "emoji"]
+
+    def _on_response(resp):
+        if not _sent[0]:
+            return
+        try:
+            ct = resp.headers.get("content-type", "")
+            if resp.status != 200 or "image" not in ct:
+                return
+            url = resp.url
+            if any(t in url for t in _SKIP_URL_TOKENS):
+                return
+            body = resp.body()
+            if len(body) < 10_000:   # 10KB 미만 아이콘·썸네일 제외
+                return
+            _captured.append((body, ct))
+            log(f"[이미지] 네트워크 캡처 ({len(body)//1024}KB): {url[:70]}")
+        except Exception:
+            pass
+
+    page.on("response", _on_response)
     send_btn.click(timeout=15000)
-    log(f"[이미지] 프롬프트 전송, 생성 대기...")
+    _sent[0] = True
+    log("[이미지] 프롬프트 전송, 네트워크 캡처 대기...")
 
     _QUOTA_KEYWORDS = [
         "can't generate more images", "generate more images for you today",
@@ -367,212 +394,139 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
         "I can't create more images",
     ]
 
-    # 이미지 생성 완료 대기 — JS 기반 감지 (프로필사진 제외, 최소 크기 100px 이상)
-    detected_sel = None
+    # 생성 완료 대기 — 네트워크 캡처 우선 감지, 쿼터/오류 보조 감지
     for i in range(90):
         page.wait_for_timeout(1000)
-        # JS로 실제 생성 이미지 감지 (user-icon·프로필사진 제외, 100px 이상)
-        try:
-            found = page.evaluate("""() => {
-                function isInUserTurn(el) {
-                    let p = el.parentElement;
-                    while (p) {
-                        const tag = p.tagName.toLowerCase();
-                        if (['user-query','user-message','user-request'].includes(tag)) return true;
-                        if (p.getAttribute('data-turn-role') === 'user') return true;
-                        if (p.classList.contains('user-input') || p.classList.contains('user-request')) return true;
-                        p = p.parentElement;
-                    }
-                    return false;
-                }
-                const candidates = document.querySelectorAll(
-                    'model-response img, .response-container img, [data-response-id] img, ' +
-                    '.generated-image img, ' +
-                    'model-response img.image.loaded, ' +
-                    'model-response img[src*="lh3.googleusercontent"]:not([src*="/a/"])'
-                );
-                for (const img of candidates) {
-                    if (img.classList.contains('user-icon')) continue;
-                    if ((img.alt || '').includes('프로필')) continue;
-                    if (isInUserTurn(img)) continue;
-                    const w = img.naturalWidth || img.width;
-                    const h = img.naturalHeight || img.height;
-                    if (w >= 100 && h >= 100) return true;
-                }
-                return false;
-            }""")
-            if found and i > 3:
-                detected_sel = "model-response img"
-                log(f"[이미지] 생성 완료! ({i}초, JS감지)")
-                break
-        except Exception:
-            pass
-        # 오류 응답 감지 (10초 이상 경과 후 쿼터 오류 즉시 감지 / 60초 이상이면 일반 오류도 감지)
+
+        if _captured and i > 2:
+            log(f"[이미지] 생성 완료 ({i}초, 네트워크 {len(_captured)}건 캡처)")
+            break
+
         if i > 10:
             try:
-                has_generated = page.evaluate("""() => {
-                    const candidates = document.querySelectorAll(
-                        'model-response img, .response-container img, [data-response-id] img'
-                    );
-                    for (const img of candidates) {
-                        if (img.classList.contains('user-icon')) continue;
-                        if ((img.alt || '').includes('프로필')) continue;
-                        const w = img.naturalWidth || img.width;
-                        const h = img.naturalHeight || img.height;
-                        if (w >= 100 && h >= 100) return true;
-                    }
-                    return false;
+                err_text = page.evaluate("""() => {
+                    const msgs = document.querySelectorAll('model-response, .response-container');
+                    if (!msgs.length) return '';
+                    return (msgs[msgs.length - 1].innerText || '').trim();
                 }""")
-                if not has_generated:
-                    err_text = page.evaluate("""() => {
-                        const msgs = document.querySelectorAll('model-response, .response-container');
-                        if (!msgs.length) return '';
-                        const last = msgs[msgs.length - 1];
-                        return (last.innerText || '').trim();
-                    }""")
-                    if err_text and len(err_text) > 20:
-                        is_quota = any(kw in err_text for kw in _QUOTA_KEYWORDS)
-                        if is_quota:
-                            until = _parse_quota_until(err_text)
-                            _save_quota_block(until)
-                            log(f"[이미지] Gemini 쿼터 초과 감지 ({i}초) — 차단 해제: {until.strftime('%m/%d %H:%M')} → loremflickr 폴백")
-                            return _generate_via_fallback(prompt, filename, on_log, skip_webp, save_dir=save_dir)
-                        if i > 60:
-                            log(f"[이미지] 텍스트 응답({len(err_text)}자): {err_text[:80]!r}")
-                            log(f"[이미지] 텍스트 오류 응답 감지 ({i}초) — 조기 종료")
-                            return None
+                if err_text and len(err_text) > 20:
+                    is_quota = any(kw in err_text for kw in _QUOTA_KEYWORDS)
+                    if is_quota:
+                        until = _parse_quota_until(err_text)
+                        _save_quota_block(until)
+                        log(f"[이미지] Gemini 쿼터 초과 ({i}초) — 해제: {until.strftime('%m/%d %H:%M')} → 폴백")
+                        page.remove_listener("response", _on_response)
+                        return _generate_via_fallback(prompt, filename, on_log, skip_webp, save_dir=save_dir)
+                    if i > 60 and not _captured:
+                        log(f"[이미지] 텍스트 오류 응답 ({i}초) → 조기 종료")
+                        page.remove_listener("response", _on_response)
+                        return None
             except Exception:
                 pass
+
         if i % 15 == 0 and i > 0:
-            log(f"[이미지] {i}초 대기 중...")
+            log(f"[이미지] {i}초 대기 중... (캡처: {len(_captured)}건)")
     else:
         log("[이미지] 타임아웃")
+        page.remove_listener("response", _on_response)
         return None
 
-    page.wait_for_timeout(1000)
-
-    # 새 채팅인데 이미지가 여러 개면 이전 채팅 잔재 — 경고 로그
-    if open_new_chat:
-        try:
-            img_count = page.evaluate("""() => {
-                return Array.from(document.querySelectorAll(
-                    'model-response img, .response-container img'
-                )).filter(img => {
-                    if (img.classList.contains('user-icon')) return false;
-                    if ((img.alt||'').includes('프로필')) return false;
-                    const w = img.naturalWidth || img.width;
-                    const h = img.naturalHeight || img.height;
-                    return w >= 100 && h >= 100;
-                }).length;
-            }""")
-            if img_count > 0:
-                log(f"[이미지] ⚠ 새 채팅인데 이미 {img_count}개 이미지 감지 — 이전 대화 잔재 가능성")
-        except Exception:
-            pass
-
-    # 생성된 이미지 엘리먼트 찾기 — 마지막 model-response의 이미지만 (참고 이미지 제외)
-    img_el = page.locator(
-        'model-response:last-of-type img:not(.user-icon), '
-        '.response-container:last-of-type img:not(.user-icon)'
-    ).last
+    page.remove_listener("response", _on_response)
     final_path = _save_dir / filename
-
-    log("[이미지] canvas 방식으로 이미지 추출 (툴바 없음)...")
     saved = False
 
-    # canvas toDataURL: 생성 이미지(100px 이상)만 추출 — 프로필사진 제외
-    _canvas_js = """(selector) => {
-        const imgs = Array.from(document.querySelectorAll(selector));
-        // 100px 이상인 마지막 이미지 선택 (프로필사진·사용자업로드 제외)
-        let el = null;
-        for (let i = imgs.length - 1; i >= 0; i--) {
-            const img = imgs[i];
-            if (img.classList.contains('user-icon')) continue;
-            if ((img.alt || '').includes('프로필')) continue;
-            // 사용자 메시지 영역 이미지 제외 (user-query, user-message, human-turn)
-            const inUserMsg = img.closest('user-query, .user-message, .human-turn, [data-turn-type="user"]');
-            if (inUserMsg) continue;
-            const w = img.naturalWidth || img.width;
-            const h = img.naturalHeight || img.height;
-            if (w >= 100 && h >= 100) { el = img; break; }
-        }
-        if (!el) return null;
-        const w = el.naturalWidth || el.width;
-        const h = el.naturalHeight || el.height;
-        if (!w || !h) return null;
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(el, 0, 0, w, h);
-        try {
-            return canvas.toDataURL('image/png').split(',')[1];
-        } catch(e) {
-            return null;
-        }
-    }"""
-
-    # 1차: 확대창 열어서 고해상도 이미지 추출
-    try:
-        img_el.click()
-        page.wait_for_timeout(2000)
-
-        expanded_selectors = [
-            'dialog img',
-            '[role="dialog"] img',
-            '.lightbox img',
-            'mat-dialog-container img',
-            'img-comparison-slider img',
-        ]
-        b64 = None
-        for sel in expanded_selectors:
-            try:
-                cnt = page.locator(sel).count()
-                if cnt > 0 and page.locator(sel).last.is_visible(timeout=1000):
-                    b64 = page.evaluate(_canvas_js, sel)
-                    if b64:
-                        log(f"[이미지] 확대창 canvas 추출 성공 ({sel})")
-                        break
-            except Exception:
-                continue
-
-        # 확대창 닫기
+    # ── 1차: 네트워크 캡처 이미지 직접 저장 (DOM 셀렉터 완전 제거) ──
+    if _captured:
+        # 캡처된 것 중 가장 큰 파일 선택 (생성 이미지 > 썸네일)
+        body, ct = max(_captured, key=lambda x: len(x[0]))
         try:
-            page.keyboard.press("Escape")
-            page.wait_for_timeout(500)
-        except Exception:
-            pass
-
-        if not b64:
-            # 폴백: 썸네일에서 canvas 추출
-            b64 = page.evaluate(_canvas_js, detected_sel)
-            if b64:
-                log("[이미지] 썸네일 canvas 추출 성공")
-
-        if b64:
-            import base64 as _b64
-            import io
-            raw_bytes = _b64.b64decode(b64)
-            img = Image.open(io.BytesIO(raw_bytes))
+            img = Image.open(io.BytesIO(body))
             w, h = img.size
-            log(f"[이미지] canvas 추출 크기: {w}x{h}")
-            cropped = img.crop((0, 0, w, int(h * 0.9)))
+            log(f"[이미지] 네트워크 이미지 크기: {w}x{h}, {len(body)//1024}KB")
             if skip_webp:
-                cropped.convert("RGB").save(str(final_path), "JPEG", quality=90)
-                log(f"[이미지] JPG 저장 완료: {final_path.name} ({w}x{int(h*0.9)})")
+                img.convert("RGB").save(str(final_path), "JPEG", quality=90)
+                log(f"[이미지] JPG 저장 완료: {final_path.name}")
             else:
-                cropped.convert("RGB").save(str(final_path), "WEBP", quality=85)
-                log(f"[이미지] webp 저장 완료: {final_path.name} ({w}x{int(h*0.9)})")
+                img.convert("RGB").save(str(final_path), "WEBP", quality=85)
+                log(f"[이미지] WEBP 저장 완료: {final_path.name}")
             saved = True
+        except Exception as e:
+            log(f"[이미지] 네트워크 이미지 저장 실패: {e}")
 
-    except Exception as e:
-        log(f"[이미지] canvas 추출 실패: {e}")
+    # ── 2차 폴백: DOM canvas 추출 (네트워크 캡처 실패 시) ──
+    if not saved:
+        log("[이미지] 네트워크 캡처 없음 — DOM canvas 폴백...")
+        _canvas_js = """(selector) => {
+            const imgs = Array.from(document.querySelectorAll(selector));
+            let el = null;
+            for (let i = imgs.length - 1; i >= 0; i--) {
+                const img = imgs[i];
+                if (img.classList.contains('user-icon')) continue;
+                if ((img.alt || '').includes('프로필')) continue;
+                const inUserMsg = img.closest('user-query, .user-message, .human-turn, [data-turn-type="user"]');
+                if (inUserMsg) continue;
+                const w = img.naturalWidth || img.width;
+                const h = img.naturalHeight || img.height;
+                if (w >= 100 && h >= 100) { el = img; break; }
+            }
+            if (!el) return null;
+            const w = el.naturalWidth || el.width;
+            const h = el.naturalHeight || el.height;
+            if (!w || !h) return null;
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(el, 0, 0, w, h);
+            try { return canvas.toDataURL('image/png').split(',')[1]; } catch(e) { return null; }
+        }"""
+        try:
+            img_el = page.locator(
+                'model-response:last-of-type img:not(.user-icon), '
+                '.response-container:last-of-type img:not(.user-icon)'
+            ).last
+            img_el.click()
+            page.wait_for_timeout(2000)
+            b64 = None
+            for sel in ['dialog img', '[role="dialog"] img', 'mat-dialog-container img']:
+                try:
+                    if page.locator(sel).count() > 0:
+                        b64 = page.evaluate(_canvas_js, sel)
+                        if b64:
+                            log(f"[이미지] DOM canvas 추출 성공 ({sel})")
+                            break
+                except Exception:
+                    continue
+            try:
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(500)
+            except Exception:
+                pass
+            if not b64:
+                b64 = page.evaluate(_canvas_js, 'model-response img')
+                if b64:
+                    log("[이미지] DOM canvas 썸네일 추출 성공")
+            if b64:
+                import base64 as _b64
+                raw_bytes = _b64.b64decode(b64)
+                img = Image.open(io.BytesIO(raw_bytes))
+                w, h = img.size
+                cropped = img.crop((0, 0, w, int(h * 0.9)))
+                if skip_webp:
+                    cropped.convert("RGB").save(str(final_path), "JPEG", quality=90)
+                else:
+                    cropped.convert("RGB").save(str(final_path), "WEBP", quality=85)
+                saved = True
+                log(f"[이미지] DOM canvas 저장 완료: {final_path.name}")
+        except Exception as e:
+            log(f"[이미지] DOM canvas 실패: {e}")
 
-    # 최종 폴백: 스크린샷 (툴바 포함될 수 있음)
+    # ── 최종 폴백: 엘리먼트 스크린샷 ──
     if not saved:
         log("[이미지] 스크린샷 폴백...")
         png_path = _save_dir / f"temp_{filename}.png"
         try:
+            img_el = page.locator(
+                'model-response:last-of-type img:not(.user-icon)'
+            ).last
             page.mouse.move(0, 0)
             page.wait_for_timeout(500)
             img_el.screenshot(path=str(png_path))
@@ -584,10 +538,9 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
             else:
                 cropped.save(str(final_path), "WEBP", quality=85)
             png_path.unlink(missing_ok=True)
-            log(f"[이미지] 스크린샷 폴백 저장: {final_path.name}")
+            log(f"[이미지] 스크린샷 저장: {final_path.name}")
             saved = True
         except Exception as e2:
-            log(f"[이미지] 스크린샷 폴백도 실패: {e2}")
-            final_path = png_path
+            log(f"[이미지] 스크린샷도 실패: {e2}")
 
     return str(final_path) if saved else None
