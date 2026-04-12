@@ -374,14 +374,27 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
         # JS로 실제 생성 이미지 감지 (user-icon·프로필사진 제외, 100px 이상)
         try:
             found = page.evaluate("""() => {
+                function isInUserTurn(el) {
+                    let p = el.parentElement;
+                    while (p) {
+                        const tag = p.tagName.toLowerCase();
+                        if (['user-query','user-message','user-request'].includes(tag)) return true;
+                        if (p.getAttribute('data-turn-role') === 'user') return true;
+                        if (p.classList.contains('user-input') || p.classList.contains('user-request')) return true;
+                        p = p.parentElement;
+                    }
+                    return false;
+                }
                 const candidates = document.querySelectorAll(
                     'model-response img, .response-container img, [data-response-id] img, ' +
-                    '.generated-image img, img.image.loaded, ' +
-                    'img[src*="lh3.googleusercontent"]:not([src*="/a/"])'
+                    '.generated-image img, ' +
+                    'model-response img.image.loaded, ' +
+                    'model-response img[src*="lh3.googleusercontent"]:not([src*="/a/"])'
                 );
                 for (const img of candidates) {
                     if (img.classList.contains('user-icon')) continue;
                     if ((img.alt || '').includes('프로필')) continue;
+                    if (isInUserTurn(img)) continue;
                     const w = img.naturalWidth || img.width;
                     const h = img.naturalHeight || img.height;
                     if (w >= 100 && h >= 100) return true;
@@ -457,10 +470,10 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
         except Exception:
             pass
 
-    # 생성된 이미지 엘리먼트 찾기 (프로필사진 제외, 100px 이상)
+    # 생성된 이미지 엘리먼트 찾기 — 마지막 model-response의 이미지만 (참고 이미지 제외)
     img_el = page.locator(
-        'model-response img:not(.user-icon), .response-container img:not(.user-icon), '
-        '[data-response-id] img:not(.user-icon), img.image.loaded'
+        'model-response:last-of-type img:not(.user-icon), '
+        '.response-container:last-of-type img:not(.user-icon)'
     ).last
     final_path = _save_dir / filename
 
@@ -470,12 +483,15 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     # canvas toDataURL: 생성 이미지(100px 이상)만 추출 — 프로필사진 제외
     _canvas_js = """(selector) => {
         const imgs = Array.from(document.querySelectorAll(selector));
-        // 100px 이상인 마지막 이미지 선택 (프로필사진 제외)
+        // 100px 이상인 마지막 이미지 선택 (프로필사진·사용자업로드 제외)
         let el = null;
         for (let i = imgs.length - 1; i >= 0; i--) {
             const img = imgs[i];
             if (img.classList.contains('user-icon')) continue;
             if ((img.alt || '').includes('프로필')) continue;
+            // 사용자 메시지 영역 이미지 제외 (user-query, user-message, human-turn)
+            const inUserMsg = img.closest('user-query, .user-message, .human-turn, [data-turn-type="user"]');
+            if (inUserMsg) continue;
             const w = img.naturalWidth || img.width;
             const h = img.naturalHeight || img.height;
             if (w >= 100 && h >= 100) { el = img; break; }
