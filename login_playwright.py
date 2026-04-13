@@ -315,27 +315,49 @@ def login_naver(naver_id=None, on_log=None, page=None):
                     pass
 
             if not selected:
-                log(f"[2/4] 계정 목록에서 '{naver_id}' 찾지 못함 — 로그인 중단")
-                return False
+                # 마지막 수단: 로그아웃 후 재접속하면 naver_id가 자동완성될 수 있음
+                log(f"[2/4] 계정 목록에서 '{naver_id}' 찾지 못함 — 로그아웃 후 재시도")
+                page.goto("https://nid.naver.com/nidlogin.logout", timeout=10000)
+                _rand_delay(page, 1000, 1500)
+                page.goto(NAVER_LOGIN_URL, wait_until='domcontentloaded', timeout=10000)
+                _rand_delay(page, 1500, 2000)
+                id_input = page.locator('#id')
+                id_input.wait_for(state="visible", timeout=5000)
+                id_input.click()
+                _rand_delay(page, 800, 1200)
+                current_id = id_input.input_value()
+                log(f"[2/4] 로그아웃 후 자동완성: {current_id}")
+                if current_id != naver_id:
+                    log(f"[2/4] 여전히 계정 불일치 — 로그인 중단")
+                    return False
+                log(f"[2/4] 로그아웃 후 '{naver_id}' 자동완성 확인")
 
-        log("[3/5] 비밀번호 자동완성 트리거...")
-        pw_input = page.locator('#pw')
-        if pw_input.is_visible(timeout=3000):
-            pw_input.click()
-            _rand_delay(page, 800, 1200)
+        # 로그인 시도 (최대 2회 — 첫 번째 시도 후 네이버가 오류 페이지를 띄울 수 있음)
+        for _attempt in range(2):
+            log(f"[3/5] 비밀번호 자동완성 트리거... (시도 {_attempt+1}/2)")
+            pw_input = page.locator('#pw')
+            if pw_input.is_visible(timeout=3000):
+                pw_input.click()
+                _rand_delay(page, 800, 1200)
 
-        log("[3/5] 로그인 버튼 클릭...")
-        login_btn = page.locator('#log\\.login, button.btn_login, button[type="submit"]').first
-        login_btn.click(timeout=5000)
-        _rand_delay(page, 3000, 5000)
+            log(f"[3/5] 로그인 버튼 클릭... (시도 {_attempt+1}/2)")
+            login_btn = page.locator('#log\\.login, button.btn_login, button[type="submit"]').first
+            login_btn.click(timeout=5000)
+            _rand_delay(page, 3000, 5000)
 
-        log("[4/4] 로그인 완료 대기 중...")
-        for i in range(20):
-            current_url = page.url
-            if "nidlogin" not in current_url and "naver.com" in current_url:
-                log(f"[완료] 네이버 로그인 성공! ({current_url})")
-                return True
-            _rand_delay(page, 800, 1200)
+            log("[4/4] 로그인 완료 대기 중...")
+            for i in range(20):
+                current_url = page.url
+                if "nidlogin" not in current_url and "naver.com" in current_url:
+                    log(f"[완료] 네이버 로그인 성공! ({current_url})")
+                    return True
+                _rand_delay(page, 800, 1200)
+
+            # 여전히 로그인 페이지면 재시도 (네이버 1차 오류 후 동일 자격증명 재시도)
+            if "nidlogin" in page.url and _attempt == 0:
+                log("[재시도] 1차 로그인 실패 — 동일 계정으로 재시도")
+                continue
+            break
 
         log(f"[실패] 로그인 미완료 — 현재 URL: {page.url}")
         return False
