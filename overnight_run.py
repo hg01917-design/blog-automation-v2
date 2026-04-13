@@ -584,6 +584,21 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
     # 공공API 데이터 주입 (축제·공공서비스 실제 데이터 → 할루시네이션 방지)
     _api_ctx = fetch_context_for_blog(blog_id, keyword, on_log=log)
 
+    # NotebookLM 리서치 데이터 추가 (설치된 경우에만)
+    try:
+        from notebooklm_research import research_sync as _nlm_research
+        log(f"[파이프라인] NotebookLM 리서치 시작: '{keyword}'")
+        _nlm_ctx = _nlm_research(keyword, blog_id)
+        if _nlm_ctx:
+            log(f"[파이프라인] NotebookLM 리서치 완료 ({len(_nlm_ctx)}자) — extra_context에 추가")
+            _api_ctx = (_api_ctx or "") + f"\n\n[NotebookLM 리서치 자료]\n{_nlm_ctx}"
+        else:
+            log("[파이프라인] NotebookLM 리서치 결과 없음 — 공공API 컨텍스트만 사용")
+    except ImportError:
+        pass  # notebooklm-py 미설치 시 조용히 스킵
+    except Exception as _nlm_e:
+        log(f"[파이프라인] NotebookLM 리서치 오류 — 스킵: {_nlm_e}")
+
     log(f"[파이프라인] {blog_id} / '{keyword}' — Gemma 글 생성 시작")
     raw = generate_text("", blog_id=blog_id, keyword=keyword_final, on_log=log,
                         extra_context=_api_ctx if _api_ctx else None)
