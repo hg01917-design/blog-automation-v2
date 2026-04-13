@@ -871,14 +871,13 @@ def _run_image_and_post(blog_id, keyword, title, body, tags, images):
         image_paths[0] = thumb_path
         log(f"[파이프라인] 썸네일 준비 완료: {thumb_path}")
 
-    # 네이버 블로그 첫 문단 키워드 보장 (검색 결과 CTR 개선)
+    # 네이버 블로그 첫 500자 내 키워드 확인 (제목+본문 초반에 포함 여부만 체크, 강제삽입 없음)
     if blog_id in ("salim1su", "me1091"):
-        first_para = body.split("\n\n")[0] if "\n\n" in body else body.split("\n")[0]
-        if keyword and keyword not in first_para:
-            body = f"{keyword}에 대해 정리했습니다.\n\n" + body
-            log(f"[SEO] 네이버 첫 문단에 키워드 '{keyword}' 삽입 완료")
+        first_500 = (title + " " + body)[:500]
+        if keyword and keyword in first_500:
+            log(f"[SEO] 제목/본문 초반에 키워드 '{keyword}' 확인됨")
         else:
-            log(f"[SEO] 네이버 첫 문단에 키워드 '{keyword}' 이미 포함됨 (패스)")
+            log(f"[SEO] 제목/본문 초반에 키워드 '{keyword}' 미확인 — 본문에 자연스럽게 포함 예정")
 
     # 내부링크 삽입
     body = _inject_internal_links(body, blog_id, log)
