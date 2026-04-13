@@ -637,13 +637,29 @@ def seo_title(original: str) -> str:
     if any(k in n for k in ["목걸이", "네클리스"]):
         return f"데일리 목걸이 여성 패션 선물 큐빅 악세서리"[:50]
 
-    # 최후 fallback: 원본과 다르게 카테고리+활용 검색어 조합
+    # ── 스티커/데코 ──
+    if any(k in n for k in ["스티커", "글루스티커", "데코스티커"]):
+        theme = ""
+        if "알파벳" in n: theme = "알파벳 레터링 "
+        elif "숫자" in n: theme = "숫자 넘버링 "
+        elif "별" in n or "꽃" in n: theme = "플라워 "
+        return f"{theme}스티커 꾸미기 다꾸 DIY 데코 공예재료".strip()[:50]
+
+    # ── 리본/장식 키링 ──
+    if any(k in n for k in ["리본"]) and any(k in n for k in ["키링", "열쇠고리", "고리"]):
+        return f"리본 키링 가방꾸미기 백꾸 귀여운 선물 포인트"[:50]
+
+    # 최후 fallback: 핵심 명사 역순 + 구매 의도 검색어
+    # 원본이 "A B C D 제품명" 형태면 → "제품명 C 선물 추천 인기" 로 완전히 다르게
     skip = {"귀여운", "예쁜", "패션", "여성", "남성", "제품", "상품", "국내", "소품",
             "악세사리", "악세서리", "아이템", "잡화", "용", "및", "기타", "랜덤",
-            "발송", "세트", "1P", "2P", "3P", "택1", "컬러"}
-    core = [t for t in tokens if t not in skip and not t.isdigit()]
-    base = ' '.join(core[:4])
-    return f"{base} 선물 추천 가성비"[:50]
+            "발송", "세트", "1P", "2P", "3P", "4P", "택1", "컬러", "사이즈",
+            "휴대용", "대형", "소형", "중형", "업소용", "국산"}
+    core = [t for t in tokens if t not in skip and not t.isdigit() and len(t) >= 2]
+    # 역순으로 핵심어 추출 (원본 앞부분과 다르게)
+    reversed_core = list(reversed(core))
+    base = ' '.join(reversed_core[:3])
+    return f"{base} 선물 추천 인기 가성비"[:50]
 
 
 def make_seo_keywords(original: str) -> list:
