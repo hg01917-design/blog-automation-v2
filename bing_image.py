@@ -36,9 +36,16 @@ def _save_used_oig(oig_id: str):
     _USED_OIG_FILE.write_text(json.dumps(used_list))
 
 def _extract_oig_id(url: str) -> str:
-    """URL에서 OIG ID 부분 추출. 예: OIG2.abc123"""
+    """URL에서 OIG ID 추출. blob URL은 쿼리스트링 제거(토큰이 매 세션 변경되므로).
+    예: OIG2.abc123 / blob.core.windows.net/path (쿼리 제거)
+    """
     m = re.search(r'(OIG[\w.]+)', url)
-    return m.group(1) if m else url
+    if m:
+        return m.group(1)
+    # blob/th.bing URL: 토큰이 매 세션 바뀌므로 경로만 사용
+    if 'blob.core.windows.net' in url or 'th.bing.com' in url:
+        return url.split('?')[0]
+    return url
 
 
 def _download_image(url: str, filepath: str, on_log=None) -> bool:
@@ -307,23 +314,25 @@ def _generate_all_four(page, prompt: str, base_filename: str, skip_webp: bool = 
         except Exception:
             return None
 
-    # 스크롤해서 lazy 이미지 강제 로드 후 캡처
+    # 스크롤 3회 반복 → 히스토리/갤러리 lazy 이미지 전부 로드
     try:
-        page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
-        page.wait_for_timeout(2000)
+        for _ in range(3):
+            page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(2000)
         page.evaluate("() => window.scrollTo(0, 0)")
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(2000)
     except Exception:
         pass
     page_oig = _safe_get_oig()
-    # 이전 세션 생성 OIG ID도 exclude에 포함
+    # 이전 세션 생성 OIG ID도 exclude에 포함 (blob URL은 쿼리 제거 후 비교)
     _prev_oig_ids = _load_used_oig()
     exclude_oig_ids = (
         {_extract_oig_id(u) for u in page_oig}
         | {_extract_oig_id(u) for u in session_used}
         | _prev_oig_ids
     )
-    exclude_oigs = page_oig | session_used
+    # URL 집합도 normalized 버전으로 (blob 토큰 변경 대응)
+    exclude_oigs = {_extract_oig_id(u) for u in page_oig} | {_extract_oig_id(u) for u in session_used}
     log(f"[Bing] 기존 OIG {len(page_oig)}개, 이전세션 ID {len(_prev_oig_ids)}개 exclude")
 
     # 입력창 찾기
@@ -367,13 +376,12 @@ def _generate_all_four(page, prompt: str, base_filename: str, skip_webp: bool = 
         if not _safe_eval("""() => !!(document.querySelector('.gil_status, .giic_loading, [class*="loading"]'))"""):
             break
 
-    # 4장 수집 (최대 15초 대기)
+    # 4장 수집 (최대 15초 대기) — normalized ID 기반 비교
     all_new_urls = []
     for i in range(15):
         page.wait_for_timeout(1000)
         urls = _safe_get_oig()
-        new_urls = [u for u in urls if u not in exclude_oigs
-                    and _extract_oig_id(u) not in exclude_oig_ids]
+        new_urls = [u for u in urls if _extract_oig_id(u) not in exclude_oig_ids]
         if len(new_urls) >= 4:
             all_new_urls = new_urls[:4]
             log(f"[Bing] 4장 모두 감지 ({i+1}초)")
@@ -395,7 +403,7 @@ def _generate_all_four(page, prompt: str, base_filename: str, skip_webp: bool = 
         if 'th.bing.com' in img_url:
             img_url = img_url.split('?')[0]
 
-        session_used.add(img_url)
+        session_used.add(_extract_oig_id(img_url))  # normalized ID 저장
         _save_used_oig(_extract_oig_id(img_url))
 
         ok = _download_image(img_url, out_path, on_log)

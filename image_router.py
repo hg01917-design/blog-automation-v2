@@ -594,35 +594,16 @@ def _try_loremflickr(image_infos: list, log, output_dir=None) -> dict:
 
 
 def _generate_other(image_infos: list, skip_webp: bool, log, output_dir=None) -> dict:
-    """Tistory/WP: Bing → Pollinations → loremflickr (Gemini 사용 안 함)"""
-    # 1단계: Bing(Copilot)
+    """Tistory/WP: Bing만 사용. 실패 시 스킵 (Pollinations/loremflickr 금지 — 엉뚱한 이미지 방지)"""
     bing_res = _try_bing(image_infos, skip_webp, log, output_dir=output_dir)
     if bing_res:
         failed = [info for info in image_infos if info['index'] not in bing_res]
-        if not failed:
-            return bing_res
-        log(f"[Router] Bing 실패 {len(failed)}장 → Pollinations 폴백")
-        poll_res = _try_pollinations(failed, log, output_dir=output_dir)
-        bing_res.update(poll_res)
-        still_failed = [info for info in failed if info['index'] not in poll_res]
-        if still_failed:
-            log(f"[Router] Pollinations 실패 {len(still_failed)}장 → loremflickr 폴백")
-            bing_res.update(_try_loremflickr(still_failed, log, output_dir=output_dir))
+        if failed:
+            log(f"[Router] Bing 실패 {len(failed)}장 → 스킵 (폴백 없음)")
         return bing_res
 
-    # 2단계: Pollinations
-    log("[Router] Bing 전체 실패 → Pollinations 폴백")
-    poll_res = _try_pollinations(image_infos, log, output_dir=output_dir)
-    if poll_res:
-        failed = [info for info in image_infos if info['index'] not in poll_res]
-        if failed:
-            log(f"[Router] Pollinations 실패 {len(failed)}장 → loremflickr 폴백")
-            poll_res.update(_try_loremflickr(failed, log, output_dir=output_dir))
-        return poll_res
-
-    # 3단계: loremflickr
-    log("[Router] Pollinations 전체 실패 → loremflickr 폴백")
-    return _try_loremflickr(image_infos, log, output_dir=output_dir)
+    log("[Router] Bing 전체 실패 → 스킵 (폴백 없음)")
+    return {}
 
 
 def _try_bing(image_infos: list, skip_webp: bool, log, output_dir=None) -> dict:
