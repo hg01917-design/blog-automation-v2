@@ -159,6 +159,12 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False, reference_i
                 log(f"[이미지 {idx}] 저장 완료: {fp}")
         return results
 
+    # 동시 실행 시 Gemini 탭 충돌 방지 (me1091과 다른 블로그가 동시에 생성하면 컨텍스트 오염)
+    import fcntl as _fcntl
+    _lock_path = Path("/tmp/gemini_image_session.lock")
+    _lock_file = open(_lock_path, "w")
+    _fcntl.flock(_lock_file, _fcntl.LOCK_EX)
+
     pw, browser = _connect_cdp(on_log)
 
     try:
@@ -205,6 +211,8 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False, reference_i
 
     finally:
         pw.stop()
+        _fcntl.flock(_lock_file, _fcntl.LOCK_UN)
+        _lock_file.close()
 
     return results
 
