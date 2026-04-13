@@ -240,41 +240,79 @@ def login_naver(naver_id=None, on_log=None, page=None):
             log(f"[2/4] ⚠ 계정 불일치: 자동완성={current_id}, 필요={naver_id} — 계정 목록에서 선택 시도")
             selected = False
 
-            # 저장된 계정 목록 드롭다운 탐색 (여러 셀렉터 시도)
-            for selector in [
+            # ArrowDown 으로 드롭다운 트리거 (계정 목록이 열려있지 않을 수 있음)
+            try:
+                id_input.press("ArrowDown")
+                _rand_delay(page, 500, 800)
+            except Exception:
+                pass
+
+            # 저장된 계정 목록 드롭다운 탐색 — 모든 a/li/button 태그 텍스트로 매칭
+            broad_selectors = [
                 f'.account_list [data-id="{naver_id}"]',
                 f'.account_list a[title="{naver_id}"]',
                 f'#savedAccountList [data-id="{naver_id}"]',
+                f'[data-id="{naver_id}"]',
                 f'ul.account_list li a',
-            ]:
+                f'.account_list li',
+                f'#savedAccountList li',
+                f'.saved_id_wrap li',
+                f'.id_pw_wrap .id_save_wrap li',
+            ]
+            for selector in broad_selectors:
                 items = page.locator(selector)
                 try:
                     count = items.count()
                 except Exception:
                     continue
+                if count == 0:
+                    continue
 
-                if selector.endswith('li a'):
-                    # 텍스트로 매칭
-                    for i in range(count):
-                        item = items.nth(i)
-                        try:
-                            text = item.inner_text(timeout=1000).strip()
-                            if naver_id in text:
+                for i in range(count):
+                    item = items.nth(i)
+                    try:
+                        text = item.inner_text(timeout=1000).strip()
+                        if naver_id in text:
+                            item.click(timeout=3000)
+                            log(f"[2/4] 계정 목록에서 '{naver_id}' 선택 완료 (selector={selector})")
+                            selected = True
+                            _rand_delay(page, 800, 1200)
+                            break
+                    except Exception:
+                        # data-id 매칭 셀렉터는 텍스트 없이 바로 클릭
+                        if f'[data-id="{naver_id}"]' in selector:
+                            try:
                                 item.click(timeout=3000)
-                                log(f"[2/4] 계정 목록에서 '{naver_id}' 선택 완료")
+                                log(f"[2/4] 계정 목록에서 '{naver_id}' 선택 완료 (data-id)")
                                 selected = True
                                 _rand_delay(page, 800, 1200)
-                                break
-                        except Exception:
-                            continue
-                elif count > 0:
-                    items.first.click(timeout=3000)
-                    log(f"[2/4] 계정 목록에서 '{naver_id}' 선택 완료")
-                    selected = True
-                    _rand_delay(page, 800, 1200)
-
+                            except Exception:
+                                pass
+                        continue
                 if selected:
                     break
+
+            # JS 폴백: 페이지 전체에서 naver_id 텍스트 포함 클릭 가능 요소
+            if not selected:
+                try:
+                    clicked = page.evaluate(f"""
+                        (id) => {{
+                            const els = document.querySelectorAll('a, li, button, [role="option"]');
+                            for (const el of els) {{
+                                if (el.textContent.includes(id) || el.getAttribute('data-id') === id) {{
+                                    el.click();
+                                    return true;
+                                }}
+                            }}
+                            return false;
+                        }}
+                    """, naver_id)
+                    if clicked:
+                        log(f"[2/4] JS 폴백으로 '{naver_id}' 선택 완료")
+                        selected = True
+                        _rand_delay(page, 800, 1200)
+                except Exception:
+                    pass
 
             if not selected:
                 log(f"[2/4] 계정 목록에서 '{naver_id}' 찾지 못함 — 로그인 중단")
