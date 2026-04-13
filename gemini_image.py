@@ -440,6 +440,38 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
             log(f"[이미지] 생성 완료 ({i}초, 네트워크 {len(_captured)}건 캡처)")
             break
 
+        # blob URL 이미지 감지 (이미지 만들기 모드에서 네트워크 캡처 대신 DOM 캡처)
+        if i > 5 and not _captured:
+            try:
+                blob_imgs = page.evaluate("""() => {
+                    return Array.from(document.querySelectorAll('img'))
+                        .filter(img => img.src.startsWith('blob:') && img.naturalWidth > 200)
+                        .map(img => img.src);
+                }""")
+                for blob_url in blob_imgs:
+                    try:
+                        b64 = page.evaluate("""async (url) => {
+                            const resp = await fetch(url);
+                            const blob = await resp.blob();
+                            return new Promise(res => {
+                                const r = new FileReader();
+                                r.onloadend = () => res(r.result);
+                                r.readAsDataURL(blob);
+                            });
+                        }""", blob_url)
+                        if b64 and b64.startswith("data:image"):
+                            import base64 as _b64
+                            header, data = b64.split(",", 1)
+                            ct = header.split(";")[0].replace("data:", "")
+                            img_bytes = _b64.b64decode(data)
+                            if len(img_bytes) > 10_000:
+                                _captured.append((img_bytes, ct))
+                                log(f"[이미지] blob URL 캡처 ({len(img_bytes)//1024}KB)")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
         if i > 10:
             try:
                 err_text = page.evaluate("""() => {
