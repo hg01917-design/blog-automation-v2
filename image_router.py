@@ -316,11 +316,37 @@ def _get_prompt_style(blog_id: str, prompt: str) -> str:
     return _PROMPT_STYLE.get(blog_id, "photorealistic photography, high quality, 4K")
 
 
+_GEMINI_PERSON_TRIGGERS = [
+    "공연", "탈춤", "퍼포먼스", "performance", "dancer", "dancers", "people", "person",
+    "crowd", "audience", "festival performance", "무용", "무희", "인물", "사람",
+    "행사", "parade", "마당놀이",
+]
+
+def _sanitize_prompt_for_gemini(prompt: str) -> str:
+    """Gemini 이미지 생성 시 사람/공연 관련 단어 감지 → 장소/풍경 위주로 변환.
+
+    콘텐츠 필터 트리거 방지: Gemini는 공연/사람 묘사 프롬프트에 텍스트로 응답하는 경우가 있음.
+    """
+    p_lower = prompt.lower()
+    triggered = any(kw in p_lower or kw in prompt for kw in _GEMINI_PERSON_TRIGGERS)
+    if not triggered:
+        return prompt
+    # 트리거 단어 제거 + "traditional venue, scenic landscape, no people" 추가
+    cleaned = prompt
+    for kw in _GEMINI_PERSON_TRIGGERS:
+        cleaned = re.sub(re.escape(kw), "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip().strip(",").strip()
+    return f"{cleaned}, scenic landscape, traditional venue exterior, no people, wide shot"
+
+
 def _enhance_prompt(blog_id: str, prompt: str, index: int = 1) -> str:
     """원본 프롬프트에 블로그별 스타일 + 구도 변형자를 합쳐 강화된 영문 프롬프트 반환."""
     style = _get_prompt_style(blog_id, prompt)
     # index 기반 구도 변형 (0-based 순환)
     composition = _COMPOSITION_VARIANTS[(index - 1) % len(_COMPOSITION_VARIANTS)]
+    # Gemini 전용 블로그: 사람/공연 트리거 제거
+    if blog_id in ("salim1su", "me1091"):
+        prompt = _sanitize_prompt_for_gemini(prompt)
     return f"{prompt}, {composition}, {style}"
 
 
@@ -422,9 +448,9 @@ def generate_images_for_blog(
     output_dir = IMAGES_DIR / blog_id
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Gemini 전용: Naver 블로그만 (loremflickr/Bing 오류 이미지 방지)
-    # triplog는 WordPress → Pollinations 사용
-    is_gemini_only = blog_id in ("salim1su", "me1091", "nolja100")
+    # Gemini 전용: Naver 블로그만 (salim1su, me1091)
+    # Tistory(nolja100, goodisak) / WP(baremi542, triplog) → Bing 4장 모드
+    is_gemini_only = blog_id in ("salim1su", "me1091")
 
     if is_gemini_only:
         results = _generate_naver(enhanced_infos, skip_webp, log, reference_images=reference_images, output_dir=output_dir)
@@ -451,7 +477,7 @@ def generate_thumbnail(blog_id: str, keyword: str, title: str, on_log=None) -> s
     thumb_filename = f"thumb-{safe_kw}-{int(time.time()) % 100000}.jpg"
     thumb_path = str(output_dir / thumb_filename)
 
-    is_gemini_only = blog_id in ("salim1su", "me1091", "nolja100")
+    is_gemini_only = blog_id in ("salim1su", "me1091")
     success = False
 
     if is_gemini_only:
