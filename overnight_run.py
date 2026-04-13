@@ -132,11 +132,12 @@ def _naver_competition_check(keyword: str, on_log=None) -> bool:
     return True
 
 
-def _extract_core_words(keyword):
+def _extract_core_words(keyword, blog_id=None):
     """키워드에서 핵심 단어를 추출한다.
 
     예: "도시가스 요금 절약" → ["도시가스", "요금", "절약"]
     1글자 단어, 조사, 일반 접속사는 제외.
+    blog_id가 있으면 블로그별 stop words 조정.
     """
     STOP_WORDS = {
         '방법', '추천', '정리', '비교', '후기', '종류', '가이드',
@@ -148,6 +149,13 @@ def _extract_core_words(keyword):
         # 교통/공항 관련 일반 수식어 (이것만으로 중복 판정 금지)
         '시간표', '요금', '노선', '운행', '탑승', '예약',
     }
+    # woll100: 요금/시간표/소요시간이 교통 블로그의 핵심 식별어 → stop word에서 제외
+    if blog_id == 'woll100':
+        STOP_WORDS -= {'시간표', '요금', '노선', '운행', '탑승', '예약'}
+        STOP_WORDS.add('소요시간')  # '소요시간'은 아직 일반 수식어로 유지
+    # phn0502: OTT 플랫폼명은 모든 키워드에 포함되므로 첫 단어로 중복 판정하면 안 됨
+    elif blog_id == 'phn0502':
+        STOP_WORDS.update({'넷플릭스', '웨이브', '왓챠', '티빙', '시즌', '쿠팡플레이', '디즈니'})
     words = keyword.split()
     core = [w for w in words if len(w) >= 2 and w not in STOP_WORDS]
     return core if core else words[:2]
@@ -166,7 +174,7 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
         if on_log:
             on_log(msg)
 
-    core_words = _extract_core_words(keyword)
+    core_words = _extract_core_words(keyword, blog_id=blog_id)
     _log(f"[유사문서] 핵심 단어: {core_words}")
 
     # ── 1단계: SQLite DB 중복 체크 (모든 블로그 공통) ─────────────────
@@ -183,7 +191,7 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
             ).fetchall()
         existing_keywords = [r[0] for r in rows]
         for ek in existing_keywords:
-            ek_core = _extract_core_words(ek)
+            ek_core = _extract_core_words(ek, blog_id=blog_id)
             ek_main = ek_core[0] if ek_core else ek.split()[0]
             # ① 메인키워드 일치 → 중복 판단 (단, 3글자 이하 장소명이 첫 단어인 경우 추가 단어도 겹쳐야 함)
             # 예: "가스레인지 청소" vs "가스레인지 청소 방법" → 중복 O
@@ -195,6 +203,10 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
                     # 예: "서울 김포공항" vs "서울 인천공항" → 2번째가 다르면 중복 X
                     if len(ek_core) >= 2 and len(core_words) >= 2 and core_words[1] != ek_core[1]:
                         continue  # 2번째 핵심어 다름 → 중복 아님
+                    # 3번째 핵심어까지 있으면 추가 비교
+                    # 예: "서울 김포공항 요금" vs "서울 김포공항 시간표" → 3번째가 다르면 중복 X
+                    if len(core_words) >= 3 and len(ek_core) >= 3 and core_words[2] != ek_core[2]:
+                        continue  # 3번째 핵심어 다름 → 중복 아님
                 _log(f"[유사문서] ⚠ DB 메인키워드 중복: '{ek}' (메인: '{main_kw}')")
                 return True, ek
             # ② 핵심 단어 절반 이상 겹치면 중복

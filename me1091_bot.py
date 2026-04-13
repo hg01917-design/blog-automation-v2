@@ -503,6 +503,7 @@ def _ask_claude_for_gemini_prompt(image_path: str, keyword: str) -> str:
         "이미지를 업로드", "업로드해주세요", "이미지를 첨부", "이미지 파일",
         "죄송합니다", "cannot see", "can't see", "i cannot", "i can't",
         "no image", "image not", "please upload", "please attach",
+        "[추출 실패]", "추출 실패", "dom에서 응답",
     ]
     prompt_lower = prompt.lower()
     if any(phrase.lower() in prompt_lower for phrase in _ERROR_PHRASES):
@@ -601,7 +602,10 @@ def prepare_images_with_gemini(product_info: dict, keyword: str) -> tuple:
 def generate_review_post(product_info: dict, coupang_link: str,
                          angle_id: str = "", angle_hint: str = "", angle_instruction: str = "") -> tuple:
     """Claude.ai me1091 프로젝트로 리뷰 글 생성. (title, content, tags) 반환."""
-    from claude_playwright import generate_text
+    try:
+        from claude_direct import generate_text
+    except ImportError:
+        from claude_playwright import generate_text
 
     name = product_info.get("name", "")
     price = product_info.get("price", "")
