@@ -1971,9 +1971,12 @@ def _wp_upload_image(site_url: str, auth_header: str, filepath: str,
     with open(filepath, "rb") as f:
         data = f.read()
 
+    import re as _re
+    ext = os.path.splitext(filename)[1] or ".jpg"
+    ascii_filename = _re.sub(r'[^\x20-\x7e]', '', filename).strip() or f"image{ext}"
     upload_headers = {
         "Authorization": auth_header,
-        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Content-Disposition": f'attachment; filename="{ascii_filename}"',
         "Content-Type": mime,
     }
     try:
@@ -2023,9 +2026,12 @@ def _wp_upload_image_with_id(site_url: str, auth_header: str, filepath: str,
     with open(filepath, "rb") as f:
         data = f.read()
 
+    import re as _re
+    ext = os.path.splitext(filename)[1] or ".jpg"
+    ascii_filename = _re.sub(r'[^\x20-\x7e]', '', filename).strip() or f"image{ext}"
     upload_headers = {
         "Authorization": auth_header,
-        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Content-Disposition": f'attachment; filename="{ascii_filename}"',
         "Content-Type": mime,
     }
     try:
