@@ -1438,12 +1438,12 @@ _SALIM_FIXED_COST_KEYWORDS = [
 
 def _get_salim_category(keyword: str) -> str:
     """키워드 기반 살림1수 블로그 카테고리 반환.
-    고정비 관련 → '고정지출', 나머지 → '살림이야기'
+    고정비 관련 → '고정비줄이기', 나머지 → '살림이야기'
     """
     kw_flat = keyword.replace(" ", "")
     for w in _SALIM_FIXED_COST_KEYWORDS:
         if w in kw_flat:
-            return "고정지출"
+            return "고정비줄이기"
     return "살림이야기"
 
 

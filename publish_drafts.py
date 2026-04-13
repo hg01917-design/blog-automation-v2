@@ -1524,8 +1524,17 @@ def _naver_publish_public(page, category: str = None) -> bool:
 
     # 카테고리 선택 (me1091: 리뷰 등)
     if category:
+        # selectbox_button 드롭다운 먼저 클릭해서 열기
+        page.evaluate("""() => {
+            const btn = document.querySelector('button[class*="selectbox_button"]');
+            if (btn) btn.click();
+        }""")
+        time.sleep(0.8)
+
         cat_set = page.evaluate("""(catName) => {
+            // 드롭다운 열린 후 li 항목에서 텍스트 매칭
             const allEls = [...document.querySelectorAll(
+                '[class*="selectbox"] li, [class*="selectbox"] button, ' +
                 '[class*="layer_publish"] li, [class*="isShow__"] li, [class*="is_show__"] li, ' +
                 '[class*="layer_publish"] a, [class*="isShow__"] a, ' +
                 '[class*="layer_publish"] button, [class*="isShow__"] button'
