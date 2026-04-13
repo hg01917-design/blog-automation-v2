@@ -566,11 +566,19 @@ def seo_title(original: str) -> str:
 
     if any(k in n for k in ["볼펜", "젤펜", "잉크펜"]):
         qty_str = f" {qty}" if qty else ""
-        return f"젤볼펜 세트 부드러운 필기감 사무용품 학용품{qty_str}"[:50]
+        theme = ""
+        if "카페" in n:
+            theme = "카페 "
+        elif "파스텔" in n:
+            theme = "파스텔 "
+        return f"{theme}젤볼펜 세트 부드러운 필기감 사무용품{qty_str}"[:50]
 
-    if any(k in n for k in ["글루펜", "글루건"]):
+    if "글루펜" in n:
         qty_str = f" {qty}" if qty else ""
-        return f"글루펜 글루건 공예 DIY 핸드메이드 접착{qty_str}"[:50]
+        return f"글루펜 컬러{qty_str} 공예 DIY 핫멜트 수공예 접착"[:50]
+
+    if "글루건" in n:
+        return f"글루건 핫멜트 접착총 DIY 공예 수공예 미니글루건"[:50]
 
     if any(k in n for k in ["이젤", "거치대", "받침대"]) and any(k in n for k in ["캔버스", "액자", "미술", "그림"]):
         return f"미니 이젤 캔버스 거치대 미술소품 인테리어 소품"[:50]
@@ -647,7 +655,18 @@ def seo_title(original: str) -> str:
 
     # ── 리본/장식 키링 ──
     if any(k in n for k in ["리본"]) and any(k in n for k in ["키링", "열쇠고리", "고리"]):
-        return f"리본 키링 가방꾸미기 백꾸 귀여운 선물 포인트"[:50]
+        # 키링1/2/3 같은 variant 번호 추출 → 상품 구분
+        variant = ""
+        for tok in tokens:
+            m = re.search(r'키링(\d+)', tok, re.IGNORECASE)
+            if m:
+                variant = f"{m.group(1)}번 "
+                break
+        color_cnt = ""
+        m2 = re.search(r'(\d+)컬러', original)
+        if m2:
+            color_cnt = f" {m2.group(1)}컬러"
+        return f"리본 키링 {variant}가방꾸미기 백꾸 귀여운{color_cnt}".strip()[:50]
 
     # 최후 fallback: 핵심 명사 역순 + 구매 의도 검색어
     # 원본이 "A B C D 제품명" 형태면 → "제품명 C 선물 추천 인기" 로 완전히 다르게
