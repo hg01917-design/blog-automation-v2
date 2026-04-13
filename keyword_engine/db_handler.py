@@ -121,6 +121,11 @@ _BLOG_CATEGORY = {
     "me1091": None,  # 제휴 블로그 — 키워드 엔진 미사용
 }
 
+# 블로그별 금지 키워드 접두/접미 (해당 단어 포함 시 스킵)
+_BLOG_KEYWORD_BLACKLIST: dict[str, list[str]] = {
+    "goodisak": ["대출"],
+}
+
 # 여행 블로그 지역 키워드 목록 (nolja100/triplog)
 _TRAVEL_LOCATIONS = [
     "제주", "부산", "서울", "강릉", "속초", "여수", "통영", "경주", "전주",
@@ -128,23 +133,40 @@ _TRAVEL_LOCATIONS = [
     "인천", "대전", "광주", "수원", "제천", "양양", "가평", "남이섬", "평창",
 ]
 
+# phn0502 OTT 플랫폼 포화 임계값 (같은 플랫폼으로 N개 이상 발행 시 스킵)
+_OTT_PLATFORMS = ["왓챠", "넷플릭스", "웨이브", "티빙", "쿠팡플레이", "시즌", "애플TV"]
+
 
 def _is_topic_saturated(keyword: str, blog_id: str) -> bool:
-    """이미 같은 주제(지역명)로 _TOPIC_SATURATION개 이상 발행했으면 True."""
-    if blog_id not in ("nolja100", "triplog"):
-        return False
+    """이미 같은 주제(지역명/OTT)로 _TOPIC_SATURATION개 이상 발행했으면 True."""
     kw_lower = keyword.replace(" ", "")
-    for loc in _TRAVEL_LOCATIONS:
-        if loc in kw_lower:
-            with _conn() as db:
-                count = db.execute(
-                    """SELECT COUNT(*) FROM keyword_blog_status
-                       WHERE blog_id = ? AND status = 'published'
-                       AND REPLACE(keyword, ' ', '') LIKE ?""",
-                    (blog_id, f"%{loc}%"),
-                ).fetchone()[0]
-            if count >= _TOPIC_SATURATION:
-                return True
+
+    if blog_id in ("nolja100", "triplog"):
+        for loc in _TRAVEL_LOCATIONS:
+            if loc in kw_lower:
+                with _conn() as db:
+                    count = db.execute(
+                        """SELECT COUNT(*) FROM keyword_blog_status
+                           WHERE blog_id = ? AND status = 'published'
+                           AND REPLACE(keyword, ' ', '') LIKE ?""",
+                        (blog_id, f"%{loc}%"),
+                    ).fetchone()[0]
+                if count >= _TOPIC_SATURATION:
+                    return True
+
+    if blog_id == "phn0502":
+        for ott in _OTT_PLATFORMS:
+            if ott in kw_lower:
+                with _conn() as db:
+                    count = db.execute(
+                        """SELECT COUNT(*) FROM keyword_blog_status
+                           WHERE blog_id = ? AND status IN ('published', 'draft_saved')
+                           AND REPLACE(keyword, ' ', '') LIKE ?""",
+                        (blog_id, f"%{ott}%"),
+                    ).fetchone()[0]
+                if count >= _TOPIC_SATURATION:
+                    return True
+
     return False
 
 
@@ -333,6 +355,16 @@ def keyword_exists(keyword: str) -> bool:
         )
 
 
+def _blacklist_sql(blog_id: str) -> tuple[str, list]:
+    """블로그 금지 키워드를 SQL AND 조건과 파라미터로 반환."""
+    terms = _BLOG_KEYWORD_BLACKLIST.get(blog_id, [])
+    if not terms:
+        return "", []
+    conditions = " AND ".join(["k.keyword NOT LIKE ?" for _ in terms])
+    params = [f"%{t}%" for t in terms]
+    return f" AND {conditions}", params
+
+
 def fetch_next_pending(blog_id: str = None) -> str | None:
     """상태가 pending인 키워드 중 점수 높은 것 1개 반환. 없으면 None.
 
@@ -343,6 +375,8 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
     if blog_id == "me1091":
         return None
 
+    bl_sql, bl_params = _blacklist_sql(blog_id or "")
+
     with _conn() as db:
         if blog_id:
             category = _BLOG_CATEGORY.get(blog_id)
@@ -351,7 +385,7 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
             if category:
                 if extra_category:
                     row = db.execute(
-                        """
+                        f"""
                         SELECT k.keyword FROM keywords k
                         WHERE k.category IN (?, ?)
                           AND k.status NOT IN ('published')
@@ -361,13 +395,14 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
                               AND kbs.blog_id = ?
                               AND kbs.status IN ('published', 'failed', 'in_progress', 'draft_saved')
                           )
-                        ORDER BY k.score DESC LIMIT 1
+                          {bl_sql}
+                        ORDER BY k.score DESC LIMIT 20
                         """,
-                        (category, extra_category, blog_id),
-                    ).fetchone()
+                        (category, extra_category, blog_id, *bl_params),
+                    ).fetchall()
                 else:
                     row = db.execute(
-                        """
+                        f"""
                         SELECT k.keyword FROM keywords k
                         WHERE k.category = ?
                           AND k.status NOT IN ('published')
@@ -377,13 +412,14 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
                               AND kbs.blog_id = ?
                               AND kbs.status IN ('published', 'failed', 'in_progress', 'draft_saved')
                           )
-                        ORDER BY k.score DESC LIMIT 1
+                          {bl_sql}
+                        ORDER BY k.score DESC LIMIT 20
                         """,
-                        (category, blog_id),
-                    ).fetchone()
+                        (category, blog_id, *bl_params),
+                    ).fetchall()
             else:
                 row = db.execute(
-                    """
+                    f"""
                     SELECT k.keyword FROM keywords k
                     WHERE k.status NOT IN ('published')
                       AND NOT EXISTS (
@@ -392,15 +428,22 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
                           AND kbs.blog_id = ?
                           AND kbs.status IN ('published', 'failed', 'in_progress', 'draft_saved')
                       )
-                    ORDER BY k.score DESC LIMIT 1
+                      {bl_sql}
+                    ORDER BY k.score DESC LIMIT 20
                     """,
-                    (blog_id,),
-                ).fetchone()
+                    (blog_id, *bl_params),
+                ).fetchall()
         else:
             row = db.execute(
-                "SELECT keyword FROM keywords WHERE status = 'pending' ORDER BY score DESC LIMIT 1"
-            ).fetchone()
-    return row["keyword"] if row else None
+                "SELECT keyword FROM keywords WHERE status = 'pending' ORDER BY score DESC LIMIT 20"
+            ).fetchall()
+
+    # 포화 주제 건너뛰기
+    for r in (row if isinstance(row, list) else [row] if row else []):
+        kw = r["keyword"] if r else None
+        if kw and not _is_topic_saturated(kw, blog_id or ""):
+            return kw
+    return None
 
 
 def get_published_keywords(blog_id: str = None) -> list:

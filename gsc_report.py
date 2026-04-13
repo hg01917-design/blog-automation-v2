@@ -31,10 +31,10 @@ def _load_env():
 
 def _send_telegram(text: str):
     _load_env()
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    token = os.environ.get("HanaAutobot", "")
     chat_id = "8674424194"
     if not token:
-        print("[리포트] TELEGRAM_BOT_TOKEN 없음 — 출력만 합니다")
+        print("[리포트] HanaAutobot 없음 — 출력만 합니다")
         print(text)
         return
     data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
@@ -119,4 +119,4 @@ if __name__ == "__main__":
     report = build_morning_report()
     print(report)
     _send_telegram(report)
-    print("✅ 전송 완료")
+    print("✅ 리포트 생성 완료")
