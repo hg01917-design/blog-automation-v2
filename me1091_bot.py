@@ -720,11 +720,41 @@ def run_one_product(on_log=None) -> bool:
     # 발행 횟수 오름차순 정렬 (0회 상품 먼저)
     products_sorted = sorted(products, key=lambda p: pub_counts[p["name"]])
 
+    # ── 카테고리 다양성: 최근 2개 발행 상품과 같은 카테고리면 우선순위 낮춤 ──
+    CATEGORY_KEYWORDS = {
+        "청소기":    ["청소기", "로봇청소", "무선청소", "진공청소"],
+        "공기청정기": ["공기청정", "에어워셔", "제습기", "가습기"],
+        "세탁기":    ["세탁기", "건조기", "드럼"],
+        "주방가전":  ["에어프라이어", "전기밥솥", "커피메이커", "전기포트", "믹서기", "토스터"],
+        "단백질/건강": ["단백질", "프로틴", "비타민", "오메가", "유산균", "콜라겐"],
+        "뷰티":      ["마스크팩", "세럼", "크림", "선크림", "토너", "앰플"],
+        "수면/침구": ["베개", "매트리스", "이불", "침대"],
+    }
+
+    def _get_category(name: str) -> str:
+        n = name.lower()
+        for cat, kws in CATEGORY_KEYWORDS.items():
+            if any(k in n for k in kws):
+                return cat
+        return name[:6]  # 알 수 없는 카테고리는 상품명 앞 6자로 구분
+
+    with _db_conn() as c:
+        recent_rows = c.execute(
+            "SELECT product_name FROM me1091_published ORDER BY published_at DESC LIMIT 2"
+        ).fetchall()
+    recent_categories = {_get_category(r[0]) for r in recent_rows}
+
+    def _is_overused_category(name: str) -> bool:
+        return _get_category(name) in recent_categories
+
     selected_product = None
     selected_angle = None
 
+    # 1차: 카테고리 다양성 + 미발행 각도 우선
     for product in products_sorted:
         name = product["name"]
+        if _is_overused_category(name):
+            continue  # 최근 2개와 같은 카테고리 건너뜀
         angle_info = get_next_angle(name)
         if angle_info is None:
             continue
@@ -737,9 +767,28 @@ def run_one_product(on_log=None) -> bool:
         if not used:
             selected_product = product
             selected_angle = (angle_id, angle_hint, angle_instruction)
+            _log(f"[me1091] 카테고리 다양성 선택: {name[:30]} (카테고리: {_get_category(name)})")
             break
 
-    # 전체 각도 소진 시 발행 횟수 최소 상품으로 순환
+    # 2차: 카테고리 무시하고 미발행 각도 우선
+    if selected_product is None:
+        for product in products_sorted:
+            name = product["name"]
+            angle_info = get_next_angle(name)
+            if angle_info is None:
+                continue
+            angle_id, angle_hint, angle_instruction = angle_info
+            with _db_conn() as c:
+                used = c.execute(
+                    "SELECT 1 FROM me1091_published WHERE product_name=? AND angle=?",
+                    (name, angle_id)
+                ).fetchone()
+            if not used:
+                selected_product = product
+                selected_angle = (angle_id, angle_hint, angle_instruction)
+                break
+
+    # 3차: 전체 각도 소진 시 발행 횟수 최소 상품으로 순환
     if selected_product is None:
         for product in products_sorted:
             angle_info = get_next_angle(product["name"])
