@@ -407,7 +407,7 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     ]
 
     # 생성 완료 대기 — 네트워크 캡처 우선 감지, 쿼터/오류 보조 감지
-    for i in range(90):
+    for i in range(150):
         page.wait_for_timeout(1000)
 
         if _captured and i > 2:
@@ -430,9 +430,9 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
                         page.remove_listener("response", _on_response)
                         return _generate_via_fallback(prompt, filename, on_log, skip_webp, save_dir=save_dir)
                     # "Finalizing the Image" 등 생성 중 정상 메시지는 오류가 아님
-                    _GENERATING_KEYWORDS = ["finalizing", "creating your image", "이미지를 만들", "generating"]
+                    _GENERATING_KEYWORDS = ["finalizing", "creating your image", "이미지를 만들", "generating", "refining", "crafting", "rendering"]
                     is_generating = any(kw in err_text.lower() for kw in _GENERATING_KEYWORDS)
-                    if i > 75 and not _captured and not is_generating:
+                    if i > 120 and not _captured and not is_generating:
                         log(f"[이미지] 텍스트 오류 응답 ({i}초) → 조기 종료")
                         page.remove_listener("response", _on_response)
                         return None
