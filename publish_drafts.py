@@ -38,6 +38,7 @@ from poster import (
     _tistory_insert_adsense_format,
     _wp_urlopen,
     _wp_upload_image_with_id,
+    _get_salim_category,
 )
 
 IMAGES_DIR = Path(__file__).parent / "images"
@@ -405,21 +406,7 @@ def _notify_issue(blog_id: str, title: str, issues: list):
         f"이슈:\n" + "\n".join(f"  - {i}" for i in issues)
     )
     _log(f"[알림] {msg}")
-    try:
-        import urllib.request as _ur, urllib.parse as _up, json as _json, ssl as _ssl
-        token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-        if not token:
-            return
-        chat_id = "8674424194"
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        data = _json.dumps({"chat_id": chat_id, "text": msg}).encode()
-        ctx = _ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = _ssl.CERT_NONE
-        req = _ur.Request(url, data=data, headers={"Content-Type": "application/json"})
-        _ur.urlopen(req, timeout=10, context=ctx)
-    except Exception as e:
-        _log(f"[알림] 텔레그램 전송 실패: {e}")
+    # 텔레그램 보고는 Claude Code(MCP)가 담당 — 봇 직접 전송 제거
 
 
 def _auto_repair_content(content: str, issues: list) -> tuple[str, list]:
@@ -1640,8 +1627,14 @@ def publish_naver_draft(blog_id="salim1su") -> bool:
             _log(f"[{blog_id}] 글자수 부족({info.get('length')}자) — 스킵")
             return False
 
-        # 공개 발행 (me1091은 리뷰 카테고리)
-        cat = "리뷰" if blog_id == "me1091" else None
+        # 공개 발행 (카테고리 설정)
+        if blog_id == "me1091":
+            cat = "리뷰"
+        elif blog_id == "salim1su":
+            cat = _get_salim_category(naver_title)
+            _log(f"[{blog_id}] 카테고리: {cat}")
+        else:
+            cat = None
         ok = _naver_publish_public(page, category=cat)
         if ok:
             _log(f"[{blog_id}] ✓ 공개 발행 완료")
@@ -1764,27 +1757,8 @@ def _analyze_and_report(all_results: list):
 
     telegram_msg = "\n".join(msg_lines)
 
-    # Telegram 전송
-    try:
-        env = Path(os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(Path(__file__).parent))) / ".env"
-        bot_token, chat_id = "", ""
-        if env.exists():
-            for line in env.read_text().splitlines():
-                if line.startswith("TELEGRAM_BOT_TOKEN="):
-                    bot_token = line.split("=", 1)[1].strip()
-                elif line.startswith("TELEGRAM_CHAT_ID="):
-                    chat_id = line.split("=", 1)[1].strip()
-        if bot_token and chat_id:
-            payload = json.dumps({"chat_id": chat_id, "text": telegram_msg}).encode()
-            req = urllib.request.Request(
-                f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-            )
-            urllib.request.urlopen(req, timeout=10)
-            _log("[분석] Telegram 보고 전송 완료")
-    except Exception as e:
-        _log(f"[분석] Telegram 전송 실패: {e}")
+    # 텔레그램 보고는 Claude Code(MCP)가 담당 — 봇 직접 전송 제거
+    _log("[분석] Telegram 보고는 Claude Code(MCP)가 처리")
 
     # Notion 기록 (notion_report.json에 저장 — 다음 CCR 세션이 읽어서 업로드)
     try:
