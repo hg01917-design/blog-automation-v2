@@ -494,7 +494,7 @@ def generate_thumbnail(blog_id: str, keyword: str, title: str, on_log=None) -> s
 
     if not success:
         try:
-            from bing_image import generate_images as _bing_gen
+            from bing_image import generate_images_bing as _bing_gen
             thumb_infos = [{"index": 1, "prompt": thumb_prompt, "filename": thumb_filename, "alt": keyword}]
             res = _bing_gen(thumb_infos, on_log=log, output_dir=output_dir)
             if res and 1 in res:

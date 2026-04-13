@@ -475,10 +475,12 @@ def _ask_claude_for_gemini_prompt(image_path: str, keyword: str) -> str:
     question = (
         f"이미지의 조명/배경/구도만 참고하고, 이미지에 보이는 특정 브랜드·상품은 무시해. "
         f"핵심 주제는 반드시 '{keyword}'야. "
-        f"이 구도와 분위기로 '{keyword}' 제품을 촬영한 것처럼 실사진 스타일 이미지를 Gemini로 만들기 위한 "
+        f"이 구도와 분위기로 '{keyword}' 제품을 한국 일반 가정집에서 실제 사용 중인 라이프스타일 사진처럼 Gemini로 만들기 위한 "
         f"영문 프롬프트만 한 단락으로 작성해줘. "
-        f"반드시 포함: the main subject is {keyword}, photorealistic real photo style, no AI look, "
-        f"no text overlay, no people, no faces, no brand logos, no watermarks, 4K quality, Korean home/lifestyle setting. "
+        f"절대 금지: white background product photo, studio shot, advertising photo, isolated product. "
+        f"반드시 포함: the product naturally placed in a real Korean home, in-use lifestyle scene, "
+        f"photorealistic real photo style, natural daylight or warm indoor light, "
+        f"no text overlay, no people, no faces, no brand logos, no watermarks, 4K quality. "
         f"설명 없이 영문 프롬프트만 출력해."
     )
 
@@ -573,6 +575,20 @@ def prepare_images_with_gemini(product_info: dict, keyword: str) -> tuple:
         on_log=log,
         reference_images=reference_images,
     )
+
+    # 실패한 이미지는 reference 없이 재시도 (쿠팡 제품사진이 Gemini 콘텐츠 필터 유발)
+    failed = [info for info in image_infos_input if info["index"] not in results]
+    if failed and reference_images:
+        log(f"[이미지] {len(failed)}장 실패 → reference 없이 재시도")
+        retry_results = generate_images_for_blog(
+            blog_id=BLOG_ID,
+            image_infos=failed,
+            skip_webp=True,
+            on_log=log,
+            reference_images=None,
+        )
+        results.update(retry_results)
+
     image_infos = [
         {"index": k, "filename": Path(v).name, "alt": f"{keyword} 실제 사용 모습 {k}"}
         for k, v in results.items()

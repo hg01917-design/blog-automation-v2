@@ -484,7 +484,10 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
 
     Returns: (ok: bool, title: str)
     """
-    from claude_playwright import generate_text
+    try:
+        from claude_direct import generate_text
+    except ImportError:
+        from claude_playwright import generate_text
     from image_router import generate_images_for_blog
     from poster import post_single
     from public_api import fetch_context_for_blog
