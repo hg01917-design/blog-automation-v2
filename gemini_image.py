@@ -335,6 +335,22 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
             log(f"[이미지] 참고 이미지 첨부 실패 (무시): {e}")
 
     # 프롬프트 입력
+    # "이미지 만들기" 도구 버튼 활성화 (새 채팅 시 기본 미선택 상태)
+    try:
+        img_tool_btn = page.locator(
+            'button[aria-label*="이미지 만들기"], button[aria-label*="Image"]'
+        ).first
+        if img_tool_btn.is_visible(timeout=3000):
+            label = img_tool_btn.get_attribute("aria-label") or ""
+            if "선택 해제" not in label and "deselect" not in label.lower():
+                log("[이미지] '이미지 만들기' 버튼 클릭")
+                img_tool_btn.click()
+                page.wait_for_timeout(1000)
+            else:
+                log("[이미지] '이미지 만들기' 이미 활성화됨")
+    except Exception as e:
+        log(f"[이미지] '이미지 만들기' 버튼 클릭 실패 (무시): {e}")
+
     input_el = page.locator('.ql-editor').first
     input_el.click()
     page.wait_for_timeout(300)
@@ -346,7 +362,7 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
             f"프롬프트: {prompt}"
         )
     else:
-        full_prompt = f"Generate an image: {prompt}"
+        full_prompt = prompt  # "이미지 만들기" 모드에서는 prefix 불필요
 
     # 기존 내용 먼저 지우기 (이전 실패한 프롬프트가 남아있을 수 있음)
     page.evaluate("""() => {
