@@ -548,11 +548,102 @@ def seo_title(original: str) -> str:
     if any(k in n for k in ["키링", "열쇠고리"]) and "털" in n:
         return f"털키링 폼폼 가방키링 인형키링 포인트소품"[:50]
 
-    # 기본: 원본 핵심어 유지하되 불필요 수식어 제거
+    if any(k in n for k in ["키링", "열쇠고리"]):
+        char = ""
+        for c in ["곰", "판다", "고양이", "강아지", "토끼", "잉어", "비휴", "클로버", "별"]:
+            if c in n:
+                char = c + " "
+                break
+        return f"{char}키링 가방꾸미기 열쇠고리 선물 캐릭터".strip()[:50]
+
+    # ── 문구/수첩 ──
+    if any(k in n for k in ["수첩", "스케줄러", "플래너", "다이어리", "위클리"]):
+        return f"미니수첩 스케줄러 위클리플래너 다이어리 휴대용"[:50]
+
+    if any(k in n for k in ["색연필"]):
+        qty_str = f" {qty}" if qty else ""
+        return f"색연필 세트 컬러링 미술 학용품 어린이선물{qty_str}"[:50]
+
+    if any(k in n for k in ["볼펜", "젤펜", "잉크펜"]):
+        qty_str = f" {qty}" if qty else ""
+        return f"젤볼펜 세트 부드러운 필기감 사무용품 학용품{qty_str}"[:50]
+
+    if any(k in n for k in ["글루펜", "글루건"]):
+        qty_str = f" {qty}" if qty else ""
+        return f"글루펜 글루건 공예 DIY 핸드메이드 접착{qty_str}"[:50]
+
+    if any(k in n for k in ["이젤", "거치대", "받침대"]) and any(k in n for k in ["캔버스", "액자", "미술", "그림"]):
+        return f"미니 이젤 캔버스 거치대 미술소품 인테리어 소품"[:50]
+
+    if any(k in n for k in ["에코백", "린넨백"]):
+        return f"에코백 린넨 토트백 장바구니 가벼운 가방 선물"[:50]
+
+    # ── 패션 ──
+    if any(k in n for k in ["비니", "버킷햇"]) or ("모자" in n and any(k in n for k in ["겨울", "니트", "골지"])):
+        return f"여성 비니 겨울모자 니트 방한 골지 패션모자"[:50]
+
+    if any(k in n for k in ["덧신", "양말"]):
+        return f"여성 패션양말 덧신 귀여운 선물 데일리 양말"[:50]
+
+    if any(k in n for k in ["선글라스", "안경"]) and any(k in n for k in ["uv", "자외선", "편광", "패션"]):
+        return f"접이식 선글라스 UV차단 편광 여름 패션 자외선"[:50]
+
+    if any(k in n for k in ["헤어핀", "집게핀", "머리핀", "바렛", "헤어클립"]):
+        return f"헤어핀 집게핀 올림머리 여성 악세서리 머리핀"[:50]
+
+    if any(k in n for k in ["헤어망", "머리망"]):
+        return f"헤어망 리본핀 승무원 면접 머리망 단정한 헤어"[:50]
+
+    if any(k in n for k in ["헤어롤", "롤"]) and "헤어" in n:
+        return f"헤어롤 볼륨 셀프헤어 뿌리볼륨 미용도구"[:50]
+
+    # ── 생활/인테리어 ──
+    if any(k in n for k in ["가방걸이", "후크"]) and any(k in n for k in ["카페", "테이블", "휴대용"]):
+        return f"가방걸이 테이블 후크 카페 휴대용 가방 거치대"[:50]
+
+    if any(k in n for k in ["컵홀더", "텀블러거치"]):
+        return f"컵홀더 자전거 유모차 텀블러 거치대 자유회전"[:50]
+
+    if any(k in n for k in ["코스터", "티코스터", "냄비받침"]):
+        return f"실리콘 코스터 냄비받침 주방 인테리어 미끄럼방지"[:50]
+
+    if any(k in n for k in ["도어쿠션", "문쿠션"]) or ("도어" in n and "쿠션" in n) or ("문" in n and "쿠션" in n):
+        return f"도어쿠션 문소음방지 충격흡수 실리콘 접착식"[:50]
+
+    if any(k in n for k in ["악력기", "그립강화", "악력"]):
+        return f"악력기 손운동 그립강화 재활 헬스 스트레스해소"[:50]
+
+    # ── 반려동물 ──
+    if any(k in n for k in ["애견", "강아지", "펫", "반려"]) and any(k in n for k in ["담요", "이불", "방석"]):
+        return f"강아지 담요 반려견 펫이불 소형견 보온 방한"[:50]
+
+    # ── 포장재 ──
+    if any(k in n for k in ["진공포장", "삼방봉투", "진공봉투"]):
+        qty_str = f" {qty}" if qty else ""
+        return f"진공포장지 삼방봉투 식품포장 냉동보관{qty_str}"[:50]
+
+    if any(k in n for k in ["구디백", "할로윈"]) and "가방" in n:
+        return f"할로윈 구디백 선물가방 어린이 유치원 파티소품"[:50]
+
+    if any(k in n for k in ["복사지", "모조지", "인쇄용지"]) and "a4" in n:
+        qty_str = f" {qty}" if qty else ""
+        return f"A4 복사용지 프린터 인쇄 사무용지 학교{qty_str}"[:50]
+
+    # ── 풍수/인테리어 소품 ──
+    if any(k in n for k in ["비휴", "수맥봉", "부적", "풍수"]):
+        return f"풍수 인테리어 소품 행운 재물운 개업선물"[:50]
+
+    # ── 주얼리 ──
+    if any(k in n for k in ["목걸이", "네클리스"]):
+        return f"데일리 목걸이 여성 패션 선물 큐빅 악세서리"[:50]
+
+    # 최후 fallback: 원본과 다르게 카테고리+활용 검색어 조합
     skip = {"귀여운", "예쁜", "패션", "여성", "남성", "제품", "상품", "국내", "소품",
-            "악세사리", "악세서리", "아이템", "잡화", "용", "및", "기타"}
-    core = [t for t in tokens if t not in skip]
-    return ' '.join(core[:6])[:50]
+            "악세사리", "악세서리", "아이템", "잡화", "용", "및", "기타", "랜덤",
+            "발송", "세트", "1P", "2P", "3P", "택1", "컬러"}
+    core = [t for t in tokens if t not in skip and not t.isdigit()]
+    base = ' '.join(core[:4])
+    return f"{base} 선물 추천 가성비"[:50]
 
 
 def make_seo_keywords(original: str) -> list:
