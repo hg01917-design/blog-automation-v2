@@ -336,18 +336,19 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
 
     # 프롬프트 입력
     # "이미지 만들기" 도구 버튼 활성화 (새 채팅 시 기본 미선택 상태)
+    # 주의: "이미지 만들기, 버튼, 탭하여 도구 사용" 만 타깃 (채팅 히스토리 버튼과 구분)
     try:
         img_tool_btn = page.locator(
-            'button[aria-label*="이미지 만들기"], button[aria-label*="Image"]'
+            'button[aria-label*="이미지 만들기, 버튼"]'
         ).first
-        if img_tool_btn.is_visible(timeout=3000):
-            label = img_tool_btn.get_attribute("aria-label") or ""
-            if "선택 해제" not in label and "deselect" not in label.lower():
-                log("[이미지] '이미지 만들기' 버튼 클릭")
-                img_tool_btn.click()
-                page.wait_for_timeout(1000)
-            else:
-                log("[이미지] '이미지 만들기' 이미 활성화됨")
+        img_tool_btn.wait_for(state="visible", timeout=5000)
+        label = img_tool_btn.get_attribute("aria-label") or ""
+        if "선택 해제" not in label and "deselect" not in label.lower():
+            log("[이미지] '이미지 만들기' 버튼 클릭")
+            img_tool_btn.click()
+            page.wait_for_timeout(1500)
+        else:
+            log("[이미지] '이미지 만들기' 이미 활성화됨")
     except Exception as e:
         log(f"[이미지] '이미지 만들기' 버튼 클릭 실패 (무시): {e}")
 
