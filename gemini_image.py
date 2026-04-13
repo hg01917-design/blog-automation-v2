@@ -429,7 +429,10 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
                         log(f"[이미지] Gemini 쿼터 초과 ({i}초) — 해제: {until.strftime('%m/%d %H:%M')} → 폴백")
                         page.remove_listener("response", _on_response)
                         return _generate_via_fallback(prompt, filename, on_log, skip_webp, save_dir=save_dir)
-                    if i > 60 and not _captured:
+                    # "Finalizing the Image" 등 생성 중 정상 메시지는 오류가 아님
+                    _GENERATING_KEYWORDS = ["finalizing", "creating your image", "이미지를 만들", "generating"]
+                    is_generating = any(kw in err_text.lower() for kw in _GENERATING_KEYWORDS)
+                    if i > 75 and not _captured and not is_generating:
                         log(f"[이미지] 텍스트 오류 응답 ({i}초) → 조기 종료")
                         page.remove_listener("response", _on_response)
                         return None
