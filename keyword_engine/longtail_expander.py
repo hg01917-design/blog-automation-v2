@@ -197,6 +197,42 @@ def expand_longtail(
     total_skipped_dup = 0
     total_skipped_cat = 0
 
+    # 블로그별 발행/실패 이력 캐시 (유사도 체크용)
+    _blog_history_cache: list | None = None
+
+    def _get_blog_history() -> list:
+        """해당 blog_id의 published/failed 키워드 토큰 집합 목록 반환 (캐시)."""
+        nonlocal _blog_history_cache
+        if _blog_history_cache is not None:
+            return _blog_history_cache
+        if not blog_id:
+            _blog_history_cache = []
+            return _blog_history_cache
+        import sqlite3, os
+        db_path = _root / "keyword_engine" / "engine.db"
+        try:
+            conn = sqlite3.connect(str(db_path))
+            rows = conn.execute(
+                "SELECT keyword FROM keyword_blog_status WHERE blog_id=? AND status IN ('published','failed','draft_saved','in_progress')",
+                (blog_id,)
+            ).fetchall()
+            conn.close()
+            _blog_history_cache = [set(r[0].split()) for r in rows]
+        except Exception:
+            _blog_history_cache = []
+        return _blog_history_cache
+
+    def _is_too_similar(kw: str) -> bool:
+        """기존 발행/실패 키워드와 핵심어 2개 이상 겹치면 True."""
+        tokens = set(kw.split())
+        if len(tokens) < 2:
+            return False
+        for hist_tokens in _get_blog_history():
+            overlap = tokens & hist_tokens
+            if len(overlap) >= 2:
+                return True
+        return False
+
     def _save(item: dict):
         """단일 키워드 항목을 검증 후 DB에 저장"""
         nonlocal saved, total_skipped_dup, total_skipped_cat
@@ -214,6 +250,10 @@ def expand_longtail(
             return
         # 이미 DB에 있으면 스킵
         if keyword_exists(kw):
+            total_skipped_dup += 1
+            return
+        # 발행/실패 이력과 유사한 키워드 스킵 (에어컨청소 → 에어컨 셀프청소 방법 등 변형 방지)
+        if blog_id and _is_too_similar(kw):
             total_skipped_dup += 1
             return
         # 카테고리 결정
