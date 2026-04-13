@@ -371,6 +371,13 @@ def _content_quality_gate(content: str, title: str, blog_id: str) -> list:
         words = plain.split()
         if len(words) >= 100:
             count = sum(1 for w in words if main_keyword in w)
+            # 갤럭시A시리즈 같이 한글+영문 복합어는 full match가 0일 수 있음
+            # → 한글 부분(첫 연속 한글 세그먼트)만 추출해서 재시도
+            if count == 0:
+                kor_part = re.match(r'([가-힣]{2,})', main_keyword)
+                if kor_part:
+                    check_kw = kor_part.group(1)
+                    count = sum(1 for w in words if check_kw in w)
             density = (count / len(words)) * 100
             if density < 0.5:
                 issues.append(f"키워드 밀도 너무 낮음 ({density:.1f}%) — 메인키워드 의도적으로 배치 필요")
