@@ -341,7 +341,7 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
         img_tool_btn = page.locator(
             'button[aria-label*="이미지 만들기, 버튼"]'
         ).first
-        img_tool_btn.wait_for(state="visible", timeout=5000)
+        img_tool_btn.wait_for(state="visible", timeout=15000)
         label = img_tool_btn.get_attribute("aria-label") or ""
         if "선택 해제" not in label and "deselect" not in label.lower():
             log("[이미지] '이미지 만들기' 버튼 클릭")
@@ -433,42 +433,82 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     ]
 
     # 생성 완료 대기 — 네트워크 캡처 우선 감지, 쿼터/오류 보조 감지
-    for i in range(150):
+    for i in range(240):
         page.wait_for_timeout(1000)
 
         if _captured and i > 2:
             log(f"[이미지] 생성 완료 ({i}초, 네트워크 {len(_captured)}건 캡처)")
             break
 
-        # blob URL 이미지 감지 (이미지 만들기 모드에서 네트워크 캡처 대신 DOM 캡처)
+        # 이미지 감지: 모든 프레임 blob/data URL + 큰 이미지 요소 스크린샷
         if i > 5 and not _captured:
+            # 방법 1: 모든 프레임에서 blob:/data: URL 검색 (shadow DOM 대응)
+            for frame in page.frames:
+                if _captured:
+                    break
+                try:
+                    blob_imgs = frame.evaluate("""() => {
+                        return Array.from(document.querySelectorAll('img'))
+                            .filter(img => (img.src.startsWith('blob:') || img.src.startsWith('data:image'))
+                                          && img.naturalWidth > 50)
+                            .map(img => img.src);
+                    }""")
+                    for blob_url in blob_imgs:
+                        try:
+                            b64 = frame.evaluate("""async (url) => {
+                                if (url.startsWith('data:')) return url;
+                                const resp = await fetch(url);
+                                const blob = await resp.blob();
+                                return new Promise(res => {
+                                    const r = new FileReader();
+                                    r.onloadend = () => res(r.result);
+                                    r.readAsDataURL(blob);
+                                });
+                            }""", blob_url)
+                            if b64 and b64.startswith("data:image"):
+                                import base64 as _b64
+                                header, data = b64.split(",", 1)
+                                ct = header.split(";")[0].replace("data:", "")
+                                img_bytes = _b64.b64decode(data)
+                                if len(img_bytes) > 10_000:
+                                    _captured.append((img_bytes, ct))
+                                    log(f"[이미지] blob URL 캡처 ({len(img_bytes)//1024}KB)")
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+        # 방법 2: 30초 후부터 큰 이미지 요소 스크린샷 (생성 완료 기준)
+        if i > 30 and not _captured:
             try:
-                blob_imgs = page.evaluate("""() => {
-                    return Array.from(document.querySelectorAll('img'))
-                        .filter(img => img.src.startsWith('blob:') && img.naturalWidth > 200)
-                        .map(img => img.src);
-                }""")
-                for blob_url in blob_imgs:
-                    try:
-                        b64 = page.evaluate("""async (url) => {
-                            const resp = await fetch(url);
-                            const blob = await resp.blob();
-                            return new Promise(res => {
-                                const r = new FileReader();
-                                r.onloadend = () => res(r.result);
-                                r.readAsDataURL(blob);
-                            });
-                        }""", blob_url)
-                        if b64 and b64.startswith("data:image"):
-                            import base64 as _b64
-                            header, data = b64.split(",", 1)
-                            ct = header.split(";")[0].replace("data:", "")
-                            img_bytes = _b64.b64decode(data)
-                            if len(img_bytes) > 10_000:
-                                _captured.append((img_bytes, ct))
-                                log(f"[이미지] blob URL 캡처 ({len(img_bytes)//1024}KB)")
-                    except Exception:
-                        pass
+                # 마지막 model-response 안의 이미지 우선, 없으면 페이지 전체에서 탐색
+                for sel in [
+                    'model-response img', '.model-response img',
+                    'ms-chat-turn:last-of-type img', '[class*="response"] img',
+                    'img',
+                ]:
+                    if _captured:
+                        break
+                    all_imgs = page.locator(sel).all()
+                    # 크기 순 내림차순으로 최대 이미지부터 시도
+                    sized = []
+                    for img_el in all_imgs:
+                        try:
+                            bb = img_el.bounding_box()
+                            if bb and bb['width'] > 280 and bb['height'] > 280:
+                                sized.append((img_el, bb))
+                        except Exception:
+                            pass
+                    sized.sort(key=lambda x: x[1]['width'] * x[1]['height'], reverse=True)
+                    for img_el, bb in sized[:3]:
+                        try:
+                            screenshot = img_el.screenshot(type='jpeg', quality=92)
+                            if len(screenshot) > 20_000:
+                                _captured.append((screenshot, 'image/jpeg'))
+                                log(f"[이미지] 스크린샷 캡처 ({len(screenshot)//1024}KB, {int(bb['width'])}×{int(bb['height'])})")
+                                break
+                        except Exception:
+                            pass
             except Exception:
                 pass
 
