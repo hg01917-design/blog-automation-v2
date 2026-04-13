@@ -315,22 +315,8 @@ def login_naver(naver_id=None, on_log=None, page=None):
                     pass
 
             if not selected:
-                # 마지막 수단: 로그아웃 후 재접속하면 naver_id가 자동완성될 수 있음
-                log(f"[2/4] 계정 목록에서 '{naver_id}' 찾지 못함 — 로그아웃 후 재시도")
-                page.goto("https://nid.naver.com/nidlogin.logout", timeout=10000)
-                _rand_delay(page, 1000, 1500)
-                page.goto(NAVER_LOGIN_URL, wait_until='domcontentloaded', timeout=10000)
-                _rand_delay(page, 1500, 2000)
-                id_input = page.locator('#id')
-                id_input.wait_for(state="visible", timeout=5000)
-                id_input.click()
-                _rand_delay(page, 800, 1200)
-                current_id = id_input.input_value()
-                log(f"[2/4] 로그아웃 후 자동완성: {current_id}")
-                if current_id != naver_id:
-                    log(f"[2/4] 여전히 계정 불일치 — 로그인 중단")
-                    return False
-                log(f"[2/4] 로그아웃 후 '{naver_id}' 자동완성 확인")
+                log(f"[2/4] 계정 목록에서 '{naver_id}' 찾지 못함 — 로그인 중단")
+                return False
 
         # 로그인 시도 (최대 2회 — 첫 번째 시도 후 네이버가 오류 페이지를 띄울 수 있음)
         for _attempt in range(2):
