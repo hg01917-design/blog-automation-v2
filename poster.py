@@ -1367,6 +1367,10 @@ def _parse_naver_sections(content):
         if stripped in ('[애드센스]', '##AD##'):
             continue
 
+        # 마크다운 구분선 (---) → Naver SE3에서 <hr>로 렌더됨, 제거
+        if re.match(r'^-{3,}$', stripped):
+            continue
+
         # 일반 텍스트
         current_text_lines.append(stripped)
 
