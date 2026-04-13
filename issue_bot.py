@@ -323,7 +323,7 @@ def publish_to_tistory(result: dict, keyword: str) -> bool:
 
 # ─── Telegram 보고 ───────────────────────────────────────────────────────────
 def _telegram_notify(title: str, success: bool, keyword: str, notes: list = None):
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    token = os.getenv("HanaAutobot", "")
     if not token:
         return
     if success:

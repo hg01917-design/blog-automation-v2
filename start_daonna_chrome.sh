@@ -15,6 +15,8 @@ echo "[daonna-chrome] Chrome $PORT 시작..."
     --remote-debugging-port=$PORT \
     --no-first-run \
     --no-default-browser-check \
+    --ignore-certificate-errors \
+    --user-data-dir="/Users/hana/Library/Application Support/Google/ChromeDebug2" \
     --profile-directory="Default" \
     &>/dev/null &
 
