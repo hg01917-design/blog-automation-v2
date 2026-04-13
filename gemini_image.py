@@ -348,6 +348,15 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     else:
         full_prompt = f"Generate an image: {prompt}"
 
+    # 기존 내용 먼저 지우기 (이전 실패한 프롬프트가 남아있을 수 있음)
+    page.evaluate("""() => {
+        const el = document.querySelector(".ql-editor");
+        if (!el) return;
+        el.focus();
+        document.execCommand("selectAll", false, null);
+        document.execCommand("delete", false, null);
+    }""")
+    page.wait_for_timeout(300)
     page.evaluate("""(text) => {
         const el = document.querySelector(".ql-editor");
         el.focus();
