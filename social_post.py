@@ -226,7 +226,7 @@ def _generate_hook_with_claude(title: str, body_excerpt: str, blog_id: str = "")
 2. 정보를 다 주지 말 것 — 답은 블로그에서만 확인 가능하게
 3. '이거 안 보면 나만 손해', '이걸 몰랐다고?' 같은 FOMO 느낌
 4. 첫 줄에 강한 후킹 (공감/충격/궁금증 중 하나로 시작)
-5. 마지막 줄은 CTA 없이 끝낼 것 (CTA는 따로 붙임)
+5. CTA("댓글에 링크" 등) 없이 끝낼 것 — CTA는 자동으로 따로 붙음
 6. 이모지 1~2개만
 7. 마케팅 냄새 나면 절대 안 됨 — 진짜 지인이 공유하는 것처럼
 8. 제목 그대로 복붙 금지
@@ -290,13 +290,16 @@ def _extract_hook(item_elem, title: str = "", blog_id: str = "") -> str:
 def _build_post_text(title: str, hook: str, blog_id: str = "") -> str:
     """SNS 포스트 본문 구성 (후킹글 + CTA)."""
     cta_map = {
-        "salim1su": "저도 처음엔 몰랐는데 진짜 유용해요 👇 댓글에 링크 있어요",
-        "goodisak": "자세한 내용은 댓글 링크에서 확인하세요 👇",
-        "nolja100": "전체 코스는 댓글 링크에 정리해뒀어요 👇",
+        "salim1su": "자세한 건 댓글에 링크 달아뒀어요 👇",
+        "goodisak": "자세한 내용은 댓글에서 확인하세요 👇",
+        "nolja100": "전체 코스·꿀팁은 댓글 링크에 있어요 👇",
         "triplog":  "전체 일정은 댓글 링크에서 확인하세요 👇",
-        "baremi542": "신청 방법 전체는 댓글 링크에서 확인하세요 👇",
+        "baremi542": "신청 방법 전체는 댓글에 링크 달아뒀어요 👇",
+        "woll100":  "자세한 건 댓글 링크 참고하세요 👇",
+        "phn0502":  "전체 리스트는 댓글에서 확인하세요 👇",
+        "me1091":   "구매 링크·상세 후기는 댓글에 있어요 👇",
     }
-    cta = cta_map.get(blog_id, "자세한 내용은 댓글 링크에서 확인하세요 👇")
+    cta = cta_map.get(blog_id, "자세한 건 댓글 링크에서 확인하세요 👇")
     return f"{hook}\n\n{cta}"
 
 
