@@ -58,6 +58,14 @@ CATEGORY_TITLE_KEYWORDS = {
     },
 }
 
+# 카테고리별 제외 키워드 (포함 시 해당 카테고리에서 제거)
+CATEGORY_EXCLUDE_KEYWORDS = {
+    "여행": {
+        "월세", "전세", "오피스텔", "투룸", "원룸", "빌라", "아파트", "모텔",
+        "부동산", "매물", "임대", "분양", "대출", "보증금", "주거", "사무실",
+    },
+}
+
 DEFAULT_MIN_SCORE   = 100_000
 DEFAULT_MIN_VOLUME  = 500
 DEFAULT_TOP_N       = 50
@@ -163,9 +171,14 @@ def run_category(
 
     # ── 카테고리 필터 ──────────────────────────────────────
     cat_filter = CATEGORY_TITLE_KEYWORDS.get(category, set())
+    cat_exclude = CATEGORY_EXCLUDE_KEYWORDS.get(category, set())
     if cat_filter:
-        filtered_titles = [t for t in all_titles if any(kw in t for kw in cat_filter)]
-        _log(f"[필터] {len(all_titles)}개 → {len(filtered_titles)}개 ({category} 관련)", on_log)
+        filtered_titles = [
+            t for t in all_titles
+            if any(kw in t for kw in cat_filter)
+            and not any(ex in t for ex in cat_exclude)
+        ]
+        _log(f"[필터] {len(all_titles)}개 → {len(filtered_titles)}개 ({category} 관련, 제외어 적용)", on_log)
         if len(filtered_titles) >= 20:
             all_titles = filtered_titles
 
