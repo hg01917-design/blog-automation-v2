@@ -389,6 +389,7 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
                         SELECT k.keyword FROM keywords k
                         WHERE k.category IN (?, ?)
                           AND k.status NOT IN ('published')
+                          AND LENGTH(k.keyword) >= 7
                           AND NOT EXISTS (
                             SELECT 1 FROM keyword_blog_status kbs
                             WHERE kbs.keyword = k.keyword
@@ -406,6 +407,7 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
                         SELECT k.keyword FROM keywords k
                         WHERE k.category = ?
                           AND k.status NOT IN ('published')
+                          AND LENGTH(k.keyword) >= 7
                           AND NOT EXISTS (
                             SELECT 1 FROM keyword_blog_status kbs
                             WHERE kbs.keyword = k.keyword

@@ -117,17 +117,16 @@ def is_keyword_suitable(blog_id: str, keyword: str) -> bool:
 def _naver_competition_check(keyword: str, on_log=None) -> bool:
     """Naver 검색결과 수 확인. 경쟁 너무 심하면 False 반환."""
     # 공백 포함 키워드: 2단어 이상 필요
-    # 공백 없는 한국어 복합어: 5자 이상이면 장기 키워드로 허용 (집안냄새제거, 냄비정리대 등)
+    # 공백 없는 한국어 복합어: 7자 이상이면 롱테일 키워드로 허용
     words = keyword.strip().split()
     if len(words) < 2:
-        # 공백 없는 단어 — 글자 수로 판단
-        if len(keyword.strip()) < 5:
-            if on_log: on_log(f"[경쟁도] '{keyword}' 너무 짧음 — 경쟁 높음 스킵")
+        # 공백 없는 단어 — 글자 수로 판단 (7자 미만은 경쟁도 높음)
+        if len(keyword.strip()) < 7:
+            if on_log: on_log(f"[경쟁도] '{keyword}' 너무 짧음({len(keyword.strip())}자) — 롱테일 아님 스킵")
             return False
-        # 5자 이상 복합어는 허용 (한국어 복합명사는 공백 없이 쓰는 경우 많음)
         return True
-    if len(keyword) < 6:
-        if on_log: on_log(f"[경쟁도] '{keyword}' 너무 짧음 — 경쟁 높음 스킵")
+    if len(keyword) < 7:
+        if on_log: on_log(f"[경쟁도] '{keyword}' 너무 짧음({len(keyword)}자) — 롱테일 아님 스킵")
         return False
     return True
 
