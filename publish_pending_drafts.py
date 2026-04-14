@@ -14,6 +14,7 @@ import ssl
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
 from pathlib import Path
 from datetime import datetime
 
@@ -95,6 +96,28 @@ def _get_category_id(wp_url: str, auth: str, slug: str) -> int:
     return 1  # fallback to default
 
 
+def _get_or_create_tag_id(wp_url: str, auth: str, tag_name: str) -> int | None:
+    try:
+        res = _wp_get(f"{wp_url}/wp-json/wp/v2/tags?search={urllib.parse.quote(tag_name)}", auth)
+        if res:
+            return res[0]["id"]
+        # 없으면 생성
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        body = json.dumps({"name": tag_name}).encode()
+        req = urllib.request.Request(
+            f"{wp_url}/wp-json/wp/v2/tags",
+            data=body,
+            headers={"Authorization": auth, "Content-Type": "application/json"},
+            method="POST",
+        )
+        created = json.loads(urllib.request.urlopen(req, timeout=10, context=ctx).read())
+        return created["id"]
+    except Exception:
+        return None
+
+
 def publish_draft(draft_path: Path, env) -> dict:
     data = json.loads(draft_path.read_text())
     blog_id = data["blog_id"]
@@ -122,7 +145,9 @@ def publish_draft(draft_path: Path, env) -> dict:
     if categories:
         post_body["categories"] = categories
     if keyword:
-        post_body["tags"] = [keyword]
+        tag_id = _get_or_create_tag_id(wp_url, auth, keyword)
+        if tag_id:
+            post_body["tags"] = [tag_id]
 
     try:
         result = _wp_post(f"{wp_url}/wp-json/wp/v2/posts", auth, post_body)

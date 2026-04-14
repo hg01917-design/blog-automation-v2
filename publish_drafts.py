@@ -382,7 +382,7 @@ def _content_quality_gate(content: str, title: str, blog_id: str) -> list:
             if density < 0.5:
                 issues.append(f"키워드 밀도 너무 낮음 ({density:.1f}%) — 메인키워드 의도적으로 배치 필요")
             elif density > 4.0:
-                issues.append(f"키워드 과최적화 ({density:.1f}%) — 스팸 패널티 위험")
+                issues.append(f"키워드 과최적화 ({density:.1f}%) keyword={main_keyword} — 스팸 패널티 위험")
 
     # 5. 중복 이미지 체크
     img_srcs = re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', content, re.IGNORECASE)
@@ -479,6 +479,35 @@ def _auto_repair_content(content: str, issues: list) -> tuple[str, list]:
                 return m.group(0)
             fixed = re.sub(r'<img[^>]+>', _dedup_img, fixed)
             _log(f"  → 중복 이미지 자동 제거 완료")
+
+        elif "키워드 과최적화" in issue:
+            # 키워드 밀도 > 4% → 후반부 키워드를 동의어로 교체
+            import random as _rnd
+            # issue 형식: "키워드 과최적화 (X.X%) keyword=웨이브 — 스팸 패널티 위험"
+            kw_m = re.search(r"keyword=(\S+)", issue)
+            keyword = kw_m.group(1).rstrip("—").strip() if kw_m else ""
+            if keyword and len(keyword) >= 2:
+                plain_for_kw = re.sub(r'<[^>]+>', '', fixed)
+                words = plain_for_kw.split()
+                total_words = len(words)
+                kw_count = sum(1 for w in words if keyword in w)
+                target_count = int(total_words * 0.035)
+                remove_count = max(0, kw_count - target_count)
+                replacements = ["이 서비스", "해당 플랫폼", "이 콘텐츠", "이 기능"]
+                removed = 0
+                first_idx = fixed.find(keyword)
+                for _ in range(remove_count):
+                    idx = fixed.rfind(keyword)
+                    if idx < 0 or idx == first_idx:
+                        break
+                    fixed = fixed[:idx] + _rnd.choice(replacements) + fixed[idx+len(keyword):]
+                    removed += 1
+                if removed > 0:
+                    _log(f"  → 키워드 과최적화 자동 수정 완료 ({keyword} {removed}개 교체)")
+                else:
+                    remaining.append(issue)
+            else:
+                remaining.append(issue)
 
         else:
             # 자동 수정 불가 이슈

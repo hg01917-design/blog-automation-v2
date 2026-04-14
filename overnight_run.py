@@ -641,14 +641,15 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
     body_m = re.search(r"===본문===\s*\n(.*?)\n*===본문끝===", raw, re.DOTALL)
     tag_m = re.search(r"===태그===\s*\n(.*?)\n*===태그끝===", raw, re.DOTALL)
     img_m = re.search(r"===이미지===\s*\n(.*?)\n*===이미지끝===", raw, re.DOTALL)
+    meta_m = re.search(r"===메타===\s*\n(.*?)\n*===메타끝===", raw, re.DOTALL)
 
-    # 제목: ===제목===~===제목끝=== 사이에서 첫 줄만 추출 + 40자 제한
+    # 제목: ===제목===~===제목끝=== 사이에서 첫 줄만 추출 + 55자 제한 (SEO 최적화)
     if title_m:
         title_block = title_m.group(1).strip()
         raw_title = title_block.split('\n')[0].strip()
     else:
         raw_title = keyword
-    title = _truncate_title(raw_title, max_len=40)
+    title = _truncate_title(raw_title, max_len=55)
 
     body = body_m.group(1).strip() if body_m else raw
 
@@ -722,10 +723,14 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
     char_count = len(re.sub(r"\s+", "", plain))
 
     # 파싱 결과 검증 로그
+    meta_desc = meta_m.group(1).strip().split('\n')[0].strip() if meta_m else ""
+
     log(f"[파싱] 제목: \"{title}\" ({len(title)}자)")
     log(f"[파싱] 본문: {char_count}자")
     log(f"[파싱] 태그: {tags} ({len(tags)}개)")
     log(f"[파싱] 이미지: {len(images)}개")
+    if meta_desc:
+        log(f"[파싱] 메타: \"{meta_desc[:60]}\" ({len(meta_desc)}자)")
     if len(title) == 0 or title.strip() == keyword.strip():
         log(f"[파싱] ❌ 제목 생성 실패 (title='{title}') — 발행 중단")
         return False

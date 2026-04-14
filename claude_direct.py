@@ -41,7 +41,22 @@ def _build_prompt(blog_id: str, keyword: str, extra_context: str = None) -> str:
         "\n\n아래 형식으로만 출력해줘 (다른 형식 절대 금지):\n"
         "===제목===\n(SEO 최적화된 롱테일 제목)\n===제목끝===\n\n"
         "===본문===\n(블로그 본문 전체 — H2 소제목 3개 이상, 2000자 이상)\n===본문끝===\n\n"
-        "===태그===\n태그1, 태그2, ... (10~20개)\n===태그끝===\n"
+        "===태그===\n태그1, 태그2, ... (10~20개)\n===태그끝===\n\n"
+        "===메타===\n(검색결과 미리보기용 요약 80~120자)\n===메타끝===\n"
+    )
+
+    # 구글 SEO 제목 규칙 (Tistory·WordPress 공통)
+    _SEO_TITLE_RULE = (
+        "\n\n[구글 SEO 제목 규칙 — 필수 준수]\n"
+        "① 제목 길이: 30~55자 (너무 짧으면 클릭률 하락)\n"
+        "② 핵심 키워드를 제목 앞쪽에 배치\n"
+        "③ 연도(2026), 숫자(5가지·3단계), '방법','총정리','비교','완벽정리' 중 하나 포함\n"
+        "④ 구어체(~되나요, ~할까) 금지 → 명사형('방법','가이드','정리') 사용\n"
+        "⑤ 같은 주제 글이 이미 존재하면 각도를 달리할 것 (중복 페널티 방지)\n"
+        "[메타 디스크립션 규칙]\n"
+        "① 80~120자 이내\n"
+        "② 핵심 키워드 앞부분 배치, '~합니다' 마무리\n"
+        "③ 숫자·기간·구체적 효과 포함하면 클릭률 상승\n"
     )
 
     # 이미지 마커 규칙 (overnight_run.py 이미지 파서용)
@@ -54,14 +69,14 @@ def _build_prompt(blog_id: str, keyword: str, extra_context: str = None) -> str:
 
     if instructions:
         # 프로젝트 지침 + 키워드 + 출력 형식
-        prompt = f"{instructions}\n\n[작성 키워드]\n{keyword}{_SECTION_FORMAT}{_IMAGE_RULE}"
+        prompt = f"{instructions}\n\n[작성 키워드]\n{keyword}{_SEO_TITLE_RULE}{_SECTION_FORMAT}{_IMAGE_RULE}"
     else:
         # 지침 파일 없으면 기본 프롬프트 (triplog 등)
         prompt = (
             f"키워드: {keyword}\n\n"
             "위 키워드로 2000자 이상 블로그 포스팅을 작성해줘.\n"
             "H2 소제목 3개 이상, 존댓말(해요체), 구체적 수치·날짜 포함.\n"
-            f"{_SECTION_FORMAT}{_IMAGE_RULE}"
+            f"{_SEO_TITLE_RULE}{_SECTION_FORMAT}{_IMAGE_RULE}"
         )
 
     if extra_context:

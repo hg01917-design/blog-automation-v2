@@ -240,10 +240,10 @@ def login_naver(naver_id=None, on_log=None, page=None):
             log(f"[2/4] ⚠ 계정 불일치: 자동완성={current_id}, 필요={naver_id} — 계정 목록에서 선택 시도")
             selected = False
 
-            # ArrowDown 으로 드롭다운 트리거 (계정 목록이 열려있지 않을 수 있음)
+            # 드롭다운 열기: id 입력창 클릭 후 충분히 대기
             try:
-                id_input.press("ArrowDown")
-                _rand_delay(page, 500, 800)
+                id_input.click()
+                _rand_delay(page, 800, 1200)
             except Exception:
                 pass
 
@@ -292,14 +292,19 @@ def login_naver(naver_id=None, on_log=None, page=None):
                 if selected:
                     break
 
-            # JS 폴백: 페이지 전체에서 naver_id 텍스트 포함 클릭 가능 요소
+            # JS 폴백: 드롭다운 재오픈 후 전체 요소에서 naver_id 탐색
             if not selected:
                 try:
+                    # 드롭다운이 닫혔을 수 있으므로 다시 클릭해서 열기
+                    id_input.click()
+                    _rand_delay(page, 600, 900)
                     clicked = page.evaluate(f"""
                         (id) => {{
-                            const els = document.querySelectorAll('a, li, button, [role="option"]');
+                            const els = document.querySelectorAll('a, li, button, [role="option"], [data-id]');
                             for (const el of els) {{
-                                if (el.textContent.includes(id) || el.getAttribute('data-id') === id) {{
+                                const dataId = el.getAttribute('data-id') || '';
+                                const text = el.textContent.trim();
+                                if (dataId === id || text === id || text.startsWith(id)) {{
                                     el.click();
                                     return true;
                                 }}
@@ -315,8 +320,52 @@ def login_naver(naver_id=None, on_log=None, page=None):
                     pass
 
             if not selected:
-                log(f"[2/4] 계정 목록에서 '{naver_id}' 찾지 못함 — 로그인 중단")
-                return False
+                # 폴백: 현재 계정 로그아웃 후 로그인 페이지 재접속 → 목록 재확인
+                log(f"[2/4] 계정 목록에서 '{naver_id}' 찾지 못함 — 로그아웃 후 재시도")
+                try:
+                    page.goto("https://nid.naver.com/nidlogin.logout", wait_until="domcontentloaded", timeout=15000)
+                    _rand_delay(page, 2000, 3000)
+                    page.goto(NAVER_LOGIN_URL, wait_until="domcontentloaded", timeout=15000)
+                    _rand_delay(page, 2000, 3000)
+                    id_input = page.locator('#id')
+                    id_input.wait_for(state="visible", timeout=10000)
+                    id_input.click()
+                    _rand_delay(page, 800, 1200)
+                    # 재확인: 드롭다운에서 naver_id 탐색
+                    for selector in [f'[data-id="{naver_id}"]', f'ul.account_list li a', f'.account_list li']:
+                        items = page.locator(selector)
+                        try:
+                            count = items.count()
+                        except Exception:
+                            continue
+                        for i in range(count):
+                            item = items.nth(i)
+                            try:
+                                text = item.inner_text(timeout=1000).strip()
+                                if naver_id in text or item.get_attribute("data-id") == naver_id:
+                                    item.click(timeout=3000)
+                                    log(f"[2/4] 로그아웃 후 재시도 — '{naver_id}' 선택 완료")
+                                    selected = True
+                                    _rand_delay(page, 800, 1200)
+                                    break
+                            except Exception:
+                                try:
+                                    item.click(timeout=3000)
+                                    log(f"[2/4] 로그아웃 후 재시도 — '{naver_id}' 선택 완료 (data-id)")
+                                    selected = True
+                                    _rand_delay(page, 800, 1200)
+                                except Exception:
+                                    pass
+                            if selected:
+                                break
+                        if selected:
+                            break
+                except Exception as e:
+                    log(f"[2/4] 로그아웃 재시도 중 오류: {e}")
+
+                if not selected:
+                    log(f"[2/4] 로그아웃 후에도 '{naver_id}' 찾지 못함 — 로그인 중단")
+                    return False
 
         # 로그인 시도 (최대 2회 — 첫 번째 시도 후 네이버가 오류 페이지를 띄울 수 있음)
         for _attempt in range(2):
