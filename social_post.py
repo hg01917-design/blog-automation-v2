@@ -197,23 +197,74 @@ def _extract_images(item_elem, max_images: int = 2) -> list[str]:
     return urls
 
 
-def _extract_hook(item_elem) -> str:
-    """RSS 본문에서 SNS 후킹글 생성 (외부유입 최적화).
+def _generate_hook_with_claude(title: str, body_excerpt: str, blog_id: str = "") -> str:
+    """Claude subprocess로 FOMO/궁금증 유발 SNS 후킹글 생성."""
+    import subprocess as _sp
+    CLAUDE_BIN = str(Path.home() / ".local" / "bin" / "claude")
 
-    형식:
-    - 첫 줄: 궁금증 유발 질문 또는 핵심 한 문장
-    - 중간: 핵심 내용 2~3줄 (독자가 얻을 것)
-    - 마지막: 댓글 링크 유도 CTA
-    """
+    # 블로그별 톤 가이드
+    _TONE = {
+        "salim1su": "30대 직장인 주부 톤. '나도 이걸 몰랐는데' 공감형. 살림/절약/생활정보 주제.",
+        "goodisak": "IT·금융 정보형. 구체적 숫자/혜택 언급. '이거 모르면 손해' 느낌.",
+        "nolja100": "여행 설레임형. '여기 진짜 이런 곳이 있었어?' 느낌.",
+        "triplog":  "여행 설레임형. '이 코스 모르면 여행 후회해' 느낌.",
+        "baremi542": "생활정보/정부지원형. '이 혜택 놓치면 나만 손해' 느낌.",
+        "woll100":  "교통 정보형. '이거 알면 시간·돈 절약' 느낌.",
+        "phn0502":  "OTT/영화 추천형. '이거 안 보면 진짜 손해' 느낌.",
+        "me1091":   "쿠팡 상품 리뷰형. '사기 전에 꼭 읽어봐' 느낌.",
+    }
+    tone = _TONE.get(blog_id, "정보형. '이거 모르면 손해' 느낌.")
+
+    prompt = f"""SNS(페이스북/쓰레드) 후킹글을 써줘. 규칙 엄수:
+
+블로그 제목: {title}
+본문 발췌: {body_excerpt[:300]}
+블로그 톤: {tone}
+
+[후킹글 작성 규칙]
+1. 3~5줄 이내 — 짧을수록 좋음
+2. 정보를 다 주지 말 것 — 답은 블로그에서만 확인 가능하게
+3. '이거 안 보면 나만 손해', '이걸 몰랐다고?' 같은 FOMO 느낌
+4. 첫 줄에 강한 후킹 (공감/충격/궁금증 중 하나로 시작)
+5. 마지막 줄은 CTA 없이 끝낼 것 (CTA는 따로 붙임)
+6. 이모지 1~2개만
+7. 마케팅 냄새 나면 절대 안 됨 — 진짜 지인이 공유하는 것처럼
+8. 제목 그대로 복붙 금지
+
+후킹글만 출력 (설명·제목 없이):"""
+
+    try:
+        result = _sp.run(
+            [CLAUDE_BIN, "--dangerously-skip-permissions", "--print", prompt],
+            capture_output=True, text=True, timeout=60,
+            cwd=str(BASE_DIR),
+            env={**os.environ, "HOME": str(Path.home())}
+        )
+        text = (result.stdout or "").strip()
+        if text and len(text) > 20:
+            # 마크다운 헤더·구분선 제거 (Claude가 덧붙이는 경우)
+            text = re.sub(r"^\*\*[^*]+\*\*:\s*\n?", "", text).strip()
+            text = re.sub(r"^---+\s*\n?", "", text, flags=re.MULTILINE).strip()
+            # 첫 번째 단락만 사용 (두 예시 동시에 생성된 경우 방지)
+            parts = re.split(r"\n\n---+\n\n|\n---\n", text)
+            text = parts[0].strip()
+            if text and len(text) > 20:
+                return text
+    except Exception:
+        pass
+    return ""
+
+
+def _extract_hook(item_elem, title: str = "", blog_id: str = "") -> str:
+    """RSS 본문 추출 후 Claude로 FOMO 후킹글 생성. 실패 시 폴백."""
     desc = (
         item_elem.findtext("description", "")
         or item_elem.findtext("{http://purl.org/rss/1.0/modules/content/}encoded", "")
     )
     text = _strip_html(desc)
 
-    # 내부 마커 패턴 제거 (생성 결과 헤더, 메타 정보 블록 등)
     _INTERNAL_PATTERNS = [
-        r"【[^】]*】[^\n]*",            # 【메타 정보】 ~ 줄 전체
+        r"【[^】]*】[^\n]*",
         r"마이리얼트립[^\n]*생성[^\n]*결과[^\n]*",
         r"[-–]\s*(앵글|문체|글자수|메인\s*키워드|카테고리|주제)\s*:",
         r"\[검증\s*필요\]|\[출처\s*필요\]|\[수정\s*필요\]",
@@ -222,39 +273,34 @@ def _extract_hook(item_elem) -> str:
         text = re.sub(pat, "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s+", " ", text).strip()
 
-    # 의미 있는 문장만 추출 (15자 이상)
+    # Claude로 FOMO 후킹글 생성 (우선)
+    if title and text:
+        hook = _generate_hook_with_claude(title, text, blog_id)
+        if hook:
+            return hook
+
+    # 폴백: 첫 3문장 (Claude 실패 시)
     sentences = [s.strip() for s in re.split(r"(?<=[.!?。])\s+", text) if len(s.strip()) >= 15]
-
     if not sentences:
-        body = text[:200].rsplit(" ", 1)[0] + "..." if len(text) > 200 else text
-    else:
-        # 첫 3문장으로 티저 구성
-        body = "\n".join(sentences[:3])
-        if len(body) > 250:
-            body = body[:250].rsplit(" ", 1)[0] + "..."
-
-    return body
+        return text[:200].rsplit(" ", 1)[0] + "..." if len(text) > 200 else text
+    body = "\n".join(sentences[:3])
+    return body[:250].rsplit(" ", 1)[0] + "..." if len(body) > 250 else body
 
 
 def _build_post_text(title: str, hook: str, blog_id: str = "") -> str:
-    """SNS 포스트 본문 구성 (제목 + 후킹 요약 + CTA)."""
-    # 블로그별 대표 이모지
-    emoji_map = {
-        "nolja100": "✈️",
-        "triplog": "🗺️",
-        "salim1su": "🏠",
-        "goodisak": "💡",
-        "baremi542": "📋",
+    """SNS 포스트 본문 구성 (후킹글 + CTA)."""
+    cta_map = {
+        "salim1su": "저도 처음엔 몰랐는데 진짜 유용해요 👇 댓글에 링크 있어요",
+        "goodisak": "자세한 내용은 댓글 링크에서 확인하세요 👇",
+        "nolja100": "전체 코스는 댓글 링크에 정리해뒀어요 👇",
+        "triplog":  "전체 일정은 댓글 링크에서 확인하세요 👇",
+        "baremi542": "신청 방법 전체는 댓글 링크에서 확인하세요 👇",
     }
-    emoji = emoji_map.get(blog_id, "📌")
-
-    return (
-        f"{hook}\n\n"
-        f"👇 전체 내용은 댓글 링크에서 확인하세요"
-    )
+    cta = cta_map.get(blog_id, "자세한 내용은 댓글 링크에서 확인하세요 👇")
+    return f"{hook}\n\n{cta}"
 
 
-def _fetch_rss(url: str) -> list[dict]:
+def _fetch_rss(url: str, blog_id: str = "") -> list[dict]:
     """RSS 최신 10개 항목 반환 (이미지·후킹글 포함)."""
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -267,7 +313,7 @@ def _fetch_rss(url: str) -> list[dict]:
             link = item.findtext("link", "").strip()
             guid = item.findtext("guid", link).strip()
             image_urls = _extract_images(item, max_images=2)
-            hook = _extract_hook(item)
+            hook = _extract_hook(item, title=title, blog_id=blog_id)
             if title:
                 items.append({
                     "title": title,
@@ -473,7 +519,7 @@ def run(on_log=None):
             continue
 
         log(f"\n── {blog_id} RSS 확인 ──")
-        items = _fetch_rss(cfg["rss"])
+        items = _fetch_rss(cfg["rss"], blog_id=blog_id)
         if not items:
             log("  RSS 항목 없음")
             continue
