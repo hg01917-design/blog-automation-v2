@@ -1090,20 +1090,30 @@ def _post_one_blog_inner(blog_id):
         return False
     log(f"[{blog_id}] 키워드: {kw}")
     _db_set(kw, "in_progress", blog_id=blog_id)
-    try:
-        ok, saved_title = run_posting_pipeline(blog_id, kw)
-        if ok:
-            # 모든 블로그 임시저장 → draft_saved (Claude Code가 검수 후 발행)
-            _db_set(kw, "draft_saved", blog_id=blog_id, title=saved_title)
-        else:
+    _PLAYWRIGHT_ERRORS = ("Connection closed", "BrokenPipe", "Broken pipe",
+                          "Target closed", "browser has been closed",
+                          "WebSocket", "playwright")
+    for attempt in range(1, 3):  # 최대 2회 시도
+        try:
+            ok, saved_title = run_posting_pipeline(blog_id, kw)
+            if ok:
+                # 모든 블로그 임시저장 → draft_saved (Claude Code가 검수 후 발행)
+                _db_set(kw, "draft_saved", blog_id=blog_id, title=saved_title)
+                return True
+            else:
+                _db_set(kw, "failed", blog_id=blog_id)
+                return False
+        except Exception as e:
+            err_str = str(e)
+            is_playwright_crash = any(p.lower() in err_str.lower() for p in _PLAYWRIGHT_ERRORS)
+            if is_playwright_crash and attempt == 1:
+                log(f"[{blog_id}] Playwright 오류 — 60초 후 재시도 ({err_str[:80]})")
+                _db_set(kw, "pending", blog_id=blog_id)  # 재시도 가능하도록 pending 복원
+                time.sleep(60)
+                continue
+            log(f"[{blog_id}] 오류: {e}")
             _db_set(kw, "failed", blog_id=blog_id)
-        return ok
-    except Exception as e:
-        import traceback as _tb
-        tb_str = _tb.format_exc()
-        log(f"[{blog_id}] 오류: {e}")
-        _db_set(kw, "failed", blog_id=blog_id)
-        return False
+            return False
 
 
 def run_one_round(round_num):
