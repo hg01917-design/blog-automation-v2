@@ -224,7 +224,7 @@ def _get_affiliate_link_for_promo(promo_url: str) -> str:
 
 def generate_deal_post(deal: dict, affiliate_url: str) -> tuple:
     """딜 정보로 triplog 블로그 글 생성. (title, content, tags) 반환."""
-    from claude_playwright import generate_text
+    from claude_direct import generate_text  # sync_playwright asyncio 충돌 방지
 
     promo_url = deal["url"]
     context = deal.get("context", "")

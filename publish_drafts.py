@@ -552,49 +552,36 @@ def _claude_repair_draft(content: str, title: str, issues: list, blog_id: str) -
     """Claude를 사용해 글 내용을 수정. 수정된 HTML 반환 (실패 시 None).
 
     본문이 너무 짧거나 내용 문제가 있을 때 호출.
-    subprocess로 분리 실행 — sync_playwright 중복 인스턴스 충돌 방지.
+    claude_direct.generate_text() 사용 — sync_playwright 충돌 없음.
     """
-    import subprocess, sys, json as _json, tempfile, os
     _log(f"[{blog_id}] Claude 수정 요청 중...")
     try:
+        from claude_direct import generate_text as _gen
+
         # HTML → plain text 변환
         plain = re.sub(r'<[^>]+>', '', content)
         plain = re.sub(r'\s+', ' ', plain).strip()
-        wrapped = f"===제목===\n{title}\n===제목끝===\n\n===본문===\n{plain}\n===본문끝==="
 
-        # 임시 파일로 입력/출력 교환 (subprocess에서 Playwright 사용)
-        in_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8')
-        _json.dump({'text': wrapped, 'issues': issues}, in_file, ensure_ascii=False)
-        in_file.close()
-        out_file = in_file.name + '_out.json'
-
-        repair_script = f"""
-import sys, json
-data = json.load(open({repr(in_file.name)}, encoding='utf-8'))
-sys.path.insert(0, {repr(str(Path(__file__).parent))})
-from claude_playwright import repair_text
-result = repair_text(data['text'], data['issues'])
-json.dump({{'result': result}}, open({repr(out_file)}, 'w', encoding='utf-8'), ensure_ascii=False)
-"""
-        proc = subprocess.run(
-            [sys.executable, '-c', repair_script],
-            timeout=120, capture_output=True, text=True
+        issues_str = '\n'.join(f'- {i}' for i in issues)
+        prompt = (
+            f"아래 블로그 글을 수정해주세요.\n\n"
+            f"제목: {title}\n\n"
+            f"수정 요청 사항:\n{issues_str}\n\n"
+            f"본문:\n{plain}\n\n"
+            f"규칙:\n"
+            f"- 수정된 본문만 출력 (제목/설명 없이)\n"
+            f"- 단락은 빈 줄로 구분\n"
+            f"- 마크다운 사용 금지\n"
+            f"- 내부 마커([검증 필요] 등) 제거\n"
+            f"- 총 글자수 1700자 이상"
         )
-        if proc.returncode != 0:
-            _log(f"[{blog_id}] Claude 수정 subprocess 실패: {proc.stderr[:200]}")
+
+        repaired_raw = _gen(prompt=prompt, on_log=_log)
+        if not repaired_raw or len(repaired_raw) < 500:
+            _log(f"[{blog_id}] Claude 수정 응답 너무 짧음")
             return None
 
-        result_data = _json.loads(open(out_file, encoding='utf-8').read())
-        repaired_raw = result_data.get('result')
-        if not repaired_raw:
-            return None
-
-        # 수정된 raw에서 본문 추출 후 HTML 변환 (단락 → <p>)
-        body_m = re.search(r'===본문===\s*\n(.*?)\n*===본문끝===', repaired_raw, re.DOTALL)
-        if not body_m:
-            return None
-        body_text = body_m.group(1).strip()
-        paragraphs = [p.strip() for p in re.split(r'\n{2,}', body_text) if p.strip()]
+        paragraphs = [p.strip() for p in re.split(r'\n{2,}', repaired_raw) if p.strip()]
         repaired_html = '\n'.join(f'<p>{p}</p>' for p in paragraphs)
         _log(f"[{blog_id}] Claude 수정 완료 ({len(repaired_html)}자)")
         return repaired_html
@@ -602,8 +589,7 @@ json.dump({{'result': result}}, open({repr(out_file)}, 'w', encoding='utf-8'), e
         _log(f"[{blog_id}] Claude 수정 실패: {e}")
         return None
     finally:
-        for f in [in_file.name, out_file]:
-            try:
+        pass  # (no temp files to clean up)
                 os.unlink(f)
             except Exception:
                 pass

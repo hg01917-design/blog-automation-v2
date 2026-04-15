@@ -17,6 +17,12 @@ LOG_DIR = Path(__file__).parent / "logs"
 def _get_refresh_candidates(min_days=30, max_days=60):
     """30~60일 전 published 글 목록 반환."""
     conn = sqlite3.connect(DB_PATH)
+    # refreshed_at 컬럼이 없으면 먼저 추가 (SELECT 전에 실행)
+    try:
+        conn.execute("ALTER TABLE keyword_blog_status ADD COLUMN refreshed_at TEXT")
+        conn.commit()
+    except Exception:
+        pass
     cur = conn.cursor()
     cutoff_old = (datetime.now() - timedelta(days=max_days)).isoformat()
     cutoff_new = (datetime.now() - timedelta(days=min_days)).isoformat()
