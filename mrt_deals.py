@@ -347,7 +347,7 @@ def run_deal_check(dry_run: bool = False) -> int:
 
         for deal in new_deals[:2]:  # 한 번에 최대 2개
             # 4. 제휴 링크 생성
-            affiliate_url = _get_affiliate_link_for_promo(page, deal["url"])
+            affiliate_url = _get_affiliate_link_for_promo(deal["url"])
 
             # 5. 글 생성
             title, content, tags = generate_deal_post(deal, affiliate_url)
