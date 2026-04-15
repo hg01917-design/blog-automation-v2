@@ -128,6 +128,31 @@ def _make_image(prompt: str, filename: str, blog_id: str = "", title: str = "") 
     return None
 
 
+# ─── 이미지 수 / 위치 체크 헬퍼 ──────────────────────────────────────────
+def _count_content_images(content: str) -> int:
+    """HTML/Tistory 콘텐츠에서 이미지 수 카운트 (img 태그 + [##_Image 포함)"""
+    img_tags = len(re.findall(r'<img\s', content))
+    tistory_imgs = len(re.findall(r'\[##_Image', content))
+    return img_tags + tistory_imgs
+
+
+def _check_image_spread(content: str, count: int) -> bool:
+    """이미지가 본문 전체에 고르게 분포되어 있는지 체크.
+    기준: 첫 이미지 위치 < 80%, 마지막 이미지 위치 > 20%, 간격 > 20%
+    """
+    if count < 2:
+        return True  # 이미지 1개 이하면 위치 체크 생략
+    total = len(content)
+    if total < 300:
+        return True
+    positions = [m.start() for m in re.finditer(r'<img\s|\[##_Image', content)]
+    if not positions:
+        return False
+    first_r = positions[0] / total
+    last_r = positions[-1] / total
+    return first_r < 0.8 and last_r > 0.2 and (last_r - first_r) > 0.2
+
+
 # ══════════════════════════════════════════════
 # WordPress (baremi542)
 # ══════════════════════════════════════════════
@@ -225,9 +250,10 @@ def publish_wp_draft():
                 _notify_issue("baremi542", title, remaining)
                 return False
 
-    # 이미지 체크
-    has_images = bool(re.search(r'<img\s', content_html))
-    _log(f"[WP] 이미지 있음: {has_images}")
+    # 이미지 수 + 위치 체크
+    img_count = _count_content_images(content_html)
+    img_spread_ok = _check_image_spread(content_html, img_count)
+    _log(f"[WP] 이미지: {img_count}개, 분포 양호: {img_spread_ok}")
 
     # 애드센스 체크 (AdSense 스크립트 또는 <!-- adsense --> 스타일)
     has_adsense = bool(
@@ -237,11 +263,12 @@ def publish_wp_draft():
 
     updated_content = content_html
 
-    # 이미지 보완 — 없으면 2개 생성 후 상단에 삽입
-    if not has_images:
-        _log("[WP] 이미지 없음 → 생성 중...")
+    # 이미지 보완 — 3개 미만이면 부족한 수만큼 생성 후 삽입
+    if img_count < 3:
+        need = 3 - img_count
+        _log(f"[WP] 이미지 {img_count}개 < 3개 → {need}개 생성 중...")
         slug = re.sub(r'[^\w가-힣]', '-', title.strip()).strip('-')[:40]
-        for i in range(1, 3):
+        for i in range(1, need + 1):
             fp = _make_image(title, f"{slug}-img{i}.jpg", blog_id="baremi542", title=title if i == 1 else "")
             if fp:
                 img_url, media_id = _wp_upload_image_with_id(
@@ -262,6 +289,10 @@ def publish_wp_draft():
                                 + fig
                                 + updated_content[insert_pos + 4:]
                             )
+
+    # 이미지 위치 분포 체크 (재카운트)
+    if not _check_image_spread(updated_content, _count_content_images(updated_content)):
+        _log("[WP] ⚠ 이미지가 한쪽에 몰려 있음 — 분포 확인 권장")
 
     # 애드센스 보완
     if not has_adsense:
@@ -825,9 +856,12 @@ def _tistory_check_and_fix(page, blog_id: str, post_id: str):
                 _notify_issue(blog_id, title, remaining)
                 return False
 
-    # 이미지 체크 (Tistory [##_Image 형식 포함)
-    has_images = '<img' in content or '[##_Image' in content
-    _log(f"[{blog_id}] 이미지 있음: {has_images}")
+    # 이미지 수 + 위치 체크 (Tistory [##_Image 형식 포함)
+    img_count_ts = _count_content_images(content)
+    img_spread_ts = _check_image_spread(content, img_count_ts)
+    _log(f"[{blog_id}] 이미지: {img_count_ts}개, 분포 양호: {img_spread_ts}")
+    if not img_spread_ts and img_count_ts >= 3:
+        _log(f"[{blog_id}] ⚠ 이미지가 한쪽에 몰려 있음 — 분포 확인 권장")
 
     # 애드센스 체크 (Tistory 서식 삽입 시 나타나는 class/data 속성)
     has_adsense = bool(
@@ -835,12 +869,13 @@ def _tistory_check_and_fix(page, blog_id: str, post_id: str):
     )
     _log(f"[{blog_id}] 애드센스 있음: {has_adsense}")
 
-    # 이미지 보완 — 없으면 picsum으로 3개 생성 후 업로드
-    if not has_images:
-        _log(f"[{blog_id}] 이미지 없음 → 생성·업로드 중...")
+    # 이미지 보완 — 3개 미만이면 부족한 수만큼 생성 후 업로드
+    if img_count_ts < 3:
+        need_ts = 3 - img_count_ts
+        _log(f"[{blog_id}] 이미지 {img_count_ts}개 < 3개 → {need_ts}개 생성·업로드 중...")
         slug = re.sub(r'[^\w가-힣]', '-', title.strip()).strip('-')[:30]
         uploaded = 0
-        for i in range(1, 4):
+        for i in range(1, need_ts + 1):
             fp = _make_image(title, f"{blog_id}-{slug}-{i}.jpg", blog_id=blog_id, title=title if i == 1 else "")
             if fp:
                 if i == 1:
@@ -1080,13 +1115,18 @@ def publish_triplog_draft() -> bool:
     content_html = post["content"]["rendered"]
     _log(f"[triplog] 선택된 드래프트: [{post_id}] {title} ({len(content_html)}자)")
 
-    has_images = bool(re.search(r'<img\s', content_html))
+    img_count_tl = _count_content_images(content_html)
+    img_spread_tl = _check_image_spread(content_html, img_count_tl)
+    _log(f"[triplog] 이미지: {img_count_tl}개, 분포 양호: {img_spread_tl}")
+    if not img_spread_tl and img_count_tl >= 3:
+        _log("[triplog] ⚠ 이미지가 한쪽에 몰려 있음 — 분포 확인 권장")
     updated_content = content_html
 
-    if not has_images:
-        _log("[triplog] 이미지 없음 → loremflickr 생성 중...")
+    if img_count_tl < 3:
+        need_tl = 3 - img_count_tl
+        _log(f"[triplog] 이미지 {img_count_tl}개 < 3개 → {need_tl}개 생성 중...")
         slug = re.sub(r'[^\w가-힣]', '-', title.strip()).strip('-')[:40]
-        for i in range(1, 3):
+        for i in range(1, need_tl + 1):
             fp = _make_image(title, f"{slug}-img{i}.jpg", blog_id="triplog", title=title if i == 1 else "")
             if fp:
                 img_url, _ = _wp_upload_image_with_id(TRIPLOG_URL, auth, fp, alt=title, on_log=_log)
@@ -1693,6 +1733,20 @@ def publish_naver_draft(blog_id="salim1su") -> bool:
                 _log(f"[{blog_id}] ⚠ 이미지 보충 후에도 {image_count}개 < 3개 — 발행 스킵")
                 _notify_issue(blog_id, naver_title, [f"이미지 {image_count}개 < 최소 3개 (자동 보충 실패)"])
                 return False
+
+        # 이미지 위치 분포 체크 (Naver: JS로 이미지 위치 확인)
+        if image_count >= 3:
+            img_positions = page.evaluate("""() => {
+                const imgs = [...document.querySelectorAll('img')];
+                const total = document.body.scrollHeight || 1;
+                return imgs.map(img => img.getBoundingClientRect().top + window.scrollY);
+            }""")
+            if img_positions and len(img_positions) >= 2:
+                page_height = page.evaluate("() => document.body.scrollHeight || 1")
+                first_r = img_positions[0] / page_height
+                last_r = img_positions[-1] / page_height
+                if first_r > 0.8 or last_r < 0.2 or (last_r - first_r) < 0.2:
+                    _log(f"[{blog_id}] ⚠ 이미지가 한쪽에 몰려 있음 — 분포 확인 권장")
 
         # 에디터 텍스트에서도 품질 검수 (마커 잔재 등)
         naver_text = page.evaluate("() => document.body.innerText || ''")
