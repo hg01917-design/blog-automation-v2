@@ -1,8 +1,12 @@
 """블로그 로그인/로그아웃 자동화 — CDP + Playwright (완전 자동, 사람 개입 없음)"""
 import time
 import random
+import os
+from dotenv import load_dotenv
 from browser import connect_cdp, get_or_create_page
 from config import ACCOUNT_MAP
+
+load_dotenv()
 
 TISTORY_URL = "https://www.tistory.com"
 TISTORY_LOGIN_URL = "https://www.tistory.com/auth/login"
@@ -364,7 +368,7 @@ def login_naver(naver_id=None, on_log=None, page=None):
                     log(f"[2/4] 로그아웃 재시도 중 오류: {e}")
 
                 if not selected:
-                    # 최후 수단: ID 직접 타이핑 + Chrome 자동완성 비밀번호 사용
+                    # 최후 수단: ID 직접 타이핑 + .env 비밀번호 또는 Chrome 자동완성
                     log(f"[2/4] 로그아웃 후에도 드롭다운에서 '{naver_id}' 못 찾음 — ID 직접 타이핑 시도")
                     try:
                         id_input2 = page.locator('#id')
@@ -373,9 +377,20 @@ def login_naver(naver_id=None, on_log=None, page=None):
                         _rand_delay(page, 300, 500)
                         id_input2.fill(naver_id)
                         _rand_delay(page, 500, 800)
-                        # 키보드 Tab으로 비밀번호 필드 이동 — Chrome 자동완성 트리거
-                        page.keyboard.press("Tab")
-                        _rand_delay(page, 800, 1200)
+                        # .env에 비밀번호가 있으면 직접 입력, 없으면 Tab으로 Chrome 자동완성 트리거
+                        env_key = f"NAVER_{naver_id.upper()}_PW"
+                        naver_pw = os.getenv(env_key)
+                        if naver_pw:
+                            pw_input2 = page.locator('#pw')
+                            pw_input2.wait_for(state="visible", timeout=5000)
+                            pw_input2.click(timeout=3000)
+                            _rand_delay(page, 300, 500)
+                            pw_input2.fill(naver_pw)
+                            log(f"[2/4] .env에서 비밀번호 입력 완료 ({env_key})")
+                        else:
+                            # 키보드 Tab으로 비밀번호 필드 이동 — Chrome 자동완성 트리거
+                            page.keyboard.press("Tab")
+                            _rand_delay(page, 800, 1200)
                         log(f"[2/4] ID 직접 입력 완료: {naver_id}")
                         selected = True
                     except Exception as e:
