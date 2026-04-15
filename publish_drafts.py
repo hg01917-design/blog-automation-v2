@@ -1492,13 +1492,15 @@ def _naver_check_editor_content(page) -> dict:
     """Naver Smart Editor 콘텐츠 확인."""
     result = page.evaluate("""() => {
         const content = document.body.innerText || '';
-        const hasImages = !!document.querySelector(
+        const imgEls = document.querySelectorAll(
             '.se-image-resource, .se-module-image, img[src*="blogfiles"], img[src*="postfiles"]'
         );
+        const imageCount = imgEls.length;
+        const hasImages = imageCount > 0;
         const hasAdsense = content.includes('애드센스') || content.includes('adsbygoogle');
         const titleEl = document.querySelector('.se-documentTitle .se-text-paragraph, #title');
         const title = titleEl ? titleEl.innerText : '';
-        return { hasImages, hasAdsense, title, length: content.length };
+        return { hasImages, imageCount, hasAdsense, title, length: content.length };
     }""")
     return result or {}
 
@@ -1653,7 +1655,14 @@ def publish_naver_draft(blog_id="salim1su") -> bool:
         info = _naver_check_editor_content(page)
         naver_title = info.get('title', '')
         _log(f"[{blog_id}] 제목: {naver_title}")
-        _log(f"[{blog_id}] 이미지: {info.get('hasImages')}, 글자수: {info.get('length','?')}")
+        image_count = info.get('imageCount', 0)
+        _log(f"[{blog_id}] 이미지: {image_count}개, 글자수: {info.get('length','?')}")
+
+        # 네이버 이미지 수 체크 (최소 3개 — Gemini 전용 규칙)
+        if image_count < 3:
+            _log(f"[{blog_id}] ⚠ 이미지 {image_count}개 < 3개 — 발행 스킵 (이미지 부족)")
+            _notify_issue(blog_id, naver_title, [f"이미지 {image_count}개 < 최소 3개 (Naver Gemini 전용 규칙)"])
+            return False
 
         # 에디터 텍스트에서도 품질 검수 (마커 잔재 등)
         naver_text = page.evaluate("() => document.body.innerText || ''")
