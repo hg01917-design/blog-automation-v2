@@ -201,8 +201,21 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
                     # 짧은 장소명(서울, 인천, 부산 등) 또는 키워드가 길면
                     # 2번째 핵심어도 일치해야 중복으로 판정
                     # 예: "서울 김포공항" vs "서울 인천공항" → 2번째가 다르면 중복 X
+
+                    # 기존 키워드가 1단어(예: '부산 여행 코스' → core=['부산'])이고
+                    # 현재 키워드가 더 구체적(2단어 이상)이면 중복 아님
+                    # 예: '부산 김해공항 리무진버스' vs '부산 여행 코스'(core=['부산']) → 중복 X
+                    if len(ek_core) < 2 and len(core_words) >= 2:
+                        continue
+
                     if len(ek_core) >= 2 and len(core_words) >= 2 and core_words[1] != ek_core[1]:
                         continue  # 2번째 핵심어 다름 → 중복 아님
+
+                    # 기존 키워드가 2단어이고 현재 키워드가 3단어 이상이면 더 구체적 → 중복 아님
+                    # 예: '서울 제주공항'(ek_core 2개) vs '서울 제주공항 리무진버스'(3개) → 중복 X
+                    if len(ek_core) == 2 and len(core_words) >= 3:
+                        continue
+
                     # 3번째 핵심어까지 있으면 추가 비교
                     # 예: "서울 김포공항 요금" vs "서울 김포공항 시간표" → 3번째가 다르면 중복 X
                     if len(core_words) >= 3 and len(ek_core) >= 3 and core_words[2] != ek_core[2]:
