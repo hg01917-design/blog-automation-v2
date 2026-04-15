@@ -512,7 +512,7 @@ def update_product_price(page, product_no, new_price):
         ).first
 
         price_input.wait_for(state="visible", timeout=8000)
-        price_input.triple_click()
+        price_input.click(click_count=3)
         _rand_delay(page, 300, 500)
         price_input.fill(str(new_price))
         _rand_delay(page, 500, 800)

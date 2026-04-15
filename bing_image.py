@@ -36,14 +36,15 @@ def _save_used_oig(oig_id: str):
     _USED_OIG_FILE.write_text(json.dumps(used_list))
 
 def _extract_oig_id(url: str) -> str:
-    """URL에서 OIG ID 추출. blob URL은 쿼리스트링 제거(토큰이 매 세션 변경되므로).
-    예: OIG2.abc123 / blob.core.windows.net/path (쿼리 제거)
+    """URL에서 OIG ID 추출. OIG ID가 없는 blob URL은 쿼리스트링 제거.
+    예: OIG2.abc123 (th.bing.com URL도 OIG ID 우선 추출)
     """
+    # OIG ID가 있으면 항상 우선 추출 (th.bing.com 포함)
     m = re.search(r'(OIG[\w.]+)', url)
     if m:
         return m.group(1)
-    # blob/th.bing URL: 토큰이 매 세션 바뀌므로 경로만 사용
-    if 'blob.core.windows.net' in url or 'th.bing.com' in url:
+    # OIG ID 없는 blob URL: 인증 토큰이 매 세션 바뀌므로 경로만 사용
+    if 'blob.core.windows.net' in url:
         return url.split('?')[0]
     return url
 

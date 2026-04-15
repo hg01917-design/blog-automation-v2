@@ -153,7 +153,7 @@ def main():
     msg += "\n".join(all_issues)
 
     print(msg)
-    send_telegram(msg)
+    # 텔레그램 보고는 Claude Code(MCP)가 담당 — 봇 직접 전송 제거
 
 
 if __name__ == "__main__":

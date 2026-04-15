@@ -1,0 +1,52 @@
+{
+  "planwithme": {
+    "date": "2026-04-11",
+    "comment_ok": true,
+    "neighbor_ok": false
+  },
+  "cash_victo": {
+    "date": "2026-04-11",
+    "comment_ok": false,
+    "neighbor_ok": false
+  },
+  "joiie": {
+    "date": "2026-04-11",
+    "comment_ok": true,
+    "neighbor_ok": false
+  },
+  "bokdaeng_living": {
+    "date": "2026-04-11",
+    "comment_ok": true,
+    "neighbor_ok": false
+  },
+  "dailyw": {
+    "date": "2026-04-11",
+    "comment_ok": true,
+    "neighbor_ok": false
+  },
+  "MyBlog": {
+    "date": "2026-04-16",
+    "comment_ok": false,
+    "neighbor_ok": false
+  },
+  "serom200": {
+    "date": "2026-04-16",
+    "comment_ok": true,
+    "neighbor_ok": false
+  },
+  "mine": {
+    "date": "2026-04-16",
+    "comment_ok": false,
+    "neighbor_ok": true
+  },
+  "naemamdearoao": {
+    "date": "2026-04-16",
+    "comment_ok": true,
+    "neighbor_ok": false
+  },
+  "home_kzhz": {
+    "date": "2026-04-16",
+    "comment_ok": true,
+    "neighbor_ok": false
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "seon0425": {
+    "date": "2026-04-13",
+    "comment_ok": false,
+    "neighbor_ok": true
+  },
+  "hyun4236": {
+    "date": "2026-04-13",
+    "comment_ok": false,
+    "neighbor_ok": true
+  },
+  "reviewking2": {
+    "date": "2026-04-13",
+    "comment_ok": false,
+    "neighbor_ok": false
+  },
+  "daily_review99": {
+    "date": "2026-04-13",
+    "comment_ok": false,
+    "neighbor_ok": false
+  },
+  "coupang_jjang": {
+    "date": "2026-04-13",
+    "comment_ok": false,
+    "neighbor_ok": false
+  },
+  "lifewithitem": {
+    "date": "2026-04-15",
+    "comment_ok": false,
+    "neighbor_ok": false
+  },
+  "happyhome24": {
+    "date": "2026-04-15",
+    "comment_ok": false,
+    "neighbor_ok": false
+  },
+  "bestbuy_kr": {
+    "date": "2026-04-15",
+    "comment_ok": false,
+    "neighbor_ok": false
+  },
+  "MyBlog": {
+    "date": "2026-04-15",
+    "comment_ok": false,
+    "neighbor_ok": false
+  },
+  "chslovecat": {
+    "date": "2026-04-15",
+    "comment_ok": true,
+    "neighbor_ok": false
+  }
+}
