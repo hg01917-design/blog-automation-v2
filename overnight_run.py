@@ -1042,12 +1042,20 @@ def _post_one_blog_inner(blog_id):
     from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as _db_set
 
     # 최소 포스팅 간격 체크 (같은 블로그 3시간 이상 텀)
-    # nolja100/triplog는 여행 블로그 그룹 — 하나가 발행되면 둘 다 대기
+    # nolja100/triplog: 각자 타이머 사용 + 상대방이 4시간 이내 발행했으면 대기
     TRAVEL_GROUP = {"nolja100", "triplog"}
+    elapsed = _hours_since_last_post(blog_id)
     if blog_id in TRAVEL_GROUP:
-        elapsed = min(_hours_since_last_post(b) for b in TRAVEL_GROUP)
-    else:
-        elapsed = _hours_since_last_post(blog_id)
+        other_elapsed = min(
+            (_hours_since_last_post(b) for b in TRAVEL_GROUP if b != blog_id),
+            default=999
+        )
+        if other_elapsed < 4:
+            # 상대 여행 블로그가 4시간 이내 발행 → 두 블로그 모두 포화 방지
+            effective_elapsed = min(elapsed, other_elapsed)
+            if effective_elapsed < MIN_POST_GAP_HOURS:
+                log(f"[{blog_id}] 여행그룹 쿨다운 (상대 {other_elapsed:.1f}h 전 발행) — 스킵")
+                return False
     if elapsed < MIN_POST_GAP_HOURS:
         log(f"[{blog_id}] 마지막 포스팅 {elapsed:.1f}시간 전 — 최소 {MIN_POST_GAP_HOURS}시간 필요, 스킵")
         return False
