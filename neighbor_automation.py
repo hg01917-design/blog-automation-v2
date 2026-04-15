@@ -322,47 +322,80 @@ def do_neighbor(page, blog_id, blog_name, keyword, post_title="", body_snippet="
             break
         time.sleep(0.5)
 
-    if not src_frame:
-        print("  이웃추가 버튼이 있는 프레임 없음")
-        return False
+    # 팝업 열기: 프레임 버튼 클릭 OR 직접 URL 이동 (폴백)
+    buddy_page = None
 
-    print(f"  프레임: {src_frame.url[:60]}")
+    if src_frame:
+        print(f"  프레임: {src_frame.url[:60]}")
+        try:
+            with page.expect_popup(timeout=10000) as popup_info:
+                src_frame.locator('a._addBuddyPop').first.click(timeout=8000)
+            buddy_page = popup_info.value
+            buddy_page.wait_for_load_state('domcontentloaded', timeout=10000)
+        except Exception as e:
+            print(f"  팝업 클릭 실패: {e}")
+            # context.pages 에서 BuddyAdd 찾기
+            for p in page.context.pages:
+                if 'BuddyAdd' in p.url:
+                    buddy_page = p
+                    break
+    else:
+        print("  이웃추가 버튼 프레임 없음 → 직접 URL 시도")
 
-    # _addBuddyPop 클릭 → 팝업 감지 (expect_popup 방식)
-    try:
-        with page.expect_popup(timeout=10000) as popup_info:
-            src_frame.locator('a._addBuddyPop').first.click(timeout=8000)
-        buddy_page = popup_info.value
-        buddy_page.wait_for_load_state('domcontentloaded', timeout=10000)
-    except Exception as e:
-        print(f"  팝업 감지 실패: {e}")
-        # 폴백: context.pages 에서 BuddyAdd 찾기
-        buddy_page = None
-        for p in page.context.pages:
-            if 'BuddyAdd' in p.url:
-                buddy_page = p
-                break
+    # 직접 URL 폴백: 프레임 버튼으로 못 열었을 때
+    if not buddy_page:
+        try:
+            with page.expect_popup(timeout=8000) as popup_info:
+                page.evaluate(f"""() => {{
+                    window.open('https://buddy.naver.com/BuddyAdd.nhn?blogId={blog_id}',
+                        'BuddyAdd', 'width=430,height=580');
+                }}""")
+            buddy_page = popup_info.value
+            buddy_page.wait_for_load_state('domcontentloaded', timeout=10000)
+            print("  직접 URL로 BuddyAdd 열기 성공")
+        except Exception as e2:
+            print(f"  직접 URL도 실패: {e2}")
 
     if not buddy_page:
-        print("  BuddyAdd 페이지 없음")
+        print("  BuddyAdd 페이지 열기 불가 — 스킵")
         return False
 
     buddy_page.wait_for_load_state('domcontentloaded')
     time.sleep(2)
 
-    # Step 1: 서로이웃 선택 → 다음 (disabled이면 이웃으로 폴백)
+    # 페이지 상태 확인 (이미 이웃인지, 로그인 필요한지)
+    page_text = buddy_page.evaluate("() => document.body.innerText") or ""
+    if "이미" in page_text and "이웃" in page_text:
+        print(f"  이미 이웃 상태 — 스킵")
+        buddy_page.close()
+        return False
+    if "로그인" in page_text:
+        print(f"  로그인 필요 — 스킵")
+        buddy_page.close()
+        return False
+
+    # Step 1: 서로이웃 선택 → 다음
     each_label = buddy_page.locator('label[for="each_buddy_add"]')
     each_radio = buddy_page.locator('#each_buddy_add')
-    is_disabled = each_radio.count() > 0 and each_radio.first.is_disabled()
-    if not is_disabled:
-        each_label.click()
+    if each_label.count() > 0:
+        is_disabled = each_radio.count() > 0 and each_radio.first.is_disabled()
+        if not is_disabled:
+            each_label.click()
+        else:
+            print("  서로이웃 disabled — 이웃으로 신청")
     else:
-        print("  서로이웃 disabled — 이웃으로 신청")
+        print("  서로이웃 선택 UI 없음 — 기본 진행")
+
     time.sleep(0.3)
-    buddy_page.locator('a._buddyAddNext').click()
+    next_btn = buddy_page.locator('a._buddyAddNext')
+    if next_btn.count() == 0:
+        print("  다음 버튼 없음")
+        buddy_page.close()
+        return False
+    next_btn.click()
     time.sleep(3)
 
-    # Step 2: 메시지 입력 → 다음
+    # Step 2: 메시지 입력 → 신청
     ta = buddy_page.locator('textarea#message')
     if ta.count() == 0:
         print("  메시지 textarea 없음")
@@ -371,7 +404,12 @@ def do_neighbor(page, blog_id, blog_name, keyword, post_title="", body_snippet="
     ta.first.fill(msg)
     time.sleep(0.5)
 
-    buddy_page.locator('a._addBothBuddy').click()
+    submit_btn = buddy_page.locator('a._addBothBuddy')
+    if submit_btn.count() == 0:
+        print("  신청 버튼 없음")
+        buddy_page.close()
+        return False
+    submit_btn.click()
     time.sleep(3)
 
     # 완료 확인
@@ -422,13 +460,14 @@ try:
     discovered_blogs = load_discovered()
     all_blogs = target_list + [b for b in discovered_blogs if b['blog_id'] not in {x['blog_id'] for x in target_list}]
 
-    # 모든 블로그 처리 전에 발굴 부족하면 먼저 발굴
+    # 발굴 조건: done=True 제외하고 미방문 남은 개수로 판단
     if today_count < DAILY_LIMIT:
-        remaining = [b for b in all_blogs if b['blog_id'] not in visited]
+        remaining = [b for b in all_blogs if not b.get('done') and b['blog_id'] not in visited]
         if len(remaining) < (DAILY_LIMIT - today_count) * 2:
-            print("[발굴] 후보 부족 — 새 블로그 탐색 중...")
+            print(f"[발굴] 미방문 후보 {len(remaining)}개 → 새 블로그 탐색 중...")
             discover_blogs(page, count=30)
-            all_blogs = target_list + [b for b in load_discovered() if b['blog_id'] not in {x['blog_id'] for x in target_list}]
+            discovered_blogs = load_discovered()
+            all_blogs = target_list + [b for b in discovered_blogs if b['blog_id'] not in {x['blog_id'] for x in target_list}]
 
     for blog in all_blogs:
         if today_count >= DAILY_LIMIT:
