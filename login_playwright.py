@@ -369,7 +369,7 @@ def login_naver(naver_id=None, on_log=None, page=None):
                     try:
                         id_input2 = page.locator('#id')
                         id_input2.wait_for(state="visible", timeout=5000)
-                        id_input2.triple_click(timeout=3000)
+                        id_input2.click(click_count=3, timeout=3000)
                         _rand_delay(page, 300, 500)
                         id_input2.fill(naver_id)
                         _rand_delay(page, 500, 800)
