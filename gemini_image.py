@@ -168,7 +168,7 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False, reference_i
     pw, browser = _connect_cdp(on_log)
 
     try:
-        is_first = True  # 블로그당 첫 이미지만 새 채팅, 나머지는 같은 창 유지
+        # 항상 새 채팅 시작 — 두 번째 이미지부터 "이미지 만들기" 버튼 누락 방지
         for info in image_infos:
             idx = info["index"]
             prompt = info["prompt"]
@@ -196,11 +196,10 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False, reference_i
                 filepath = _generate_single(
                     browser, prompt, filename, on_log,
                     skip_webp=skip_webp,
-                    open_new_chat=is_first,
+                    open_new_chat=True,   # 매 이미지마다 새 채팅 (안정성 우선)
                     reference_image=ref_img,
                     save_dir=save_dir,
                 )
-                is_first = False
                 if filepath:
                     results[idx] = filepath
                     log(f"[이미지 {idx}] 저장 완료: {filepath}")
@@ -556,15 +555,84 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
             img = Image.open(io.BytesIO(body))
             w, h = img.size
             log(f"[이미지] 네트워크 이미지 크기: {w}x{h}, {len(body)//1024}KB")
+            # 워터마크 제거: 하단 10% 크롭
+            cropped = img.crop((0, 0, w, int(h * 0.90)))
             if skip_webp:
-                img.convert("RGB").save(str(final_path), "JPEG", quality=90)
+                cropped.convert("RGB").save(str(final_path), "JPEG", quality=90)
                 log(f"[이미지] JPG 저장 완료: {final_path.name}")
             else:
-                img.convert("RGB").save(str(final_path), "WEBP", quality=85)
+                cropped.convert("RGB").save(str(final_path), "WEBP", quality=85)
                 log(f"[이미지] WEBP 저장 완료: {final_path.name}")
             saved = True
         except Exception as e:
             log(f"[이미지] 네트워크 이미지 저장 실패: {e}")
+
+    # ── 1.5차: Gemini 다운로드 버튼 방식 (네트워크 캡처 실패 시) ──
+    if not saved:
+        log("[이미지] 다운로드 버튼 방식 시도...")
+        try:
+            # 생성된 이미지 요소 찾기
+            img_el = page.locator(
+                'model-response img:not(.user-icon), '
+                '.response-container img:not(.user-icon)'
+            ).last
+            if img_el.is_visible(timeout=5000):
+                # 이미지 hover → 다운로드 버튼 표시
+                img_el.hover()
+                page.wait_for_timeout(800)
+                dl_btn = page.locator(
+                    'button[aria-label*="다운로드"], button[aria-label*="Download"], '
+                    'button[aria-label*="download"], [data-tooltip*="다운로드"], '
+                    '[data-tooltip*="Download"]'
+                ).first
+                if dl_btn.is_visible(timeout=3000):
+                    with page.expect_download(timeout=30000) as dl_info:
+                        dl_btn.click()
+                    dl = dl_info.value
+                    temp_dl_path = _save_dir / f"temp_dl_{filename}"
+                    dl.save_as(str(temp_dl_path))
+                    # 워터마크 제거 후 저장
+                    dl_img = Image.open(str(temp_dl_path))
+                    dw, dh = dl_img.size
+                    cropped_dl = dl_img.crop((0, 0, dw, int(dh * 0.90)))
+                    if skip_webp:
+                        cropped_dl.convert("RGB").save(str(final_path), "JPEG", quality=90)
+                    else:
+                        cropped_dl.convert("RGB").save(str(final_path), "WEBP", quality=85)
+                    Path(str(temp_dl_path)).unlink(missing_ok=True)
+                    saved = True
+                    log(f"[이미지] 다운로드 방식 저장 완료: {final_path.name} ({dw}x{dh})")
+                else:
+                    log("[이미지] 다운로드 버튼 미발견 — 이미지 클릭 후 dialog에서 재시도")
+                    # 이미지 클릭으로 확대 뷰 열기
+                    img_el.click()
+                    page.wait_for_timeout(2000)
+                    dl_btn2 = page.locator(
+                        '[role="dialog"] button[aria-label*="다운로드"], '
+                        '[role="dialog"] button[aria-label*="Download"]'
+                    ).first
+                    if dl_btn2.is_visible(timeout=3000):
+                        with page.expect_download(timeout=30000) as dl_info2:
+                            dl_btn2.click()
+                        dl2 = dl_info2.value
+                        temp_dl_path2 = _save_dir / f"temp_dl2_{filename}"
+                        dl2.save_as(str(temp_dl_path2))
+                        dl_img2 = Image.open(str(temp_dl_path2))
+                        dw2, dh2 = dl_img2.size
+                        cropped_dl2 = dl_img2.crop((0, 0, dw2, int(dh2 * 0.90)))
+                        if skip_webp:
+                            cropped_dl2.convert("RGB").save(str(final_path), "JPEG", quality=90)
+                        else:
+                            cropped_dl2.convert("RGB").save(str(final_path), "WEBP", quality=85)
+                        Path(str(temp_dl_path2)).unlink(missing_ok=True)
+                        saved = True
+                        log(f"[이미지] 다운로드(dialog) 방식 저장 완료: {final_path.name}")
+                    try:
+                        page.keyboard.press("Escape")
+                    except Exception:
+                        pass
+        except Exception as e:
+            log(f"[이미지] 다운로드 버튼 방식 실패: {e}")
 
     # ── 2차 폴백: DOM canvas 추출 (네트워크 캡처 실패 시) ──
     if not saved:

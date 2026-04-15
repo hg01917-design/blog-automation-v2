@@ -364,7 +364,25 @@ def login_naver(naver_id=None, on_log=None, page=None):
                     log(f"[2/4] 로그아웃 재시도 중 오류: {e}")
 
                 if not selected:
-                    log(f"[2/4] 로그아웃 후에도 '{naver_id}' 찾지 못함 — 로그인 중단")
+                    # 최후 수단: ID 직접 타이핑 + Chrome 자동완성 비밀번호 사용
+                    log(f"[2/4] 로그아웃 후에도 드롭다운에서 '{naver_id}' 못 찾음 — ID 직접 타이핑 시도")
+                    try:
+                        id_input2 = page.locator('#id')
+                        id_input2.wait_for(state="visible", timeout=5000)
+                        id_input2.triple_click(timeout=3000)
+                        _rand_delay(page, 300, 500)
+                        id_input2.fill(naver_id)
+                        _rand_delay(page, 500, 800)
+                        # 키보드 Tab으로 비밀번호 필드 이동 — Chrome 자동완성 트리거
+                        page.keyboard.press("Tab")
+                        _rand_delay(page, 800, 1200)
+                        log(f"[2/4] ID 직접 입력 완료: {naver_id}")
+                        selected = True
+                    except Exception as e:
+                        log(f"[2/4] ID 직접 타이핑 실패: {e}")
+
+                if not selected:
+                    log(f"[2/4] 모든 계정 선택 방법 실패 — 로그인 중단")
                     return False
 
         # 로그인 시도 (최대 2회 — 첫 번째 시도 후 네이버가 오류 페이지를 띄울 수 있음)

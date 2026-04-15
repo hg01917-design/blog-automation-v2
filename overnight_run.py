@@ -854,7 +854,8 @@ def _run_image_and_post(blog_id, keyword, title, body, tags, images):
         log(f"[파이프라인] 본문 이미지 {len(image_paths)}개 생성 완료")
 
     # 본문 이미지 부족 시 Pollinations 폴백 (영문 프롬프트 사용)
-    if len(image_paths) < MIN_IMAGES:
+    # 네이버 블로그(salim1su, me1091)는 Gemini 전용 — Pollinations 절대 사용 금지
+    if len(image_paths) < MIN_IMAGES and blog_id not in ("salim1su", "me1091"):
         log(f"[파이프라인] ⚠ 이미지 {len(image_paths)}개 < 최소 {MIN_IMAGES}개 — Pollinations 폴백 보충")
         from image_router import _pollinations_image, _enhance_prompt, _get_prompt_style, IMAGES_DIR as _IMG_DIR
         _blog_img_dir = _IMG_DIR / blog_id
