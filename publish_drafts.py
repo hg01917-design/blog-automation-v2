@@ -39,6 +39,7 @@ from poster import (
     _wp_urlopen,
     _wp_upload_image_with_id,
     _get_salim_category,
+    _naver_upload_image,
 )
 
 IMAGES_DIR = Path(__file__).parent / "images"
@@ -1660,9 +1661,38 @@ def publish_naver_draft(blog_id="salim1su") -> bool:
 
         # 네이버 이미지 수 체크 (최소 3개 — Gemini 전용 규칙)
         if image_count < 3:
-            _log(f"[{blog_id}] ⚠ 이미지 {image_count}개 < 3개 — 발행 스킵 (이미지 부족)")
-            _notify_issue(blog_id, naver_title, [f"이미지 {image_count}개 < 최소 3개 (Naver Gemini 전용 규칙)"])
-            return False
+            _log(f"[{blog_id}] ⚠ 이미지 {image_count}개 < 3개 — 로컬 이미지로 자동 보충 시도")
+            # images/{blog_id}/ 폴더에서 fallback이 아닌 최근 Gemini 이미지 보충
+            blog_img_dir = IMAGES_DIR / blog_id
+            need = 3 - image_count
+            candidates = sorted(
+                [f for f in blog_img_dir.glob("*.jpg") if "fallback" not in f.name and "thumb" not in f.name],
+                key=lambda f: f.stat().st_mtime, reverse=True
+            )
+            # 이미 에디터에 있는 이미지와 겹치지 않는 최근 파일 선택
+            added = 0
+            for cand in candidates:
+                if added >= need:
+                    break
+                try:
+                    ok = _naver_upload_image(page, str(cand), _log, alt=naver_title)
+                    if ok:
+                        _log(f"[{blog_id}] 이미지 자동 추가: {cand.name}")
+                        added += 1
+                        time.sleep(2)
+                except Exception as _e:
+                    _log(f"[{blog_id}] 이미지 추가 실패: {_e}")
+
+            if added > 0:
+                time.sleep(2)
+                info = _naver_check_editor_content(page)
+                image_count = info.get('imageCount', 0)
+                _log(f"[{blog_id}] 보충 후 이미지: {image_count}개")
+
+            if image_count < 3:
+                _log(f"[{blog_id}] ⚠ 이미지 보충 후에도 {image_count}개 < 3개 — 발행 스킵")
+                _notify_issue(blog_id, naver_title, [f"이미지 {image_count}개 < 최소 3개 (자동 보충 실패)"])
+                return False
 
         # 에디터 텍스트에서도 품질 검수 (마커 잔재 등)
         naver_text = page.evaluate("() => document.body.innerText || ''")
