@@ -222,11 +222,12 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
                         continue  # 3번째 핵심어 다름 → 중복 아님
                 _log(f"[유사문서] ⚠ DB 메인키워드 중복: '{ek}' (메인: '{main_kw}')")
                 return True, ek
-            # ② 핵심 단어 절반 이상 겹치면 중복
+            # ② 핵심 단어 겹침 체크 (교통 키워드 오탐 방지: 최소 3개 & 60% 이상)
+            # 예: '대구공항 리무진버스 시간표 요금' vs '서울 대구공항 시간표' → 겹침 2개만으로 차단 X
             ek_core_set = set(ek_core)
             kw_core = set(core_words)
             overlap = ek_core_set & kw_core
-            if len(overlap) >= max(2, len(kw_core) * 0.5):
+            if len(overlap) >= max(3, len(kw_core) * 0.6):
                 _log(f"[유사문서] ⚠ DB 중복 키워드: '{ek}' (겹침: {overlap})")
                 return True, ek
     except Exception as e:
