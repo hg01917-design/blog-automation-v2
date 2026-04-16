@@ -185,7 +185,7 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
         with _conn() as db:
             rows = db.execute(
                 """SELECT keyword FROM keyword_blog_status
-                   WHERE blog_id = ? AND status IN ('published', 'draft_saved', 'in_progress', 'failed')
+                   WHERE blog_id = ? AND status IN ('published', 'draft_saved', 'in_progress')
                    AND keyword != ?""",
                 (blog_id, keyword),
             ).fetchall()
