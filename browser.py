@@ -130,12 +130,8 @@ def connect_cdp(on_log=None):
 
 
 def _apply_stealth(page):
-    """Playwright-stealth 적용 — 봇 감지 시그니처 숨기기"""
-    try:
-        from playwright_stealth import Stealth
-        Stealth().apply_stealth_sync(page)
-    except Exception:
-        pass
+    """실제 Chrome CDP 연결에서는 stealth 불필요 — 스킵"""
+    pass  # CDP(실제 Chrome) 사용 시 playwright-stealth가 greenlet 오류 유발하여 제거
 
 
 def get_or_create_page(browser, url_contains=None, navigate_to=None):

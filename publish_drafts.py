@@ -590,9 +590,6 @@ def _claude_repair_draft(content: str, title: str, issues: list, blog_id: str) -
         return None
     finally:
         pass  # (no temp files to clean up)
-                os.unlink(f)
-            except Exception:
-                pass
 
 
 # ══════════════════════════════════════════════
@@ -1290,7 +1287,14 @@ def publish_tistory_draft(blog_id: str) -> bool:
                         "산책", "데이트", "야경", "포토스팟", "제주", "강릉", "경주", "강원",
                         "주차장", "셔틀", "입장료", "DMZ", "평화생명", "군항제", "살림",
                         "세탁", "청소", "요리", "냄새", "수납", "세제", "주방"]
-            if title_val and any(kw in title_val for kw in BLOCK_KW):
+            # IT+금융 키워드 있으면 BLOCK_KW보다 우선 통과
+            ALLOW_KW = ["카드", "대출", "금리", "보험", "세금", "환율", "수수료", "은행",
+                        "투자", "주식", "펀드", "연금", "적금", "예금", "신용", "캐시백",
+                        "포인트", "리워드", "할인혜택", "스마트폰", "AI", "IT", "앱",
+                        "프로그램", "소프트웨어", "노트북", "인터넷", "보안", "클라우드",
+                        "정부지원", "복지", "청년", "지원금", "보조금", "신청방법"]
+            is_finance_it = any(kw in title_val for kw in ALLOW_KW)
+            if title_val and not is_finance_it and any(kw in title_val for kw in BLOCK_KW):
                 _log(f"[goodisak] ⛔ IT+금융 주제 아님 (제목: {title_val[:40]}) → 스킵 (임시저장 삭제)")
                 try:
                     page.evaluate("""() => {
@@ -1959,6 +1963,20 @@ if __name__ == "__main__":
                 _log(f"[{blog_id}] 간격 미충족 — {remain//3600}시간 {(remain%3600)//60}분 후 재시도 가능, 스킵")
                 round_results[blog_id] = None
                 continue
+
+            # Playwright 이전 프로세스 완전 종료 대기 (블로그 간 CDP 충돌 방지)
+            import subprocess as _sp2, signal as _sig
+            _stale = [p for p in _sp2.run(
+                ["pgrep", "-f", "playwright/driver/node"],
+                capture_output=True, text=True
+            ).stdout.strip().split("\n") if p.strip()]
+            for _pid in _stale:
+                try:
+                    os.kill(int(_pid), _sig.SIGTERM)
+                except Exception:
+                    pass
+            if _stale:
+                time.sleep(3)
 
             if blog_id == "baremi542":
                 ok = publish_wp_draft()
