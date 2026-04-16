@@ -1938,12 +1938,15 @@ def _md_to_wp_html(content: str) -> str:
             html_parts.append(_get_adsense_html())
         elif re.match(r"^\{\{이미지\d+\}\}$", stripped):
             html_parts.append(stripped)  # 이미지 플레이스홀더 유지
-        elif re.match(r"^<(p|div|ul|ol|li|blockquote|pre|figure|img|script|ins|br|hr|table)\b",
+        elif re.match(r"^<h[2-6]\b", stripped, re.IGNORECASE):
+            # <h2>/<h3> 등 HTML 헤딩 태그 — 그대로 통과 (마크다운 ## 대신 HTML 생성 시)
+            html_parts.append(stripped)
+        elif re.match(r"^<(p|div|ul|ol|li|blockquote|pre|figure|img|script|ins|br|hr|table|strong|em)\b",
                       stripped, re.IGNORECASE):
             # 이미 HTML 블록 태그로 시작하는 줄 — 그대로 통과 (이중 래핑 방지)
             html_parts.append(stripped)
         else:
-            # 일반 텍스트 — stray HTML 태그 제거 후 <p> 래핑
+            # 일반 텍스트 — stray HTML 태그 제거 후 <p> 래핑 (inline 변환으로 **bold** 처리)
             clean = re.sub(r"<br\s*/?>", " ", stripped)
             clean = re.sub(r"<[^>]+>", "", clean).strip()
             if clean:

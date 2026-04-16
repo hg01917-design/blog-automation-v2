@@ -545,6 +545,25 @@ def _auto_repair_content(content: str, issues: list) -> tuple[str, list]:
             # 자동 수정 불가 이슈
             remaining.append(issue)
 
+    # ── 항상 적용: 마크다운 잔재 HTML 변환 ──────────────────────────────
+    # TinyMCE가 마크다운을 plain text로 저장했을 때 (<p>## 제목</p> 등)
+    import re as _re
+    # ## 제목 → <h2>
+    fixed = _re.sub(r'<p>(#{1,3})\s+(.+?)</p>', lambda m: f'<h{len(m.group(1))}>{m.group(2)}</h{len(m.group(1))}>', fixed)
+    # **텍스트** → <strong>
+    fixed = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', fixed)
+    # *텍스트* → <em>
+    fixed = _re.sub(r'\*([^*]+?)\*', r'<em>\1</em>', fixed)
+
+    # ── 항상 적용: "함께읽으면" / "pick flick" / 관련글 섹션 제거 ──────
+    # <p>함께 읽으면 좋은 글</p> 혹은 pick flick 포함 단락 제거
+    JUNK_PATTERNS = [
+        r'<[^>]+>[^<]*(?:함께.{0,5}읽으면|pick\s*flick|관련\s*글|관련글)[^<]*</[^>]+>',
+        r'<[^>]+>[^<]*픽\s*플릭[^<]*</[^>]+>',
+    ]
+    for _jp in JUNK_PATTERNS:
+        fixed = _re.sub(_jp, '', fixed, flags=_re.IGNORECASE)
+
     return fixed, remaining
 
 
@@ -581,8 +600,17 @@ def _claude_repair_draft(content: str, title: str, issues: list, blog_id: str) -
             _log(f"[{blog_id}] Claude 수정 응답 너무 짧음")
             return None
 
+        # **bold** → <strong>, ## heading → <h2> 변환 후 <p> 래핑
+        def _to_html_line(line: str) -> str:
+            h = re.match(r'^#{1,3}\s+(.+)$', line)
+            if h:
+                return f'<h2>{h.group(1).strip()}</h2>'
+            line = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', line)
+            line = re.sub(r'\*(.+?)\*', r'<em>\1</em>', line)
+            return f'<p>{line}</p>'
+
         paragraphs = [p.strip() for p in re.split(r'\n{2,}', repaired_raw) if p.strip()]
-        repaired_html = '\n'.join(f'<p>{p}</p>' for p in paragraphs)
+        repaired_html = '\n'.join(_to_html_line(p) for p in paragraphs)
         _log(f"[{blog_id}] Claude 수정 완료 ({len(repaired_html)}자)")
         return repaired_html
     except Exception as e:
@@ -1063,11 +1091,201 @@ def _tistory_publish_private(page, blog_id: str) -> bool:
         time.sleep(2)
         return False
 
-    # 4. 성공 확인 — 신버전 에디터는 publish 후에도 manage/newpost/#에 머뭄
-    time.sleep(2)
+    # 4. 성공 확인 — 캡챠/실패 시 URL이 newpost에 머물거나 캡챠 요소가 뜸
+    time.sleep(3)
     cur_url = page.url
     _log(f"[{blog_id}] 최종 URL: {cur_url}")
-    # URL이 변경됐으면 확실히 성공, 아니면 버튼 클릭 자체를 성공으로 간주
+
+    # 캡챠 감지 및 자동 풀기 (Claude API로 이미지 인식)
+    def _check_captcha():
+        return page.evaluate("""() => {
+            const txt = document.body.innerText || '';
+            if (txt.includes('캡챠') || txt.includes('captcha') ||
+                txt.includes('보안문자') || txt.includes('자동입력')) return true;
+            // iframe 캡챠 감지 (카카오 dkaptcha + reCAPTCHA)
+            const iframes = [...document.querySelectorAll('iframe')];
+            if (iframes.some(f => (f.src || '').includes('dkaptcha') ||
+                                  (f.src || '').includes('recaptcha') ||
+                                  (f.src || '').includes('captcha'))) return true;
+            if (document.querySelector('.g-recaptcha, #captcha, [data-sitekey]')) return true;
+            return false;
+        }""")
+
+    def _auto_solve_captcha():
+        """카카오 dkaptcha / 텍스트형 캡챠 → Claude API 인식 → 자동 입력."""
+        import base64, anthropic as _ant
+        try:
+            # 카카오 dkaptcha iframe 찾기
+            iframe_info = page.evaluate("""() => {
+                const f = [...document.querySelectorAll('iframe')]
+                    .find(f => (f.src||'').includes('dkaptcha') || (f.src||'').includes('captcha'));
+                if (!f) return null;
+                const r = f.getBoundingClientRect();
+                return {x: r.x, y: r.y, width: r.width, height: r.height, src: f.src};
+            }""")
+
+            if iframe_info and iframe_info['width'] > 0:
+                _log(f"[{blog_id}] 카카오 dkaptcha iframe 감지 — 스크린샷 캡처")
+                shot = page.screenshot(clip={
+                    'x': iframe_info['x'], 'y': iframe_info['y'],
+                    'width': iframe_info['width'], 'height': iframe_info['height']
+                })
+            else:
+                shot = page.screenshot()
+
+            img_b64 = base64.standard_b64encode(shot).decode()
+            client = _ant.Anthropic()
+            resp = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=50,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img_b64}},
+                        {"type": "text", "text": "이 캡챠 이미지를 분석해줘. 빈칸(__)에 들어갈 글자나 이미지에 보이는 텍스트를 정확히 출력해. 답만 출력하고 다른 말 하지 마."}
+                    ]
+                }]
+            )
+            captcha_text = resp.content[0].text.strip()
+            _log(f"[{blog_id}] 캡챠 인식 결과: '{captcha_text}'")
+
+            # 카카오 dkaptcha iframe 내부 입력창에 접근
+            filled = False
+            if iframe_info:
+                try:
+                    captcha_frame = None
+                    for f in page.frames:
+                        if 'dkaptcha' in f.url or 'captcha' in f.url:
+                            captcha_frame = f
+                            break
+                    if captcha_frame:
+                        inp = captcha_frame.query_selector('input[type=text], input:not([type])')
+                        if inp:
+                            inp.click()
+                            inp.fill(captcha_text)
+                            _log(f"[{blog_id}] dkaptcha 입력창에 입력 완료")
+                            time.sleep(0.5)
+                            # 확인 버튼 클릭
+                            btn = captcha_frame.query_selector('button[type=submit], button.confirm, button')
+                            if btn:
+                                btn.click()
+                                _log(f"[{blog_id}] dkaptcha 제출 버튼 클릭")
+                            filled = True
+                except Exception as _fe:
+                    _log(f"[{blog_id}] dkaptcha frame 접근 실패: {_fe}")
+
+            # 폴백: 메인 페이지에서 입력창 찾기
+            if not filled:
+                result = page.evaluate(f"""() => {{
+                    const sels = ['input#captcha','input.captcha','input[name*="captcha"]',
+                                  'input[placeholder*="입력"]','.captcha input','#captcha input'];
+                    for (const s of sels) {{
+                        const el = document.querySelector(s);
+                        if (el) {{
+                            el.focus(); el.value = {repr(captcha_text)};
+                            el.dispatchEvent(new Event('input', {{bubbles:true}}));
+                            el.dispatchEvent(new Event('change', {{bubbles:true}}));
+                            return s;
+                        }}
+                    }}
+                    return null;
+                }}""")
+                if result:
+                    filled = True
+                    time.sleep(0.5)
+                    page.evaluate("""() => {
+                        const btn = document.querySelector('button[type=submit],.captcha button,#captcha button');
+                        if (btn) btn.click();
+                    }""")
+
+            if not filled:
+                _log(f"[{blog_id}] ⚠ 캡챠 입력란 못 찾음")
+                return False
+
+            time.sleep(3)
+            return True
+        except Exception as _ce:
+            _log(f"[{blog_id}] 캡챠 자동풀기 오류: {_ce}")
+            return False
+
+    if _check_captcha():
+        _log(f"[{blog_id}] ⚠ 캡챠 감지 — 자동 풀기 시도")
+        solved = _auto_solve_captcha()
+        if solved and not _check_captcha():
+            _log(f"[{blog_id}] ✓ 캡챠 자동 해제 성공")
+        else:
+            # 자동 실패 → 텔레그램 알림 후 수동 대기
+            _log(f"[{blog_id}] ⚠ 캡챠 자동풀기 실패 — 텔레그램 알림 후 수동 대기")
+            import subprocess as _sp2
+            _sp2.run(
+                ["python3", "tg_send.py",
+                 f"⚠️ 캡챠 발생 (자동풀기 실패)\n블로그: {blog_id}\n작업: Tistory 발행\n\n직접 캡챠를 풀어주세요. 최대 5분 대기합니다."],
+                cwd=str(Path(__file__).parent), capture_output=True
+            )
+            captcha_solved = False
+            for _i in range(60):
+                time.sleep(5)
+                if not _check_captcha():
+                    _log(f"[{blog_id}] 캡챠 수동 해제 확인")
+                    captcha_solved = True
+                    break
+            if not captcha_solved:
+                _log(f"[{blog_id}] ⛔ 캡챠 5분 대기 초과 → 발행 실패")
+                return False
+
+        # 캡챠 해제 후 발행 버튼 다시 클릭
+        time.sleep(1)
+        confirmed2 = page.evaluate("""() => {
+            const labels = ['공개 발행', '발행하기', '발행', '확인', '게시'];
+            const btns = [...document.querySelectorAll('button')];
+            for (const lbl of labels) {
+                const btn = btns.find(b => b.textContent.trim() === lbl && !b.disabled);
+                if (btn) { btn.click(); return lbl; }
+            }
+            return null;
+        }""")
+        if confirmed2:
+            _log(f"[{blog_id}] 캡챠 해제 후 발행 재클릭: '{confirmed2}'")
+            time.sleep(4)
+        else:
+            _log(f"[{blog_id}] ⚠ 캡챠 해제 후 발행 버튼 못 찾음")
+        cur_url = page.url
+        _log(f"[{blog_id}] 캡챠 해제 후 URL: {cur_url}")
+
+    # newpost에 머물면 실패 가능성 있음 — RSS로 실제 확인
+    cur_url = page.url
+    if 'newpost' in cur_url:
+        import urllib.request as _ur, ssl as _ssl, re as _re
+        try:
+            blog_domain = BLOG_DOMAIN.get(blog_id, f"{blog_id}.tistory.com")
+            rss_url = f"https://{blog_domain}/rss"
+            _ctx = _ssl.create_default_context()
+            _ctx.check_hostname = False
+            _ctx.verify_mode = _ssl.CERT_NONE
+            _req = _ur.Request(rss_url, headers={"User-Agent": "Mozilla/5.0"})
+            _data = _ur.urlopen(_req, timeout=10, context=_ctx).read().decode('utf-8', errors='ignore')
+            # <item> 안의 pubDate만 추출 (채널 pubDate 오탐 방지)
+            import time as _t
+            from email.utils import parsedate_to_datetime
+            item_dates = _re.findall(r'<item>.*?<pubDate>(.*?)</pubDate>.*?</item>', _data, _re.DOTALL)
+            if item_dates:
+                try:
+                    latest = parsedate_to_datetime(item_dates[0])
+                    age = _t.time() - latest.timestamp()
+                    if age < 300:  # 5분 이내
+                        _log(f"[{blog_id}] ✓ RSS 확인: 최신 글 {int(age)}초 전 발행됨")
+                        return True
+                    else:
+                        _log(f"[{blog_id}] ⛔ RSS 최신 글이 {int(age//60)}분 전 — 발행 실패 가능성")
+                        return False
+                except Exception:
+                    pass
+        except Exception as _e:
+            _log(f"[{blog_id}] RSS 확인 실패: {_e}")
+        return False  # newpost URL + RSS 확인 불가 → 실패로 처리
+
+    # URL이 실제 글 URL로 변경됐으면 확실히 성공
+    _log(f"[{blog_id}] ✓ 공개 발행 완료")
     return True
 
 
@@ -1180,6 +1398,32 @@ def publish_tistory_draft(blog_id: str) -> bool:
                 _draft_title = (_el.input_value() or "").strip()
                 if _draft_title:
                     break
+
+        # phn0502: 제목에서 금지 패턴 자동 제거
+        if blog_id == "phn0502" and _draft_title:
+            import re as _re2
+            _clean_title = _draft_title
+            # "완벽정리", "총정리", "TOP N", "베스트 N", "N편", "N선" 제거
+            _clean_title = _re2.sub(r'\s*완벽정리\s*', ' ', _clean_title)
+            _clean_title = _re2.sub(r'\s*총정리\s*', ' ', _clean_title)
+            _clean_title = _re2.sub(r'\s*TOP\s*\d+\s*', ' ', _clean_title)
+            _clean_title = _re2.sub(r'\s*베스트\s*\d+\s*', ' ', _clean_title)
+            _clean_title = _re2.sub(r'\s*\d+편\s*', ' ', _clean_title)
+            _clean_title = _re2.sub(r'\s*\d+선\s*', ' ', _clean_title)
+            # 앞에 연도 단독으로 있으면 제거 (예: "2026 코미디" → "코미디")
+            _clean_title = _re2.sub(r'^20\d\d\s+', '', _clean_title)
+            # 파이프(|) 구분자 정리
+            _clean_title = _re2.sub(r'\s*\|\s*', ' — ', _clean_title)
+            _clean_title = _re2.sub(r'\s{2,}', ' ', _clean_title).strip(' —')
+            if _clean_title != _draft_title:
+                _log(f"[{blog_id}] 제목 정리: '{_draft_title}' → '{_clean_title}'")
+                for _sel in ['#post-title-inp', '#title', 'input[name="title"]']:
+                    _el = page.query_selector(_sel)
+                    if _el:
+                        _el.click(click_count=3)
+                        _el.type(_clean_title)
+                        _draft_title = _clean_title
+                        break
 
         # nolja100: 여행 주제 아닌 글은 발행 금지
         if blog_id == "nolja100":
@@ -1360,6 +1604,14 @@ def _naver_get_draft(page, blog_id: str) -> bool:
     if "nidlogin" in page.url or "nid.naver.com" in page.url:
         _log(f"[{blog_id}] 로그인 필요 — 중단")
         return False
+
+    # 임시저장 카운트 버튼이 로드될 때까지 최대 10초 대기 (비동기 로딩)
+    try:
+        page.wait_for_selector('[class*="save_count_btn"]', state="visible", timeout=10000)
+        _log(f"[{blog_id}] 임시저장 카운트 버튼 로드 확인")
+    except Exception:
+        time.sleep(4)  # fallback: 추가 4초 대기
+        _log(f"[{blog_id}] 임시저장 버튼 wait_for 타임아웃, 직접 시도")
 
     # 임시저장 개수 버튼 클릭 (다양한 셀렉터 시도)
     opened = page.evaluate("""() => {

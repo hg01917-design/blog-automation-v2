@@ -168,8 +168,8 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False, reference_i
     pw, browser = _connect_cdp(on_log)
 
     try:
-        # 항상 새 채팅 시작 — 두 번째 이미지부터 "이미지 만들기" 버튼 누락 방지
-        for info in image_infos:
+        # 첫 이미지만 새 채팅 시작, 이후는 같은 채팅 이어서 사용 (속도·세션 절약)
+        for _img_i, info in enumerate(image_infos):
             idx = info["index"]
             prompt = info["prompt"]
             filename = info["filename"]
@@ -196,7 +196,7 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False, reference_i
                 filepath = _generate_single(
                     browser, prompt, filename, on_log,
                     skip_webp=skip_webp,
-                    open_new_chat=True,   # 매 이미지마다 새 채팅 (안정성 우선)
+                    open_new_chat=(_img_i == 0),  # 첫 이미지만 새 채팅
                     reference_image=ref_img,
                     save_dir=save_dir,
                 )
