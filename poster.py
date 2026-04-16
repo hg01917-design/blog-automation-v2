@@ -1824,39 +1824,42 @@ def _post_naver(account, title, content, tags=None,
             except Exception:
                 pass
 
-        # 발행 팝업 닫기 (Escape) → 임시저장
-        log("[포스팅] 발행 팝업 닫기 (Escape) → 임시저장...")
+        # 발행 팝업에서 발행 확인 버튼 클릭 → 직접 발행
+        log("[포스팅] 발행 팝업에서 발행 버튼 클릭...")
+        published = page.evaluate("""() => {
+            const buttons = document.querySelectorAll('button');
+            for (const btn of buttons) {
+                const txt = btn.textContent.trim();
+                if (txt === '발행' || txt === '공개발행' || txt === '확인') {
+                    btn.click(); return txt;
+                }
+            }
+            return null;
+        }""")
+        if published:
+            _rand_delay(page, 2000, 3000)
+            log(f"[포스팅] 네이버 발행 완료: {title[:30]}... (버튼: {published})")
+            return True
+
+        # 폴백: 발행 버튼 못 찾으면 임시저장
+        log("[포스팅] 발행 버튼 없음 — 임시저장으로 폴백...")
         page.keyboard.press("Escape")
         _rand_delay(page, 1000, 1500)
-
-        save_btn = None
-        for sel in ['button[class*="save_btn"]', 'button[class*="saveDraft"]',
-                    'button[data-action="save"]', 'button.se-save-draft-button']:
-            save_btn = page.query_selector(sel)
-            if save_btn:
-                break
-        # JavaScript 폴백: 텍스트로 버튼 찾기
-        if not save_btn:
-            saved = page.evaluate("""() => {
-                const buttons = document.querySelectorAll('button');
-                for (const btn of buttons) {
-                    if (btn.textContent.includes('임시저장')) {
-                        btn.click(); return true;
-                    }
+        saved = page.evaluate("""() => {
+            const buttons = document.querySelectorAll('button');
+            for (const btn of buttons) {
+                if (btn.textContent.includes('임시저장')) {
+                    btn.click(); return true;
                 }
-                return false;
-            }""")
-            if saved:
-                _rand_delay(page, 2000, 3000)
-                log(f"[포스팅] 네이버 임시저장 완료: {title[:30]}...")
-                return True
-            log("[포스팅] 임시저장 버튼을 찾을 수 없음")
-            return False
-        save_btn.click()
+            }
+            return false;
+        }""")
         _rand_delay(page, 2000, 3000)
-
-        log(f"[포스팅] 네이버 임시저장 완료: {title[:30]}...")
-        return True
+        if saved:
+            log(f"[포스팅] 네이버 임시저장 완료(폴백): {title[:30]}...")
+            return True
+        log("[포스팅] 발행/임시저장 버튼 모두 없음 — 실패")
+        return False
 
     finally:
         pw.stop()
