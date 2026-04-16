@@ -844,9 +844,14 @@ def run_one_product(on_log=None) -> bool:
         _log(f"[me1091] 글 생성 실패: {name[:40]}")
         return False
 
-    # 수수료 문구 맨 위 강제 삽입
+    # 수수료 문구 맨 위 강제 삽입 (이미 있으면 스킵)
     DISCLOSURE = "※ 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.\n\n"
-    if DISCLOSURE.strip() not in content:
+    if "쿠팡 파트너스 활동" not in content:
+        content = DISCLOSURE + content
+    else:
+        # 기존 문구 제거 후 표준 문구로 맨 위 재삽입
+        import re as _re
+        content = _re.sub(r'※ 이 포스팅은 쿠팡 파트너스 활동[^\n]*\n*', '', content).lstrip()
         content = DISCLOSURE + content
 
     try:
@@ -931,9 +936,13 @@ def run():
             log(f"[스킵] 글 생성 실패: {name[:40]}")
             continue
 
-        # 수수료 문구 맨 위 강제 삽입
+        # 수수료 문구 맨 위 강제 삽입 (이미 있으면 스킵)
         DISCLOSURE = "※ 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.\n\n"
-        if DISCLOSURE.strip() not in content:
+        if "쿠팡 파트너스 활동" not in content:
+            content = DISCLOSURE + content
+        else:
+            import re as _re
+            content = _re.sub(r'※ 이 포스팅은 쿠팡 파트너스 활동[^\n]*\n*', '', content).lstrip()
             content = DISCLOSURE + content
 
         # 5. 네이버 임시저장
