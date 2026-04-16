@@ -723,10 +723,21 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
             _short = _naver_short_url(_crosslink)
             keyword_final += (
                 f"\n\n[백링크 삽입 지침]\n"
-                f"본문 중간 적절한 위치에 아래 링크를 자연스러운 앵커텍스트로 1회 삽입해:\n"
+                f"본문 중간(소제목 아래 또는 마지막 단락 전)에 아래 버튼형 링크를 1회 삽입해.\n"
                 f"링크 URL: {_short}\n"
-                f"앵커텍스트 예시: '관련 정보 더 보기', '{keyword} 상세 정보', '여행 계획 세우기'\n"
-                f"형식: <a href=\"{_short}\" target=\"_blank\">앵커텍스트</a>"
+                f"\n"
+                f"삽입 형식 (HTML 그대로 사용):\n"
+                f"<a href=\"{_short}\" target=\"_blank\" "
+                f"style=\"display:inline-block;background:#FF6B35;color:#fff;"
+                f"padding:11px 22px;border-radius:6px;text-decoration:none;"
+                f"font-weight:bold;font-size:15px;letter-spacing:-0.3px;\">"
+                f"→ {{keyword 핵심어}} 상세 정보 보기</a>\n"
+                f"\n"
+                f"앵커텍스트 규칙:\n"
+                f"- '{keyword}' 핵심어를 살려서 자연스럽게 작성\n"
+                f"- 예시: '→ {keyword} 일정 전체 보기', '→ {keyword} 준비 가이드', '📍 {keyword} 코스 확인'\n"
+                f"- 금지: '클릭', '누르세요', '바로가기', '여기' 등 직접 클릭 유도 문구\n"
+                f"- 버튼 앞뒤로 줄바꿈 1줄씩 추가해 버튼이 단독으로 보이게 할 것"
             )
             log(f"[파이프라인] nolja100 백링크 주입: {_short}")
 
