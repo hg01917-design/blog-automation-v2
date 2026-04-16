@@ -421,6 +421,112 @@ _BLOG_RSS = {
 
 _TISTORY_BLOGS = {"goodisak", "nolja100", "woll100", "phn0502"}  # HTML이 에디터에서 이스케이프되므로 제외
 
+# ─── triplog → nolja100 교차 백링크 ───
+_CROSSLINK_FILE = LOG_DIR / "crosslink_urls.json"
+
+def _naver_short_url(url: str) -> str:
+    """네이버 단축 URL 변환 (실패 시 원본 반환)"""
+    client_id  = os.environ.get("NAVER_SEARCH_CLIENT_ID", "")
+    client_sec = os.environ.get("NAVER_SEARCH_CLIENT_SECRET", "")
+    if not client_id or not client_sec:
+        return url
+    try:
+        encoded = urllib.parse.quote(url, safe="")
+        req = urllib.request.Request(
+            f"https://openapi.naver.com/v1/util/shorturl?url={encoded}",
+            headers={
+                "X-Naver-Client-Id": client_id,
+                "X-Naver-Client-Secret": client_sec,
+            },
+        )
+        with urllib.request.urlopen(req, timeout=10, context=_ssl_ctx()) as r:
+            data = json.loads(r.read())
+        short = data.get("result", {}).get("url", "")
+        return short if short else url
+    except Exception as e:
+        log(f"[단축URL] 변환 실패 (원본 사용): {e}")
+        return url
+
+
+def _store_crosslink_url(keyword: str, url: str):
+    """triplog 발행 URL을 키워드별로 저장 (nolja100 백링크용)"""
+    try:
+        data = json.loads(_CROSSLINK_FILE.read_text()) if _CROSSLINK_FILE.exists() else {}
+    except Exception:
+        data = {}
+    data[keyword] = {"url": url, "ts": datetime.now().isoformat()}
+    _CROSSLINK_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+
+
+def _get_crosslink_url(keyword: str) -> str:
+    """nolja100 글 생성 시 triplog 백링크 URL 조회 (없으면 빈 문자열)"""
+    try:
+        if not _CROSSLINK_FILE.exists():
+            return ""
+        data = json.loads(_CROSSLINK_FILE.read_text())
+        entry = data.get(keyword, {})
+        return entry.get("url", "")
+    except Exception:
+        return ""
+
+
+def _publish_triplog_immediately(keyword: str, title: str) -> str:
+    """triplog WP draft를 즉시 발행하고 published URL 반환 (실패 시 빈 문자열)"""
+    try:
+        sec = {}
+        _sec_path = Path(__file__).parent / "remote_secrets.json"
+        if _sec_path.exists():
+            sec = json.loads(_sec_path.read_text())
+        wp_url  = sec.get("TRIPLOG_WP_URL",          os.environ.get("TRIPLOG_WP_URL", ""))
+        wp_user = sec.get("TRIPLOG_WP_USER",          os.environ.get("TRIPLOG_WP_USER", ""))
+        wp_pass = sec.get("TRIPLOG_WP_APP_PASSWORD",  os.environ.get("TRIPLOG_WP_APP_PASSWORD", ""))
+        if not (wp_url and wp_user and wp_pass):
+            log("[triplog 즉시발행] WP 자격증명 없음 — 스킵")
+            return ""
+        import base64
+        auth = base64.b64encode(f"{wp_user}:{wp_pass}".encode()).decode()
+        headers = {"Authorization": f"Basic {auth}", "Content-Type": "application/json"}
+
+        # 최신 draft 검색 (제목 기준)
+        core = title[:20].replace(" ", "+")
+        search_q = urllib.parse.urlencode({"search": core, "status": "draft", "per_page": 5})
+        req = urllib.request.Request(
+            f"{wp_url}/wp-json/wp/v2/posts?{search_q}",
+            headers={"Authorization": f"Basic {auth}"},
+        )
+        with urllib.request.urlopen(req, timeout=15, context=_ssl_ctx()) as r:
+            drafts = json.loads(r.read())
+
+        post_id = None
+        for d in drafts:
+            dtitle = re.sub(r'<[^>]+>', '', d.get("title", {}).get("rendered", ""))
+            if dtitle.strip()[:15] == title.strip()[:15]:
+                post_id = d["id"]
+                break
+        if not post_id and drafts:
+            post_id = drafts[0]["id"]  # 최신 draft 폴백
+
+        if not post_id:
+            log(f"[triplog 즉시발행] draft 미발견: '{title[:30]}'")
+            return ""
+
+        # PATCH → publish
+        patch_data = json.dumps({"status": "publish"}).encode()
+        patch_req = urllib.request.Request(
+            f"{wp_url}/wp-json/wp/v2/posts/{post_id}",
+            data=patch_data,
+            headers=headers,
+            method="PATCH",
+        )
+        with urllib.request.urlopen(patch_req, timeout=20, context=_ssl_ctx()) as r:
+            result = json.loads(r.read())
+        pub_link = result.get("link", "")
+        log(f"[triplog 즉시발행] ✅ 발행 완료: {pub_link}")
+        return pub_link
+    except Exception as e:
+        log(f"[triplog 즉시발행] 오류: {e}")
+        return ""
+
 def _inject_internal_links(body: str, blog_id: str, on_log=None) -> str:
     """본문 하단에 같은 블로그 최근 글 3개 내부링크 섹션 추가"""
     if blog_id not in _BLOG_RSS:
@@ -609,6 +715,20 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
                 log(f"[파이프라인] 시즌 키워드 감지 ({_sh}) → 현재 시점 연결 컨텍스트 추가")
             break
     keyword_final = keyword_with_mrt + _season_ctx
+
+    # nolja100: triplog 백링크 삽입 (같은 키워드로 triplog가 먼저 발행한 경우)
+    if blog_id == "nolja100":
+        _crosslink = _get_crosslink_url(keyword)
+        if _crosslink:
+            _short = _naver_short_url(_crosslink)
+            keyword_final += (
+                f"\n\n[백링크 삽입 지침]\n"
+                f"본문 중간 적절한 위치에 아래 링크를 자연스러운 앵커텍스트로 1회 삽입해:\n"
+                f"링크 URL: {_short}\n"
+                f"앵커텍스트 예시: '관련 정보 더 보기', '{keyword} 상세 정보', '여행 계획 세우기'\n"
+                f"형식: <a href=\"{_short}\" target=\"_blank\">앵커텍스트</a>"
+            )
+            log(f"[파이프라인] nolja100 백링크 주입: {_short}")
 
     # 공공API 데이터 주입 (축제·공공서비스 실제 데이터 → 할루시네이션 방지)
     _api_ctx = fetch_context_for_blog(blog_id, keyword, on_log=log)
@@ -1099,6 +1219,12 @@ def _post_one_blog_inner(blog_id):
             if ok:
                 # 모든 블로그 임시저장 → draft_saved (Claude Code가 검수 후 발행)
                 _db_set(kw, "draft_saved", blog_id=blog_id, title=saved_title)
+                # triplog: 즉시 WP 발행 후 nolja100 백링크용 URL 저장
+                if blog_id == "triplog":
+                    _tl_url = _publish_triplog_immediately(kw, saved_title)
+                    if _tl_url:
+                        _store_crosslink_url(kw, _tl_url)
+                        _db_set(kw, "published", blog_id=blog_id, title=saved_title)
                 return True
             else:
                 _db_set(kw, "failed", blog_id=blog_id)
@@ -1161,6 +1287,21 @@ def run_one_round(round_num):
         run_deal_check()
     except Exception as e:
         log(f"[딜모니터] 스킵: {e}")
+
+    # ── draft_saved 글 자동 발행 (Tistory/Naver) ──────────────────────────
+    import subprocess as _sp
+    _pub_log = open(str(LOG_DIR / "publish_drafts_auto.log"), "a")
+    try:
+        _pub = _sp.Popen(
+            ["python3", str(Path(__file__).parent / "publish_drafts.py")],
+            stdout=_pub_log, stderr=_sp.STDOUT,
+            cwd=str(Path(__file__).parent),
+        )
+        log(f"[자동발행] publish_drafts.py PID {_pub.pid} 백그라운드 실행")
+    except Exception as _e:
+        log(f"[자동발행] publish_drafts.py 실행 실패: {_e}")
+    finally:
+        _pub_log.close()
 
 
 # ─── 메인 실행 ───
