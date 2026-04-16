@@ -151,6 +151,44 @@ def handle_update(update: dict):
         _log(f"파일 주입 완료 → {TARGET_PANE}")
         return
 
+    # ── /setenv 명령어 처리 (환경변수 직접 설정) ──
+    if text.startswith("/setenv "):
+        pair = text[len("/setenv "):].strip()
+        if "=" in pair:
+            key, _, val = pair.partition("=")
+            key = key.strip()
+            val = val.strip()
+            env_path = PROJECT_DIR / ".env"
+            lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+            updated = False
+            new_lines = []
+            for line in lines:
+                if line.startswith(f"{key}=") or line.startswith(f"{key} ="):
+                    new_lines.append(f"{key}={val}")
+                    updated = True
+                else:
+                    new_lines.append(line)
+            if not updated:
+                new_lines.append(f"{key}={val}")
+            env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+            os.environ[key] = val
+            _log(f"/setenv 처리: {key}=***")
+            # 확인 메시지 텔레그램으로 전송
+            import urllib.parse as _up
+            _token = TOKEN
+            _chat = ALLOWED_CHAT
+            _msg = f"✅ .env 업데이트 완료\n{key}={'*' * len(val)}"
+            _url = f"https://api.telegram.org/bot{_token}/sendMessage"
+            _data = _up.urlencode({"chat_id": _chat, "text": _msg}).encode()
+            try:
+                import urllib.request as _ur
+                _ur.urlopen(_ur.Request(_url, data=_data), timeout=10, context=_ctx)
+            except Exception:
+                pass
+        else:
+            _log(f"/setenv 형식 오류: {pair}")
+        return
+
     # 텍스트 처리
     if text:
         _log(f"텍스트 수신: {text[:60]}")
