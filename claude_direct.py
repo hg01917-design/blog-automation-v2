@@ -151,18 +151,21 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             tmp_prompt.close()
             tmp_path_str = tmp_prompt.name
 
-            # zsh -l 로 사용자 프로파일 소스 → launchd에서도 정상 동작
-            shell_cmd = (
-                f"cat {tmp_path_str} | "
-                f"{CLAUDE_BIN} --dangerously-skip-permissions --print"
-            )
+            # CLAUDECODE 관련 변수 제거 — 중첩 세션 감지로 exit 1 방지
+            _REMOVE = {"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT",
+                       "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_IDE_PORT", "CLAUDE_CODE_IDE_SELECTION_OFFSET"}
+            clean_env = {k: v for k, v in os.environ.items() if k not in _REMOVE}
+            clean_env["HOME"] = str(Path.home())
+
+            # 프롬프트를 stdin pipe로 전달 (arg 방식 → stdin 방식)
             result = subprocess.run(
-                ["zsh", "-l", "-c", shell_cmd],
+                [str(CLAUDE_BIN), "--dangerously-skip-permissions", "--print"],
+                input=full_prompt,
                 capture_output=True,
                 text=True,
                 cwd=str(BASE_DIR),
                 timeout=300,
-                env={**os.environ, "HOME": str(Path.home())},
+                env=clean_env,
             )
             try:
                 os.unlink(tmp_path_str)
