@@ -1152,6 +1152,11 @@ def post_one_blog(blog_id):
 
     try:
         return _post_one_blog_inner(blog_id)
+    except Exception as _e:
+        import traceback as _tb
+        log(f"[{blog_id}] ❌ 예외 발생: {_e}")
+        log(f"[{blog_id}] traceback:\n{_tb.format_exc()}")
+        return False
     finally:
         _fcntl.flock(_lock_fh, _fcntl.LOCK_UN)
         _lock_fh.close()
@@ -1581,12 +1586,23 @@ def run_one_round(round_num):
     log(f"[라운드 {round_num}] 시작 ({datetime.now().strftime('%H:%M')})")
     log(f"{'='*60}")
     results = {}
+    errors = {}
     for blog_id in BLOGS:
-        ok = post_one_blog(blog_id)
-        results[blog_id] = "✅" if ok else "⚠"
+        try:
+            ok = post_one_blog(blog_id)
+            results[blog_id] = "✅" if ok else "⚠"
+        except Exception as _e:
+            import traceback as _tb
+            err_detail = _tb.format_exc()
+            log(f"[라운드{round_num}] ❌ {blog_id} 예외: {_e}")
+            log(f"[라운드{round_num}] {blog_id} traceback:\n{err_detail}")
+            results[blog_id] = "❌"
+            errors[blog_id] = str(_e)
         # 블로그 간 1-3분 랜덤 대기 (사람처럼)
         _time.sleep(_rand.uniform(60, 180))
     log(f"[라운드 {round_num}] 완료: " + " / ".join(f"{k}:{v}" for k, v in results.items()))
+    if errors:
+        log(f"[라운드 {round_num}] 오류 목록: " + " | ".join(f"{k}={v[:60]}" for k, v in errors.items()))
     save_log()
 
     # ── 실패 블로그 즉시 재시도 (1회) ──
@@ -1595,7 +1611,12 @@ def run_one_round(round_num):
         log(f"[라운드 {round_num}] 실패 블로그 재시도: {failed}")
         _time.sleep(_rand.uniform(60, 120))  # 1-2분 후 재시도
         for blog_id in failed:
-            ok = post_one_blog(blog_id)
+            try:
+                ok = post_one_blog(blog_id)
+            except Exception as _e:
+                import traceback as _tb
+                log(f"[재시도] ❌ {blog_id} 예외: {_e}\n{_tb.format_exc()}")
+                ok = False
             results[blog_id] = "✅" if ok else "⚠"
             _time.sleep(_rand.uniform(30, 90))
         log(f"[라운드 {round_num}] 재시도 결과: " + " / ".join(f"{b}:{results[b]}" for b in failed))
