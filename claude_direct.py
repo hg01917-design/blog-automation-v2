@@ -18,6 +18,42 @@ from pathlib import Path
 CLAUDE_BIN = Path.home() / ".local" / "bin" / "claude"
 BASE_DIR = Path(__file__).parent
 INSTR_DIR = BASE_DIR / "project_instructions"
+_TOKEN_CACHE = BASE_DIR / ".claude_token_cache"  # 키체인 잠금 시 폴백용
+
+
+def _get_claude_oauth_token() -> str:
+    """macOS 키체인에서 Claude Code OAuth 토큰을 읽어 반환.
+    성공하면 캐시 파일에도 저장. 실패하면 캐시 파일에서 읽기 시도.
+    """
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            import json as _json
+            cred = _json.loads(result.stdout.strip())
+            token = cred.get("claudeAiOauth", {}).get("accessToken", "")
+            if token:
+                # 캐시 파일에 저장 (키체인 잠금 시 폴백)
+                try:
+                    _TOKEN_CACHE.write_text(token, encoding="utf-8")
+                except Exception:
+                    pass
+                return token
+    except Exception:
+        pass
+
+    # 키체인 실패 → 캐시 파일에서 읽기
+    try:
+        if _TOKEN_CACHE.exists():
+            token = _TOKEN_CACHE.read_text(encoding="utf-8").strip()
+            if token:
+                return token
+    except Exception:
+        pass
+
+    return ""
 
 
 def _load_instructions(blog_id: str) -> str:
@@ -141,23 +177,27 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             log(f"[Direct] === 재시도 {attempt - 1}/2 ===")
 
         try:
-            # 프롬프트를 임시 파일에 저장 (긴 프롬프트 CLI arg 문제 방지)
-            import tempfile
-            tmp_prompt = tempfile.NamedTemporaryFile(
-                mode="w", suffix=".txt", delete=False, encoding="utf-8"
-            )
-            tmp_prompt.write(full_prompt)
-            tmp_prompt.flush()
-            tmp_prompt.close()
-            tmp_path_str = tmp_prompt.name
-
             # CLAUDECODE 관련 변수 제거 — 중첩 세션 감지로 exit 1 방지
             _REMOVE = {"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT",
                        "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_IDE_PORT", "CLAUDE_CODE_IDE_SELECTION_OFFSET"}
             clean_env = {k: v for k, v in os.environ.items() if k not in _REMOVE}
             clean_env["HOME"] = str(Path.home())
+            # PATH 보강 — launchd 최소 환경에서 누락된 경로 추가
+            default_paths = [
+                str(Path.home() / ".local/bin"),
+                "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin",
+            ]
+            existing_paths = clean_env.get("PATH", "").split(":")
+            combined = [p for p in default_paths if p not in existing_paths] + existing_paths
+            clean_env["PATH"] = ":".join(p for p in combined if p)
 
-            # 프롬프트를 stdin pipe로 전달 (arg 방식 → stdin 방식)
+            # OAuth 토큰 주입 — 키체인 잠금(launchd 새벽 실행) 시 폴백 캐시 사용
+            if "ANTHROPIC_API_KEY" not in clean_env:
+                oauth_token = _get_claude_oauth_token()
+                if oauth_token:
+                    clean_env["ANTHROPIC_API_KEY"] = oauth_token
+
+            # 프롬프트를 stdin pipe로 전달
             result = subprocess.run(
                 [str(CLAUDE_BIN), "--dangerously-skip-permissions", "--print"],
                 input=full_prompt,
@@ -167,16 +207,14 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
                 timeout=300,
                 env=clean_env,
             )
-            try:
-                os.unlink(tmp_path_str)
-            except Exception:
-                pass
 
             raw = (result.stdout or "").strip()
             err = (result.stderr or "").strip()
 
             if result.returncode != 0:
-                log(f"[Direct] 종료코드 {result.returncode} — stderr: {err[:500] or '(없음)'}")
+                stdout_preview = (result.stdout or "").strip()[:200]
+                log(f"[Direct] 종료코드 {result.returncode} — stderr: {err[:500] or '(없음)'} | stdout: {stdout_preview or '(없음)'}")
+                log(f"[Direct] 환경변수 수: {len(clean_env)}, CLAUDECODE제거: {'CLAUDECODE' not in clean_env}, PATH: {clean_env.get('PATH','')[:80]}")
                 continue
 
             if err:

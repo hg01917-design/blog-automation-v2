@@ -11,3 +11,4 @@ logs/
 build/
 dist/
 .claude/worktrees/
+.claude_token_cache
