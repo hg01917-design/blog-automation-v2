@@ -1068,6 +1068,31 @@ def _tistory_publish_private(page, blog_id: str) -> bool:
     else:
         _log(f"[{blog_id}] ⚠️ 댓글 비허용 요소 못 찾음 — 기본값 유지")
 
+    # 2-2. fetch/XHR 후킹 — 발행 시 API 엔드포인트 캡처 (분석용)
+    page.evaluate("""() => {
+        if (window._tistory_api_hooked) return;
+        window._tistory_api_hooked = true;
+        window._tistory_api_log = [];
+        const origFetch = window.fetch;
+        window.fetch = function(url, opts) {
+            const u = typeof url === 'string' ? url : (url.url || '');
+            if (u.includes('tistory.com') && !u.includes('stat') && !u.includes('pixel')) {
+                const entry = {url: u, method: (opts||{}).method||'GET', body: String((opts||{}).body||'').substring(0,500)};
+                window._tistory_api_log.push(entry);
+            }
+            return origFetch.apply(this, arguments);
+        };
+        const origOpen = XMLHttpRequest.prototype.open;
+        const origSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.open = function(m, u) { this._u = u; this._m = m; return origOpen.apply(this, arguments); };
+        XMLHttpRequest.prototype.send = function(body) {
+            if (this._u && this._u.includes('tistory.com') && this._m !== 'GET') {
+                window._tistory_api_log.push({url: this._u, method: this._m, body: String(body||'').substring(0,500)});
+            }
+            return origSend.apply(this, arguments);
+        };
+    }""")
+
     # 3. 공개 발행 버튼 클릭
     confirmed = page.evaluate("""() => {
         const labels = ['공개 발행', '발행하기', '발행', '확인', '게시'];
@@ -1091,6 +1116,17 @@ def _tistory_publish_private(page, blog_id: str) -> bool:
         time.sleep(2)
         return False
 
+    # 3-1. 발행 후 캡처된 API 로그 저장 (내부 API 분석용)
+    try:
+        _api_log = page.evaluate("() => window._tistory_api_log || []")
+        if _api_log:
+            import json as _json2
+            _log_path = Path(__file__).parent / "logs" / f"tistory_api_{blog_id}.json"
+            _log_path.write_text(_json2.dumps(_api_log, indent=2, ensure_ascii=False))
+            _log(f"[{blog_id}] API 로그 {len(_api_log)}건 저장: {_log_path.name}")
+    except Exception:
+        pass
+
     # 4. 성공 확인 — 캡챠/실패 시 URL이 newpost에 머물거나 캡챠 요소가 뜸
     time.sleep(3)
     cur_url = page.url
@@ -1098,18 +1134,22 @@ def _tistory_publish_private(page, blog_id: str) -> bool:
 
     # 캡챠 감지 및 자동 풀기 (Claude API로 이미지 인식)
     def _check_captcha():
-        return page.evaluate("""() => {
-            const txt = document.body.innerText || '';
-            if (txt.includes('캡챠') || txt.includes('captcha') ||
-                txt.includes('보안문자') || txt.includes('자동입력')) return true;
-            // iframe 캡챠 감지 (카카오 dkaptcha + reCAPTCHA)
-            const iframes = [...document.querySelectorAll('iframe')];
-            if (iframes.some(f => (f.src || '').includes('dkaptcha') ||
-                                  (f.src || '').includes('recaptcha') ||
-                                  (f.src || '').includes('captcha'))) return true;
-            if (document.querySelector('.g-recaptcha, #captcha, [data-sitekey]')) return true;
-            return false;
-        }""")
+        try:
+            return page.evaluate("""() => {
+                const txt = document.body.innerText || '';
+                if (txt.includes('캡챠') || txt.includes('captcha') ||
+                    txt.includes('보안문자') || txt.includes('자동입력')) return true;
+                // iframe 캡챠 감지 (카카오 dkaptcha + reCAPTCHA)
+                const iframes = [...document.querySelectorAll('iframe')];
+                if (iframes.some(f => (f.src || '').includes('dkaptcha') ||
+                                      (f.src || '').includes('recaptcha') ||
+                                      (f.src || '').includes('captcha'))) return true;
+                if (document.querySelector('.g-recaptcha, #captcha, [data-sitekey]')) return true;
+                return false;
+            }""")
+        except Exception:
+            # 페이지 이동 중 evaluate 실패 → 캡챠 없는 것으로 간주
+            return False
 
     def _auto_solve_captcha():
         """카카오 dkaptcha / 텍스트형 캡챠 → Claude API 인식 → 자동 입력."""
@@ -1209,29 +1249,34 @@ def _tistory_publish_private(page, blog_id: str) -> bool:
             return False
 
     if _check_captcha():
-        _log(f"[{blog_id}] ⚠ 캡챠 감지 — 자동 풀기 시도")
-        solved = _auto_solve_captcha()
-        if solved and not _check_captcha():
-            _log(f"[{blog_id}] ✓ 캡챠 자동 해제 성공")
-        else:
-            # 자동 실패 → 텔레그램 알림 후 수동 대기
-            _log(f"[{blog_id}] ⚠ 캡챠 자동풀기 실패 — 텔레그램 알림 후 수동 대기")
-            import subprocess as _sp2
+        _log(f"[{blog_id}] ⚠ 캡챠 감지 — 스크린샷 전송 후 수동 대기")
+        import subprocess as _sp2, tempfile as _tmp
+        # 스크린샷 캡처 후 텔레그램 전송
+        try:
+            _shot_path = _tmp.mktemp(suffix=".png")
+            page.screenshot(path=_shot_path, full_page=False)
             _sp2.run(
-                ["python3", "tg_send.py",
-                 f"⚠️ 캡챠 발생 (자동풀기 실패)\n블로그: {blog_id}\n작업: Tistory 발행\n\n직접 캡챠를 풀어주세요. 최대 5분 대기합니다."],
+                ["python3", "tg_send.py", "--photo", _shot_path,
+                 f"🚨 캡챠 발생\n블로그: {blog_id}\n제목: {title}\n\n캡챠 풀어주세요! 최대 20분 대기합니다."],
                 cwd=str(Path(__file__).parent), capture_output=True
             )
-            captcha_solved = False
-            for _i in range(60):
-                time.sleep(5)
-                if not _check_captcha():
-                    _log(f"[{blog_id}] 캡챠 수동 해제 확인")
-                    captcha_solved = True
-                    break
-            if not captcha_solved:
-                _log(f"[{blog_id}] ⛔ 캡챠 5분 대기 초과 → 발행 실패")
-                return False
+        except Exception as _se:
+            _log(f"[{blog_id}] 스크린샷 전송 오류: {_se}")
+            _sp2.run(
+                ["python3", "tg_send.py",
+                 f"🚨 캡챠 발생\n블로그: {blog_id}\n제목: {title}\n\n캡챠 풀어주세요! 최대 20분 대기합니다."],
+                cwd=str(Path(__file__).parent), capture_output=True
+            )
+        captcha_solved = False
+        for _i in range(240):  # 20분 대기 (5초 × 240)
+            time.sleep(5)
+            if not _check_captcha():
+                _log(f"[{blog_id}] ✅ 캡챠 수동 해제 확인")
+                captcha_solved = True
+                break
+        if not captcha_solved:
+            _log(f"[{blog_id}] ⛔ 캡챠 20분 대기 초과 → 발행 실패")
+            return False
 
         # 캡챠 해제 후 발행 버튼 다시 클릭
         time.sleep(1)
@@ -2253,6 +2298,19 @@ if __name__ == "__main__":
             if ok:
                 last_published[blog_id] = time.time()
                 TIMES_FILE.write_text(_json.dumps(last_published))
+                import subprocess as _tg_sp
+                _tg_sp.run(
+                    ["python3", "tg_send.py",
+                     f"✅ 발행 완료\n블로그: {blog_id}\n발행시각: {__import__('datetime').datetime.now().strftime('%H:%M')}"],
+                    cwd=str(Path(__file__).parent), capture_output=True, timeout=10
+                )
+            elif ok is False:
+                import subprocess as _tg_sp
+                _tg_sp.run(
+                    ["python3", "tg_send.py",
+                     f"⚠️ 발행 실패\n블로그: {blog_id}\n시각: {__import__('datetime').datetime.now().strftime('%H:%M')}"],
+                    cwd=str(Path(__file__).parent), capture_output=True, timeout=10
+                )
 
         all_results.append((round_num, round_results))
 

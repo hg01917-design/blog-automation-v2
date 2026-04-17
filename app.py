@@ -2,6 +2,18 @@ import sys
 import os
 from pathlib import Path as _Path
 
+# ── GUI 앱에서 stdout/stderr Broken pipe 방지 ──────────────────────────────
+if getattr(sys, "frozen", False):
+    import io, os
+    _devnull = open(os.devnull, "w")
+    try:
+        os.dup2(_devnull.fileno(), 1)  # fd 1 = stdout → /dev/null
+        os.dup2(_devnull.fileno(), 2)  # fd 2 = stderr → /dev/null
+    except Exception:
+        pass
+    sys.stdout = _devnull
+    sys.stderr = _devnull
+
 # ── 프로젝트 루트 경로 설정 (.app 번들 / 일반 실행 모두 대응) ──────────────
 # 사용자 데이터(DB, .env)는 앱 위치와 무관하게 고정 경로에 저장
 _USER_DATA_DIR = _Path.home() / "Library" / "Application Support" / "BlogAutomation"
@@ -100,130 +112,78 @@ class SingleRunWorker(QThread):
 class SchedulerWorker(QThread):
     log_signal    = pyqtSignal(str)
     status_signal = pyqtSignal(str, str)
-    blog_signal   = pyqtSignal(str)   # 현재 처리 중인 blog_id ("" = 없음)
+    blog_signal   = pyqtSignal(str)
     finished      = pyqtSignal(str)
 
     def __init__(self, enabled_blogs: list[str]):
         super().__init__()
         self._stop_flag    = False
         self.enabled_blogs = enabled_blogs
+        self._proc         = None
 
     def stop(self):
         self._stop_flag = True
+        if self._proc:
+            try:
+                self._proc.terminate()
+            except Exception:
+                pass
 
     def run(self):
-        import random
-        from datetime import datetime, timedelta
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "agents"))
-        from agents import orchestrator
+        import subprocess
+        from pathlib import Path
 
-        START_HOUR, END_HOUR   = 7, 23
-        KEYWORD_ENGINE_HOUR    = 8   # 매일 오전 8시 키워드 수집
-        MIN_INTERVAL, MAX_INTERVAL = 60, 180
+        # overnight_run.py 경로 찾기
+        if getattr(sys, "frozen", False):
+            base = Path(sys._MEIPASS)
+        else:
+            base = Path(__file__).parent
 
-        _keyword_engine_last_run = None  # 오늘 날짜 (str) 저장
+        script = base / "overnight_run.py"
+        self._log(f"[스케줄러] overnight_run.py 시작: {script}")
 
-        def _run_keyword_engine():
-            nonlocal _keyword_engine_last_run
-            today = datetime.now().strftime("%Y-%m-%d")
-            if _keyword_engine_last_run == today:
-                return  # 오늘 이미 실행
-            self._log("[키워드수집] 키워드 엔진 시작 (블로그별 수집)...")
-            try:
-                from keyword_engine.main import run as run_engine
-                from keyword_engine.naver_api import BLOG_QUERIES
-                total = 0
-                for bid in self.enabled_blogs:
-                    if self._stop_flag:
-                        break
-                    queries = BLOG_QUERIES.get(bid)
-                    if not queries:
-                        continue
-                    self._log(f"[키워드수집] {bid} — {len(queries)}개 쿼리 수집 시작")
-                    result = run_engine(
-                        queries=queries,
-                        blog_id=bid,
-                        min_volume=1000,   # 검색량 1,000 이상
-                        min_score=50000,   # 기회점수 5만 이상
-                        top_n=30,
-                        on_log=self._log,
-                    )
-                    self._log(f"[키워드수집] {bid} ✓ {len(result)}개 키워드 DB 적재")
-                    total += len(result)
-                _keyword_engine_last_run = today
-                self._log(f"[키워드수집] ✓ 전체 완료 — 총 {total}개 적재")
-            except Exception as e:
-                self._log(f"[키워드수집] 오류: {e}")
+        # frozen 앱에서는 프로젝트 소스 디렉토리에서 실행 (MEIPASS 아님)
+        project_dir = Path(__file__).parent
+        if getattr(sys, "frozen", False):
+            # sys.executable = .app/Contents/MacOS/Blog Automation v2
+            # parents[4] = blog-automation-v2/ (프로젝트 루트)
+            exe_path = Path(sys.executable).resolve()
+            for i in range(2, 8):
+                candidate = exe_path.parents[i]
+                src_script = candidate / "overnight_run.py"
+                if src_script.exists():
+                    script = src_script
+                    project_dir = candidate
+                    break
+            else:
+                # 못 찾으면 MEIPASS 사용
+                project_dir = base
 
-        self._log(f"[스케줄러] 시작 (7:00~23:00, 60~180분 간격, 8시 키워드수집)")
-        self._log(f"[스케줄러] 활성 블로그: {self.enabled_blogs}")
+        self._log(f"[스케줄러] script={script}")
+        self._log(f"[스케줄러] cwd={project_dir}")
 
-        while not self._stop_flag:
-            hour = datetime.now().hour
-            if hour < START_HOUR or hour >= END_HOUR:
-                now = datetime.now()
-                if hour >= END_HOUR:
-                    target = (now + timedelta(days=1)).replace(
-                        hour=START_HOUR, minute=0, second=0)
-                else:
-                    target = now.replace(hour=START_HOUR, minute=0, second=0)
-                wait = (target - now).total_seconds()
-                self._log(f"[스케줄러] 비활동 시간 — {target.strftime('%H:%M')}까지 대기")
-                self._sleep(wait)
-                continue
-
-            # 오전 8시: 키워드 수집 (하루 1회)
-            if datetime.now().hour == KEYWORD_ENGINE_HOUR:
-                _run_keyword_engine()
-
-            blogs = [b for b in self.enabled_blogs
-                     if b in orchestrator.DEFAULT_BLOG_ORDER
-                     or b in orchestrator.BLOG_AGENT_MAP]
-
-            for blog_id in blogs:
+        try:
+            self._proc = subprocess.Popen(
+                [sys.executable if not getattr(sys, "frozen", False) else "python3",
+                 str(script)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                cwd=str(project_dir),
+            )
+            for line in self._proc.stdout:
                 if self._stop_flag:
                     break
-                if not (START_HOUR <= datetime.now().hour < END_HOUR):
-                    break
-
-                self._log(f"[스케줄러] {blog_id} 파이프라인 시작")
-                self.blog_signal.emit(blog_id)
-                try:
-                    result = orchestrator.run_single(
-                        blog_id,
-                        on_log=self._log,
-                        on_status=self._status,
-                    )
-                    if result["success"]:
-                        self._log(f"[스케줄러] ✅ {blog_id} 완료: {result['title']}")
-                    else:
-                        self._log(f"[스케줄러] ❌ {blog_id} 실패: {result['reason']}")
-                except Exception as e:
-                    self._log(f"[스케줄러] {blog_id} 오류: {e}")
-                finally:
-                    self.blog_signal.emit("")  # 처리 완료
-
-                if blogs and blog_id != blogs[-1] and not self._stop_flag:
-                    cd = random.randint(5, 15) * 60
-                    self._log(f"[스케줄러] 다음 블로그까지 {cd // 60}분 대기")
-                    self._sleep(cd)
-
-            if self._stop_flag:
-                break
-
-            interval = random.randint(MIN_INTERVAL, MAX_INTERVAL) * 60
-            from datetime import timedelta
-            next_t = datetime.now() + timedelta(seconds=interval)
-            self._log(f"[스케줄러] 다음 사이클: {next_t.strftime('%H:%M')} ({interval // 60}분 후)")
-            self._sleep(interval)
+                line = line.rstrip()
+                if line:
+                    self._log(line)
+            self._proc.wait()
+        except Exception as e:
+            self._log(f"[스케줄러] 오류: {e}")
+        finally:
+            self._proc = None
 
         self.finished.emit("[스케줄러] 종료됨")
-
-    def _sleep(self, seconds):
-        import time as _t
-        end = _t.time() + seconds
-        while _t.time() < end and not self._stop_flag:
-            _t.sleep(min(5, end - _t.time()))
 
     def _log(self, msg):
         self.log_signal.emit(msg)
@@ -1003,6 +963,22 @@ class BlogAutomationApp(QMainWindow):
         self._selected_keyword = None   # 키워드 큐에서 선택된 키워드 저장
         self._build_ui()
         self._refresh_stats()
+        # 앱 시작 시 스케줄러 자동 실행
+        QTimer.singleShot(500, self._auto_start_scheduler)
+
+    def _auto_start_scheduler(self):
+        """앱 시작 시 스케줄러 자동 실행."""
+        try:
+            from agents.orchestrator import DEFAULT_BLOG_ORDER
+            blogs = DEFAULT_BLOG_ORDER
+        except Exception:
+            blogs = ["goodisak", "nolja100", "salim1su", "baremi542"]
+        self.sched_worker = SchedulerWorker(blogs)
+        self.sched_worker.log_signal.connect(self._append_log)
+        self.sched_worker.finished.connect(
+            lambda msg: self._append_log(f"[스케줄러] {msg}"))
+        self.sched_worker.start()
+        self._append_log(f"[스케줄러] 자동 시작 — 블로그: {blogs}")
 
     def _build_ui(self):
         central = QWidget()

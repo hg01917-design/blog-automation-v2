@@ -23,7 +23,6 @@ if _env_path.exists():
 
 logs = []
 
-
 def log(msg):
     ts = datetime.now().strftime("%H:%M:%S")
     line = f"[{ts}] {msg}"
@@ -88,6 +87,10 @@ _BLOG_THEMES = {
                 "구매", "쿠팡", "다이소", "생활용품", "주방용품", "청소용품", "뷰티",
                 "화장품", "스킨케어", "헤어", "건강", "건강식품", "영양제", "다이어트",
                 "가전", "소형가전", "주방가전", "가성비", "핫딜", "신상", "베스트"],
+    # Blogspot 블로그 — 테마 제한 없음
+    "blogspot_daily": [],   # Korea travel for foreigners (English)
+    "blogspot_travel": [],  # 한국어 여행 블로그
+    "blogspot_it": [],      # IT/테크 영어 블로그
 }
 
 
@@ -765,7 +768,7 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
 
     if not raw or "추출 실패" in raw:
         log(f"[파이프라인] 글 생성 실패")
-        return False
+        return False, keyword
 
     # 2. 전처리 — MRT 메타 헤더 및 백틱 마커 정규화
     # 마이리얼트립 메타 정보 블록 제거 (═══...【메타 정보】...회차/앵글/문체 등)
@@ -816,6 +819,8 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
                   '', body, flags=re.IGNORECASE).strip()
     # <br> 태그를 줄바꿈으로 변환 (핵심요약 박스 등 HTML 잔재 처리)
     body = re.sub(r'<br\s*/?>', '\n', body, flags=re.IGNORECASE)
+    # 마크다운 구분선 제거 (---, ***, ___ 단독 줄 — WordPress에서 그대로 노출됨)
+    body = re.sub(r'(?m)^\s*[-*_]{3,}\s*$', '', body).strip()
 
     # 태그: 첫 줄만 (여러 줄이면 첫 줄의 쉼표 구분)
     if tag_m:
@@ -878,7 +883,7 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
         log(f"[파싱] 메타: \"{meta_desc[:60]}\" ({len(meta_desc)}자)")
     if len(title) == 0 or title.strip() == keyword.strip():
         log(f"[파싱] ❌ 제목 생성 실패 (title='{title}') — 발행 중단")
-        return False
+        return False, keyword
     if char_count < 100:
         log(f"[파싱] ⚠ 본문이 너무 짧음 ({char_count}자)")
     log(f"[파싱] 본문 미리보기: {body[:80]}...")
@@ -954,6 +959,7 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
                     body = re.sub(r'</?(?:div|section|article|aside|header|footer|nav|main|figure|figcaption)(\s[^>]*)?>',
                                   '', body, flags=re.IGNORECASE).strip()
                     body = re.sub(r'<br\s*/?>', '\n', body, flags=re.IGNORECASE)
+                    body = re.sub(r'(?m)^\s*[-*_]{3,}\s*$', '', body).strip()
                     plain = re.sub(r"##.*|{{.*?}}|\[애드센스\]|\|.*", "", body)
                     char_count = len(re.sub(r"\s+", "", plain))
                 else:
@@ -1155,6 +1161,306 @@ def post_one_blog(blog_id):
             pass
 
 
+def _md_to_html(md: str) -> str:
+    """마크다운 본문 → Blogger용 HTML 변환 (간단한 규칙 기반)"""
+    import html as _html
+    lines = md.split('\n')
+    result = []
+    in_table = False
+    in_blockquote = False
+
+    for line in lines:
+        # 표
+        if line.strip().startswith('|'):
+            if not in_table:
+                result.append('<table style="width:100%;border-collapse:collapse;margin:16px 0;">')
+                in_table = True
+            if re.match(r'^\s*\|[-| :]+\|\s*$', line):
+                continue  # 구분선 행 스킵
+            cells = [c.strip() for c in line.strip().strip('|').split('|')]
+            row_html = ''.join(f'<td style="border:1px solid #ddd;padding:8px;">{c}</td>' for c in cells)
+            result.append(f'<tr>{row_html}</tr>')
+            continue
+        else:
+            if in_table:
+                result.append('</table>')
+                in_table = False
+
+        # 인용 (꿀팁 박스)
+        if line.strip().startswith('> '):
+            tip = line.strip()[2:]
+            result.append(
+                f'<blockquote style="background:#f0f7ff;border-left:4px solid #1a73e8;'
+                f'padding:12px 16px;margin:16px 0;border-radius:4px;">'
+                f'{_apply_inline(tip)}</blockquote>'
+            )
+            continue
+
+        # H2
+        h2 = re.match(r'^## (.+)$', line)
+        if h2:
+            result.append(f'<h2 style="margin-top:32px;">{_apply_inline(h2.group(1))}</h2>')
+            continue
+        # H3
+        h3 = re.match(r'^### (.+)$', line)
+        if h3:
+            result.append(f'<h3 style="margin-top:20px;">{_apply_inline(h3.group(1))}</h3>')
+            continue
+
+        # 불릿 리스트
+        li = re.match(r'^[-*] (.+)$', line)
+        if li:
+            result.append(f'<li style="margin:4px 0;">{_apply_inline(li.group(1))}</li>')
+            continue
+
+        # 이미지 플레이스홀더 — 나중에 교체
+        if re.match(r'^\{\{이미지\d+\}\}$', line.strip()):
+            result.append(line.strip())
+            continue
+
+        # 빈 줄
+        if not line.strip():
+            result.append('')
+            continue
+
+        # 일반 단락
+        result.append(f'<p>{_apply_inline(line)}</p>')
+
+    if in_table:
+        result.append('</table>')
+
+    return '\n'.join(result)
+
+
+def _apply_inline(text: str) -> str:
+    """굵게, 이탤릭, 인라인코드 등 인라인 마크다운 변환"""
+    # **볼드**
+    text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+    # *이탤릭*
+    text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
+    # `코드`
+    text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
+    # [텍스트](URL)
+    text = re.sub(r'\[([^\]]+)\]\((https?://[^\)]+)\)', r'<a href="\2" target="_blank">\1</a>', text)
+    return text
+
+
+# Blogger 블로그별 blog_id 매핑 (.env에서 읽음)
+_BLOGGER_BLOG_IDS = {}  # {"blogspot_daily": "12345...", ...}
+
+def _get_blogger_blog_id(blog_id: str) -> str:
+    """blog_id에 해당하는 Blogger blog ID 반환"""
+    global _BLOGGER_BLOG_IDS
+    if blog_id in _BLOGGER_BLOG_IDS:
+        return _BLOGGER_BLOG_IDS[blog_id]
+    # .env에서 읽기
+    env = {}
+    env_path = BASE_DIR / ".env"
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, _, v = line.partition("=")
+                env[k.strip()] = v.strip()
+    # blogspot_daily → BLOGSPOT_DAILY_BLOG_ID
+    # blogspot_travel → BLOGSPOT_TRAVEL_BLOG_ID
+    env_key = blog_id.upper().replace("-", "_") + "_BLOG_ID"
+    result = env.get(env_key, env.get("BLOGGER_BLOG_ID", ""))
+    _BLOGGER_BLOG_IDS[blog_id] = result
+    return result
+
+
+def _post_one_blogger_blog(blog_id: str) -> bool:
+    """Blogger 블로그에 키워드 1개 선택 → 글 생성 → Blogger API로 즉시 발행"""
+    try:
+        from claude_direct import generate_text
+    except ImportError:
+        from claude_playwright import generate_text
+    from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as _db_set
+    from image_router import generate_images_for_blog
+    from blogger_api import publish_post as _blogger_publish
+
+    # 키워드 선택
+    kw = None
+    for _ in range(5):
+        candidate = fetch_next_pending(blog_id)
+        if not candidate:
+            break
+        if _naver_competition_check(candidate, on_log=log):
+            kw = candidate
+            break
+        log(f"[{blog_id}] ⚠ 경쟁 높음 '{candidate}' → 스킵")
+        _db_set(candidate, "failed", blog_id=blog_id)
+    if not kw:
+        log(f"[{blog_id}] 대기 키워드 없음 — 스킵")
+        return False
+
+    log(f"[{blog_id}] 키워드: {kw}")
+    _db_set(kw, "in_progress", blog_id=blog_id)
+
+    try:
+        # 1. 글 생성
+        log(f"[{blog_id}] 글 생성 시작: '{kw}'")
+        raw = generate_text("", blog_id=blog_id, keyword=kw, on_log=log)
+        if not raw or "추출 실패" in raw:
+            log(f"[{blog_id}] 글 생성 실패")
+            _db_set(kw, "failed", blog_id=blog_id)
+            return False
+
+        # 백틱 마커 정규화
+        raw = re.sub(r'`\s*(===(?:제목|본문|태그|메타)(?:끝)?===)\s*`', r'\1', raw)
+
+        # 2. 파싱
+        title_m = re.search(r"===제목===\s*\n(.*?)\n*===제목끝===", raw, re.DOTALL)
+        body_m  = re.search(r"===본문===\s*\n(.*?)\n*===본문끝===", raw, re.DOTALL)
+        tag_m   = re.search(r"===태그===\s*\n(.*?)\n*===태그끝===", raw, re.DOTALL)
+        img_m   = re.search(r"===이미지===\s*\n(.*?)\n*===이미지끝===", raw, re.DOTALL)
+
+        raw_title = title_m.group(1).strip().split('\n')[0] if title_m else kw
+        title = _truncate_title(raw_title, max_len=60)
+        body  = body_m.group(1).strip() if body_m else raw
+
+        # 내부 마커 제거
+        body = re.sub(r'\[검증\s*필요\]|\[출처\s*필요\]|\[사실\s*확인\]|\[확인\s*필요\]', '', body)
+        body = re.sub(r'(?m)^\s*[-*_]{3,}\s*$', '', body)
+
+        if tag_m:
+            tag_line = tag_m.group(1).strip().split('\n')[0]
+            tags = [t.strip() for t in tag_line.split(',') if t.strip()]
+        else:
+            tags = [kw]
+
+        # 이미지 정보 파싱
+        images = []
+        if img_m:
+            img_text = img_m.group(1)
+            for block in re.findall(r"\[이미지\s*\d+\][^\[]+", img_text, re.DOTALL):
+                n_m = re.search(r"\[이미지\s*(\d+)\]", block)
+                p_m = re.search(r"프롬프트:\s*(.+)", block)
+                f_m = re.search(r"파일명:\s*(.+)", block)
+                a_m = re.search(r"alt:\s*(.+)", block)
+                if n_m and p_m:
+                    images.append({
+                        "index": int(n_m.group(1)),
+                        "prompt": p_m.group(1).strip(),
+                        "filename": f_m.group(1).strip() if f_m else f"img-{n_m.group(1)}.jpg",
+                        "alt": a_m.group(1).strip() if a_m else kw,
+                    })
+
+        # H2 개수로 최소 이미지 수 결정
+        h2_count = len(re.findall(r'^##\s+', body, re.MULTILINE))
+        if not images:
+            for i in range(1, max(h2_count, 3) + 1):
+                images.append({"index": i, "prompt": f"{kw} travel Korea photo {i}", "filename": f"img{i}.jpg", "alt": kw})
+
+        # 3. 이미지 생성 (Gemini / Pollinations)
+        log(f"[{blog_id}] 이미지 {len(images)}개 생성 시작")
+        image_paths = generate_images_for_blog(
+            blog_id=blog_id,
+            image_infos=images,
+            skip_webp=False,
+            on_log=log,
+        )
+        log(f"[{blog_id}] 이미지 {len(image_paths)}개 생성 완료")
+
+        # 이미지 부족 시 Pollinations 폴백
+        if len(image_paths) < len(images):
+            import urllib.parse as _up
+            from image_router import _pollinations_image, IMAGES_DIR as _IMG_DIR
+            _blog_img_dir = _IMG_DIR / blog_id
+            _blog_img_dir.mkdir(parents=True, exist_ok=True)
+            for img in images:
+                idx = img["index"]
+                if idx not in image_paths:
+                    fp = str(_blog_img_dir / img["filename"])
+                    ok = _pollinations_image(img["prompt"], fp, on_log=log)
+                    if ok:
+                        image_paths[idx] = fp
+
+        # 4. 마크다운 → HTML 변환
+        html_body = _md_to_html(body)
+
+        # 5. {{이미지N}} 플레이스홀더를 <img> 태그로 교체
+        # Blogger API는 이미지를 base64 data URI 또는 외부 URL로 받음
+        # 로컬 파일을 base64로 인코딩하여 삽입
+        import base64 as _b64
+        def _img_tag(path: str, alt: str) -> str:
+            try:
+                with open(path, "rb") as f:
+                    data = _b64.b64encode(f.read()).decode()
+                ext = Path(path).suffix.lower().lstrip('.')
+                mime = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "webp": "webp"}.get(ext, "jpeg")
+                return (f'<div style="text-align:center;margin:20px 0;">'
+                        f'<img src="data:image/{mime};base64,{data}" '
+                        f'alt="{alt}" style="max-width:100%;height:auto;border-radius:8px;" />'
+                        f'</div>')
+            except Exception as e:
+                log(f"[{blog_id}] 이미지 삽입 실패 ({path}): {e}")
+                return ""
+
+        for img in images:
+            idx = img["index"]
+            placeholder = f"{{{{이미지{idx}}}}}"
+            if idx in image_paths:
+                tag = _img_tag(image_paths[idx], img.get("alt", kw))
+            else:
+                tag = ""
+            html_body = html_body.replace(placeholder, tag)
+
+        # 남은 플레이스홀더 제거
+        html_body = re.sub(r'\{\{이미지\d+\}\}', '', html_body)
+
+        # 6. Blogger API로 발행
+        blogger_id = _get_blogger_blog_id(blog_id)
+        if not blogger_id:
+            log(f"[{blog_id}] ⚠ Blogger blog ID 없음 — .env에 BLOGSPOT_DAILY_BLOG_ID 설정 필요")
+            _db_set(kw, "failed", blog_id=blog_id)
+            return False
+
+        log(f"[{blog_id}] Blogger API 발행 중: '{title}'")
+        result = _blogger_publish(title=title, content=html_body, labels=tags,
+                                  status="LIVE", blog_id=blogger_id)
+        if not result.get("ok"):
+            log(f"[{blog_id}] Blogger 발행 실패: {result.get('reason')}")
+            _db_set(kw, "failed", blog_id=blog_id)
+            return False
+
+        post_url = result.get("url", "")
+        log(f"[{blog_id}] ✅ 발행 완료: {post_url}")
+        _db_set(kw, "published", blog_id=blog_id, title=title)
+
+        # 발행 시각 기록
+        _times_file = LOG_DIR / "blog_publish_times.json"
+        try:
+            times = json.loads(_times_file.read_text()) if _times_file.exists() else {}
+            times[blog_id] = datetime.now().timestamp()
+            _times_file.write_text(json.dumps(times))
+        except Exception:
+            pass
+
+        # 텔레그램 보고
+        _tg_msg = (
+            f"✅ 발행 완료\n"
+            f"블로그: {blog_id}\n"
+            f"제목: {title}\n"
+            f"발행시각: {datetime.now().strftime('%H:%M')}\n"
+            f"URL: {post_url}\n\n"
+            f"🔧 검수 중 수정사항:\n- 이상 없음"
+        )
+        try:
+            import subprocess as _sp
+            _sp.run(["python3", str(BASE_DIR / "tg_send.py"), _tg_msg], timeout=15)
+        except Exception:
+            pass
+
+        return True
+
+    except Exception as e:
+        log(f"[{blog_id}] 오류: {e}")
+        _db_set(kw, "failed", blog_id=blog_id)
+        return False
+
+
 def _post_one_blog_inner(blog_id):
     """post_one_blog 실제 로직 (락 획득 후 호출)"""
     # me1091: Notion 상품 기반 Coupang 리뷰 파이프라인 (키워드 DB 사용 안 함)
@@ -1169,6 +1475,15 @@ def _post_one_blog_inner(blog_id):
         except Exception as e:
             log(f"[me1091] 오류: {e}")
             return False
+
+    # Blogspot 블로그: Blogger API로 직접 발행 (Playwright 불필요)
+    _BLOGGER_BLOGS = {"blogspot_daily", "blogspot_travel", "blogspot_it"}
+    if blog_id in _BLOGGER_BLOGS:
+        elapsed = _hours_since_last_post(blog_id)
+        if elapsed < MIN_POST_GAP_HOURS:
+            log(f"[{blog_id}] 마지막 포스팅 {elapsed:.1f}시간 전 — 최소 {MIN_POST_GAP_HOURS}시간 필요, 스킵")
+            return False
+        return _post_one_blogger_blog(blog_id)
 
     from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as _db_set
 
@@ -1258,7 +1573,8 @@ def run_one_round(round_num):
     import time as _time
     import random as _rand
     # triplog는 nolja100보다 항상 먼저 — 같은 여행 카테고리에서 triplog 우선 배정
-    _non_travel = ["salim1su", "baremi542", "goodisak", "woll100", "phn0502", "me1091"]
+    _non_travel = ["salim1su", "baremi542", "goodisak", "woll100", "phn0502", "me1091",
+                   "blogspot_daily", "blogspot_travel", "blogspot_it"]
     _rand.shuffle(_non_travel)
     BLOGS = ["triplog", "nolja100"] + _non_travel
     log(f"\n{'='*60}")

@@ -276,6 +276,7 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
                               navigate_to=GEMINI_URL)
     page.wait_for_timeout(2000)
 
+
     # 확대 뷰 오버레이가 열려있으면 닫기
     try:
         close_btn = page.locator('button[aria-label="닫기"]').first
@@ -547,27 +548,7 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     final_path = _save_dir / filename
     saved = False
 
-    # ── 1차: 네트워크 캡처 이미지 직접 저장 (DOM 셀렉터 완전 제거) ──
-    if _captured:
-        # 가장 마지막에 도착한 이미지 선택 (생성 이미지는 항상 마지막)
-        body, ct = _captured[-1]
-        try:
-            img = Image.open(io.BytesIO(body))
-            w, h = img.size
-            log(f"[이미지] 네트워크 이미지 크기: {w}x{h}, {len(body)//1024}KB")
-            # 워터마크 제거: 하단 10% 크롭
-            cropped = img.crop((0, 0, w, int(h * 0.90)))
-            if skip_webp:
-                cropped.convert("RGB").save(str(final_path), "JPEG", quality=90)
-                log(f"[이미지] JPG 저장 완료: {final_path.name}")
-            else:
-                cropped.convert("RGB").save(str(final_path), "WEBP", quality=85)
-                log(f"[이미지] WEBP 저장 완료: {final_path.name}")
-            saved = True
-        except Exception as e:
-            log(f"[이미지] 네트워크 이미지 저장 실패: {e}")
-
-    # ── 1.5차: Gemini 다운로드 버튼 방식 (네트워크 캡처 실패 시) ──
+    # ── 1차: Gemini 다운로드 버튼 방식 (사람처럼 직접 다운로드) ──
     if not saved:
         log("[이미지] 다운로드 버튼 방식 시도...")
         try:
@@ -634,7 +615,25 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
         except Exception as e:
             log(f"[이미지] 다운로드 버튼 방식 실패: {e}")
 
-    # ── 2차 폴백: DOM canvas 추출 (네트워크 캡처 실패 시) ──
+    # ── 2차 폴백: 네트워크 캡처 이미지 저장 ──
+    if not saved and _captured:
+        body, ct = _captured[-1]
+        try:
+            img = Image.open(io.BytesIO(body))
+            w, h = img.size
+            log(f"[이미지] 네트워크 캡처 폴백: {w}x{h}, {len(body)//1024}KB")
+            cropped = img.crop((0, 0, w, int(h * 0.90)))
+            if skip_webp:
+                cropped.convert("RGB").save(str(final_path), "JPEG", quality=90)
+                log(f"[이미지] JPG 저장 완료(네트워크): {final_path.name}")
+            else:
+                cropped.convert("RGB").save(str(final_path), "WEBP", quality=85)
+                log(f"[이미지] WEBP 저장 완료(네트워크): {final_path.name}")
+            saved = True
+        except Exception as e:
+            log(f"[이미지] 네트워크 캡처 저장 실패: {e}")
+
+    # ── 3차 폴백: DOM canvas 추출 ──
     if not saved:
         log("[이미지] 네트워크 캡처 없음 — DOM canvas 폴백...")
         _canvas_js = """(selector) => {

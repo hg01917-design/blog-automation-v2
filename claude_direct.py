@@ -59,6 +59,32 @@ def _build_prompt(blog_id: str, keyword: str, extra_context: str = None) -> str:
         "③ 숫자·기간·구체적 효과 포함하면 클릭률 상승\n"
     )
 
+    # 전체 공통 깊이 있는 글쓰기 규칙
+    _DEPTH_RULE = (
+        "\n\n[깊이 있는 글쓰기 — 필수]\n"
+        "이 글 하나로 독자가 완전히 준비되고 행동할 수 있어야 한다.\n"
+        "① 단계별 구체적 방법: '어디서', '어떻게', '얼마에' 를 빠짐없이\n"
+        "   예) T-Money 구매 → 공항 7-Eleven/GS25 위치, 충전 기계 사용법, 잔액 환불 방법\n"
+        "② 실수하기 쉬운 것 반드시 포함: 독자가 현장에서 헷갈릴 포인트 1~3가지\n"
+        "③ 구체적 수치 필수: 가격·시간·거리·날짜 등 숫자로 명시 (불확실하면 '기준' 표기)\n"
+        "④ 나열형 금지 → 각 항목마다 이유·방법·효과까지 풀어서 설명\n"
+        "⑤ 글의 내용은 '이 글 하나로 준비 끝' 수준이어야 하지만,\n"
+        "   제목·소제목에 '완벽정리', '이거 하나면 끝', '총정리', '모든 것' 같은 표현은 절대 쓰지 말 것\n"
+    )
+
+    # 전체 공통 금지 표현 규칙
+    _BANNED_EXPRESSIONS = (
+        "\n\n[절대 금지 표현 — 전체 적용]\n"
+        "① 제목·소제목(H2/H3)에 '꿀팁' 사용 금지 → '방법', '정보', '가이드', '핵심' 등으로 대체\n"
+        "② 제목에 과장 표현 금지: Ultimate, Perfect, Complete, Best Ever, 완벽, 궁극 등\n"
+        "③ AI 냄새 나는 문구 절대 금지:\n"
+        "   - '알아보겠습니다', '살펴보겠습니다', '소개하겠습니다', '정리해드릴게요'\n"
+        "   - '이번 포스팅에서는', '오늘은 ~에 대해', '함께 알아볼게요'\n"
+        "   - '~해보도록 하겠습니다', '~드리도록 하겠습니다'\n"
+        "④ 마무리 문구 금지: '도움이 되셨으면 좋겠습니다', '유익한 정보였으면 합니다' 류\n"
+        "⑤ 본문 tip 박스(> 💡 내용)는 사용 가능하나 소제목에 '꿀팁' 단어 포함 금지\n"
+    )
+
     # 이미지 마커 규칙 (overnight_run.py 이미지 파서용)
     _IMAGE_RULE = (
         "\n\n[이미지 규칙 — 필수]\n"
@@ -69,7 +95,7 @@ def _build_prompt(blog_id: str, keyword: str, extra_context: str = None) -> str:
 
     if instructions:
         # 프로젝트 지침 + 키워드 + 출력 형식
-        prompt = f"{instructions}\n\n[작성 키워드]\n{keyword}{_SEO_TITLE_RULE}{_SECTION_FORMAT}{_IMAGE_RULE}"
+        prompt = f"{instructions}\n\n[작성 키워드]\n{keyword}{_SEO_TITLE_RULE}{_DEPTH_RULE}{_BANNED_EXPRESSIONS}{_SECTION_FORMAT}{_IMAGE_RULE}"
     else:
         # 지침 파일 없으면 기본 프롬프트 (triplog 등)
         prompt = (
@@ -115,29 +141,43 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             log(f"[Direct] === 재시도 {attempt - 1}/2 ===")
 
         try:
+            # 프롬프트를 임시 파일에 저장 (긴 프롬프트 CLI arg 문제 방지)
+            import tempfile
+            tmp_prompt = tempfile.NamedTemporaryFile(
+                mode="w", suffix=".txt", delete=False, encoding="utf-8"
+            )
+            tmp_prompt.write(full_prompt)
+            tmp_prompt.flush()
+            tmp_prompt.close()
+            tmp_path_str = tmp_prompt.name
+
+            # zsh -l 로 사용자 프로파일 소스 → launchd에서도 정상 동작
+            shell_cmd = (
+                f"cat {tmp_path_str} | "
+                f"{CLAUDE_BIN} --dangerously-skip-permissions --print"
+            )
             result = subprocess.run(
-                [
-                    str(CLAUDE_BIN),
-                    "--dangerously-skip-permissions",
-                    "--print",
-                    full_prompt,
-                ],
+                ["zsh", "-l", "-c", shell_cmd],
                 capture_output=True,
                 text=True,
                 cwd=str(BASE_DIR),
                 timeout=300,
                 env={**os.environ, "HOME": str(Path.home())},
             )
+            try:
+                os.unlink(tmp_path_str)
+            except Exception:
+                pass
 
             raw = (result.stdout or "").strip()
             err = (result.stderr or "").strip()
 
-            if err and "error" in err.lower():
-                log(f"[Direct] stderr: {err[:300]}")
-
             if result.returncode != 0:
-                log(f"[Direct] 종료코드 {result.returncode} — 재시도")
+                log(f"[Direct] 종료코드 {result.returncode} — stderr: {err[:500] or '(없음)'}")
                 continue
+
+            if err:
+                log(f"[Direct] stderr: {err[:200]}")
 
             if not raw or len(raw) < 500:
                 log(f"[Direct] 응답 너무 짧음 ({len(raw)}자) — 재시도")

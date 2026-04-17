@@ -4,6 +4,7 @@ import time
 import socket
 import json
 import urllib.request
+from pathlib import Path
 from playwright.sync_api import sync_playwright
 from config import CHROME_CONFIG
 
@@ -129,9 +130,32 @@ def connect_cdp(on_log=None):
     return pw, browser
 
 
+_CURSOR_JS = """() => {
+    if (document.getElementById('_bot_cursor')) return;
+    const cur = document.createElement('div');
+    cur.id = '_bot_cursor';
+    cur.style.cssText = 'position:fixed;top:0;left:0;pointer-events:none;z-index:2147483647;';
+    cur.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+        <path d="M 0 0 L 0 20 L 4.5 15.5 L 8 22 L 10 21 L 6.5 14.5 L 13 14.5 Z"
+              fill="white" stroke="black" stroke-width="1.2" stroke-linejoin="round"/>
+    </svg>`;
+    document.body.appendChild(cur);
+    document.addEventListener('mousemove', e => {
+        cur.style.left = e.clientX + 'px';
+        cur.style.top = e.clientY + 'px';
+    }, true);
+}"""
+
+
 def _apply_stealth(page):
-    """실제 Chrome CDP 연결에서는 stealth 불필요 — 스킵"""
-    pass  # CDP(실제 Chrome) 사용 시 playwright-stealth가 greenlet 오류 유발하여 제거
+    """실제 Chrome CDP 연결에서는 stealth 불필요. 마우스 커서 시각화만 적용."""
+    try:
+        # add_init_script: 페이지 이동 시마다 자동 재주입
+        page.add_init_script(f"({_CURSOR_JS})()")
+        # 현재 페이지에도 즉시 적용
+        page.evaluate(f"({_CURSOR_JS})()")
+    except Exception:
+        pass
 
 
 def get_or_create_page(browser, url_contains=None, navigate_to=None):
@@ -159,3 +183,48 @@ def get_or_create_page(browser, url_contains=None, navigate_to=None):
         page.goto(navigate_to, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)
     return page
+
+
+def see(page, question: str = "현재 화면 상태를 설명해줘. 어떤 버튼/팝업/오류가 있는지 포함해서.", on_log=None) -> str:
+    """현재 브라우저 화면을 스크린샷 찍어 Claude Code CLI로 분석.
+
+    사용 예:
+        result = see(page, "이미지 다운로드 버튼이 보이나요?")
+        result = see(page, "로그인이 성공했나요?")
+    """
+    import subprocess
+    import os
+    import tempfile
+
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            tmp_path = f.name
+
+        page.screenshot(path=tmp_path, full_page=False)
+
+        prompt = f"{question}\n\n스크린샷 파일: {tmp_path}\n(Read 툴로 이미지를 읽어서 답해줘. 한국어로 간결하게.)"
+        claude_bin = Path.home() / ".local" / "bin" / "claude"
+
+        result = subprocess.run(
+            [str(claude_bin), "--dangerously-skip-permissions", "--print", prompt],
+            capture_output=True, text=True,
+            cwd=str(Path(__file__).parent),
+            timeout=60,
+            env={**os.environ, "HOME": str(Path.home())},
+        )
+        answer = (result.stdout or "").strip()
+        log(f"[👁️ 화면분석] {answer[:300]}")
+        return answer
+
+    except Exception as e:
+        log(f"[👁️] 화면분석 실패: {e}")
+        return ""
+    finally:
+        try:
+            Path(tmp_path).unlink(missing_ok=True)
+        except Exception:
+            pass
