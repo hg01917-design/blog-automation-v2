@@ -50,24 +50,27 @@ def build_morning_report() -> str:
     yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
     lines = [f"🌅 아침 리포트 {today_str}\n{'─'*28}"]
 
-    # ── 1. AdSense 수익 ──────────────────────────────────────────────────
+    # ── 1. AdSense 수익 (어제 하루치) ────────────────────────────────────
     try:
-        from adsense_tracker import collect_earnings, format_goal_report, get_goal_status
+        from adsense_tracker import collect_earnings
         earned_yesterday = collect_earnings(yesterday)
-        goal_report = format_goal_report()
-        lines.append(goal_report)
+        if earned_yesterday is not None:
+            lines.append(f"💰 AdSense ({yesterday}): ₩{earned_yesterday:,.0f}")
+        else:
+            lines.append(f"💰 AdSense ({yesterday}): 데이터 없음")
         lines.append("")
     except Exception as e:
         lines.append(f"💰 AdSense: 조회 실패 ({e})\n")
 
-    # ── 2. GSC 성과 요약 (최근 7일) ──────────────────────────────────────
+    # ── 2. GSC 성과 (어제 하루치) ────────────────────────────────────────
     try:
         from keyword_engine.gsc_connector import collect_daily, get_performance_summary
-        # 어제 데이터 수집 (이미 수집됐으면 덮어씀)
-        collect_daily(yesterday)
+        # GSC는 2-3일 딜레이 → 3일 전 데이터 수집 (yesterday는 아직 비어있음)
+        gsc_date = (now - timedelta(days=3)).strftime("%Y-%m-%d")
+        collect_daily(gsc_date)
         perf = get_performance_summary(days=7)
         if perf:
-            lines.append("📈 GSC 성과 (최근 7일)")
+            lines.append(f"📈 GSC 성과 (최근 7일 누적, {gsc_date}까지)")
             total_clicks = sum(v.get("total_clicks", 0) for v in perf.values())
             total_imp = sum(v.get("total_impressions", 0) for v in perf.values())
             lines.append(f"전체  클릭 {total_clicks:,}  노출 {total_imp:,}")

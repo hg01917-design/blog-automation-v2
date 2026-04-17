@@ -106,7 +106,7 @@ def init_db():
 
 
 # 블로그별 주제 포화 임계값 (같은 지역/주제 이미 N개 이상이면 스킵)
-_TOPIC_SATURATION = 3
+_TOPIC_SATURATION = 2  # 같은 지역/OTT 2개 이상 발행 시 포화 (기존 3 → 2로 강화)
 
 # 블로그 → 키워드 카테고리 매핑 (fetch_next_pending 카테고리 필터용)
 # me1091은 쿠팡파트너스 제휴 블로그 — 키워드 엔진 미사용 (None으로 처리)
@@ -119,11 +119,18 @@ _BLOG_CATEGORY = {
     "woll100": "교통",
     "phn0502": "영화",
     "me1091": None,  # 제휴 블로그 — 키워드 엔진 미사용
+    "blogspot_daily": "BlogspotKoreaTravel",
+    "blogspot_travel": "Blogspot여행",
+    "blogspot_it": "BlogspotIT",
 }
 
 # 블로그별 금지 키워드 접두/접미 (해당 단어 포함 시 스킵)
 _BLOG_KEYWORD_BLACKLIST: dict[str, list[str]] = {
-    "goodisak": ["대출"],
+    "goodisak": ["대출", "주식", "증권", "코인", "펀드", "ETF", "장려금", "지원금", "실업급여"],
+    "salim1su": ["주식", "증권", "코인", "펀드", "ETF", "투자", "대출", "청약", "부동산",
+                 "장려금", "지원금", "실업급여", "육아휴직급여", "복지급여"],
+    "nolja100": ["주식", "증권", "코인", "대출", "장려금", "지원금"],
+    "triplog":  ["주식", "증권", "코인", "대출", "장려금", "지원금"],
 }
 
 # 여행 블로그 지역 키워드 목록 (nolja100/triplog)
@@ -147,7 +154,7 @@ def _is_topic_saturated(keyword: str, blog_id: str) -> bool:
                 with _conn() as db:
                     count = db.execute(
                         """SELECT COUNT(*) FROM keyword_blog_status
-                           WHERE blog_id = ? AND status = 'published'
+                           WHERE blog_id = ? AND status IN ('published', 'draft_saved')
                            AND REPLACE(keyword, ' ', '') LIKE ?""",
                         (blog_id, f"%{loc}%"),
                     ).fetchone()[0]
