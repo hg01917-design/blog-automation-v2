@@ -234,14 +234,33 @@ def _generate_hook_with_claude(title: str, body_excerpt: str, blog_id: str = "")
 후킹글만 출력 (설명·제목 없이):"""
 
     try:
+        # CLAUDECODE 환경변수 제거 + 캐시 토큰 주입 (launchd 키체인 잠금 대비)
+        _REMOVE = {"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT",
+                   "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_IDE_PORT", "CLAUDE_CODE_IDE_SELECTION_OFFSET"}
+        _env = {k: v for k, v in os.environ.items() if k not in _REMOVE}
+        _env["HOME"] = str(Path.home())
+        if "ANTHROPIC_API_KEY" not in _env:
+            _token_cache = BASE_DIR / ".claude_token_cache"
+            if _token_cache.exists():
+                _cached = _token_cache.read_text(encoding="utf-8").strip()
+                if _cached:
+                    _env["ANTHROPIC_API_KEY"] = _cached
+
         result = _sp.run(
-            [CLAUDE_BIN, "--dangerously-skip-permissions", "--print", prompt],
+            [CLAUDE_BIN, "--dangerously-skip-permissions", "--print"],
+            input=prompt,
             capture_output=True, text=True, timeout=60,
             cwd=str(BASE_DIR),
-            env={**os.environ, "HOME": str(Path.home())}
+            env=_env,
         )
         text = (result.stdout or "").strip()
-        if text and len(text) > 20:
+        # 에러 응답 필터링 — "Credit balance", "error", 영어 오류 메시지 등
+        _ERROR_PATTERNS = [
+            r"credit balance", r"insufficient", r"rate limit", r"quota exceeded",
+            r"error:", r"api key", r"authentication", r"unauthorized",
+        ]
+        is_error = any(re.search(p, text, re.IGNORECASE) and len(text) < 150 for p in _ERROR_PATTERNS)
+        if text and len(text) > 20 and not is_error:
             # 마크다운 헤더·구분선 제거 (Claude가 덧붙이는 경우)
             text = re.sub(r"^\*\*[^*]+\*\*:\s*\n?", "", text).strip()
             text = re.sub(r"^---+\s*\n?", "", text, flags=re.MULTILINE).strip()
