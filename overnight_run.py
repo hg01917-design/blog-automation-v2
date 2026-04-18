@@ -1461,7 +1461,7 @@ def _post_one_blogger_blog(blog_id: str) -> bool:
         )
         try:
             import subprocess as _sp
-            _sp.run(["python3", str(BASE_DIR / "tg_send.py"), _tg_msg], timeout=15)
+            _sp.run([sys.executable, str(BASE_DIR / "tg_send.py"), _tg_msg], timeout=15)
         except Exception:
             pass
 
@@ -1647,8 +1647,9 @@ def run_one_round(round_num):
     import subprocess as _sp
     _pub_log = open(str(LOG_DIR / "publish_drafts_auto.log"), "a")
     try:
+        _py = sys.executable  # overnight_run과 동일한 python 인터프리터 사용
         _pub = _sp.Popen(
-            ["python3", str(Path(__file__).parent / "publish_drafts.py")],
+            [_py, str(Path(__file__).parent / "publish_drafts.py")],
             stdout=_pub_log, stderr=_sp.STDOUT,
             cwd=str(Path(__file__).parent),
         )
