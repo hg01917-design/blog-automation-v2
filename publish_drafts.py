@@ -1251,6 +1251,12 @@ def _tistory_publish_private(page, blog_id: str) -> bool:
     if _check_captcha():
         _log(f"[{blog_id}] ⚠ 캡챠 감지 — 스크린샷 전송 후 수동 대기")
         import subprocess as _sp2, tempfile as _tmp
+        # 제목 읽기 (NameError 방지)
+        try:
+            _tel = page.query_selector('#post-title-inp') or page.query_selector('#title')
+            title = (_tel.input_value() or "").strip() if _tel else "(제목 미확인)"
+        except Exception:
+            title = "(제목 미확인)"
         # 스크린샷 캡처 후 텔레그램 전송
         try:
             _shot_path = _tmp.mktemp(suffix=".png")
