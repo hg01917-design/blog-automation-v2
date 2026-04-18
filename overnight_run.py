@@ -286,7 +286,8 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
             for p in _posts:
                 title = re.sub(r'<[^>]+>', '', p.get("title", {}).get("rendered", ""))
                 match_count = sum(1 for w in core_words if w in title)
-                if match_count >= max(2, len(core_words) * 0.5):
+                _wp_thresh = len(core_words) if len(core_words) <= 3 else max(3, int(len(core_words) * 0.75))
+                if match_count >= _wp_thresh:
                     _log(f"[유사문서] ⚠ WP 중복 발견: \"{title}\" (id={p['id']})")
                     return True, title
             _log(f"[유사문서] WP 검색 완료 — {len(_posts)}개 중 중복 없음")
@@ -313,7 +314,9 @@ def check_duplicate_post(blog_id, keyword, on_log=None):
                 for t in _rtitles[1:21]:  # 첫 번째는 블로그 제목
                     t_clean = re.sub(r'<[^>]+>', '', t).strip()
                     match_count = sum(1 for w in core_words if w in t_clean)
-                    if match_count >= max(2, len(core_words) * 0.5):
+                    # 3단어 이상 키워드: 전부 일치해야 중복 판정 (2/3 일치는 오탐 너무 많음)
+                    _rss_thresh = len(core_words) if len(core_words) <= 3 else max(3, int(len(core_words) * 0.75))
+                    if match_count >= _rss_thresh:
                         _log(f"[유사문서] ⚠ Tistory RSS 중복: \"{t_clean}\"")
                         return True, t_clean
                 _log(f"[유사문서] Tistory RSS 확인 완료 — 중복 없음 (최근 20개)")
@@ -1670,6 +1673,23 @@ if __name__ == "__main__":
     log("=" * 60)
     log(f"자동 실행 시작 ({datetime.now().strftime('%Y-%m-%d %H:%M')})")
     log("=" * 60)
+
+    # ── 시작 시: stale in_progress 키워드 → pending 초기화 (이전 세션 crash 대비) ──
+    try:
+        from keyword_engine.db_handler import _conn as _kw_conn
+        with _kw_conn() as _db:
+            _stale = _db.execute(
+                "SELECT keyword, blog_id FROM keyword_blog_status WHERE status = 'in_progress'"
+            ).fetchall()
+            if _stale:
+                for _s_kw, _s_blog in _stale:
+                    _db.execute(
+                        "UPDATE keyword_blog_status SET status = 'pending' WHERE keyword = ? AND blog_id = ?",
+                        (_s_kw, _s_blog),
+                    )
+                log(f"[시작] stale in_progress {len(_stale)}개 → pending 초기화: {[r[0] for r in _stale]}")
+    except Exception as _e:
+        log(f"[시작] in_progress 초기화 실패 (무시): {_e}")
 
     # ── 일 1회 작업: 키워드 크롤링 + 롱테일 확장 + 경쟁모니터 (상태파일로 중복 방지) ──
     _STATE_FILE = LOG_DIR / "overnight_state.json"
