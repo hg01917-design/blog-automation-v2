@@ -191,13 +191,15 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             combined = [p for p in default_paths if p not in existing_paths] + existing_paths
             clean_env["PATH"] = ":".join(p for p in combined if p)
 
-            # OAuth 토큰 주입 — 키체인 잠금(launchd 새벽 실행) 시 폴백 캐시 사용
-            if "ANTHROPIC_API_KEY" not in clean_env:
-                oauth_token = _get_claude_oauth_token()
-                if oauth_token:
-                    clean_env["ANTHROPIC_API_KEY"] = oauth_token
+            # OAuth 토큰 주입 — 항상 캐시/키체인에서 읽어 덮어씀
+            # (Claude Code 세션 내부 ANTHROPIC_API_KEY가 claude 바이너리용 OAuth 토큰과 다를 수 있음)
+            oauth_token = _get_claude_oauth_token()
+            if oauth_token:
+                clean_env["ANTHROPIC_API_KEY"] = oauth_token
 
             # 프롬프트를 stdin pipe로 전달
+            # start_new_session=True: Claude Code 세션 프로세스 그룹에서 완전히 분리
+            # → 중첩 세션 감지 / SSE 소켓 연결 시도로 인한 hang 방지
             result = subprocess.run(
                 [str(CLAUDE_BIN), "--dangerously-skip-permissions", "--print"],
                 input=full_prompt,
@@ -206,6 +208,7 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
                 cwd=str(BASE_DIR),
                 timeout=300,
                 env=clean_env,
+                start_new_session=True,
             )
 
             raw = (result.stdout or "").strip()
