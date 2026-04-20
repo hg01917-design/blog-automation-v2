@@ -289,7 +289,28 @@ _PROMPT_STYLE = {
         "clean bright natural lighting, journalistic composition, "
         "neutral background, no text overlay, no people faces, 4K quality"
     ),
+    "blogspot_it": (
+        "clean modern tech illustration, high quality digital art, "
+        "professional design, no watermark, no text overlay"
+    ),
+    "blogspot_travel": (
+        "photorealistic travel photography, South Korea scenic location, "
+        "vibrant colors, professional DSLR look, no people, no faces, no text, 4K quality"
+    ),
+    "blogspot_daily": (
+        "photorealistic lifestyle photography, Korean daily life setting, "
+        "soft natural lighting, clean minimal background, no text, 4K quality"
+    ),
 }
+
+# blogspot_it: 인덱스별 강제 이미지 타입 (중복 방지 핵심)
+_BLOGSPOT_IT_IMAGE_TYPES = [
+    "smartphone app UI comparison mockup, two screens side by side, flat design, white background, infographic style",
+    "feature comparison infographic chart, colorful icon grid, pros and cons layout, clean illustration",
+    "lifestyle scene, person using smartphone or laptop in cafe or office, realistic photography, warm lighting",
+    "data visualization, statistics chart or graph, modern infographic, blue color scheme, clean design",
+    "app icon close-up, minimal white background, product detail shot, clean modern design",
+]
 
 # 구도 변형자 — 같은 글 내 이미지 중복 방지 (index 기반 순환)
 _COMPOSITION_VARIANTS = [
@@ -343,7 +364,13 @@ def _sanitize_prompt_for_gemini(prompt: str) -> str:
 def _enhance_prompt(blog_id: str, prompt: str, index: int = 1) -> str:
     """원본 프롬프트에 블로그별 스타일 + 구도 변형자를 합쳐 강화된 영문 프롬프트 반환."""
     style = _get_prompt_style(blog_id, prompt)
-    # index 기반 구도 변형 (0-based 순환)
+
+    # blogspot_it: 인덱스별 이미지 타입 강제 적용 (중복 방지)
+    if blog_id in ("blogspot_it", "blogspot_travel", "blogspot_daily"):
+        type_override = _BLOGSPOT_IT_IMAGE_TYPES[(index - 1) % len(_BLOGSPOT_IT_IMAGE_TYPES)]
+        return f"{prompt}, {type_override}, {style}"
+
+    # 그 외: index 기반 구도 변형 (0-based 순환)
     composition = _COMPOSITION_VARIANTS[(index - 1) % len(_COMPOSITION_VARIANTS)]
     # Gemini 전용 블로그: 사람/공연 트리거 제거
     if blog_id in ("salim1su", "me1091"):
