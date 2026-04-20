@@ -242,7 +242,8 @@ def add_title_overlay(img_path: str, title: str, blog_id: str = "", on_log=None)
         log(f"[썸네일] 텍스트 오버레이 실패: {e}")
         return False
 
-IMAGES_DIR = Path(__file__).parent / "images"
+BASE_DIR = Path(__file__).parent
+IMAGES_DIR = BASE_DIR / "images"
 IMAGES_DIR.mkdir(exist_ok=True)
 
 # ─── 블로그별 프롬프트 스타일 가이드 ────────────────────────────────────
@@ -448,9 +449,9 @@ def generate_images_for_blog(
     output_dir = IMAGES_DIR / blog_id
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Gemini 전용: Naver 블로그만 (salim1su, me1091)
+    # Gemini 전용: Naver 블로그 + Blogspot (Bing 실패율 높음)
     # Tistory(nolja100, goodisak) / WP(baremi542, triplog) → Bing 4장 모드
-    is_gemini_only = blog_id in ("salim1su", "me1091")
+    is_gemini_only = blog_id in ("salim1su", "me1091", "blogspot_it", "blogspot_travel", "blogspot_daily")
 
     if is_gemini_only:
         results = _generate_naver(enhanced_infos, skip_webp, log, reference_images=reference_images, output_dir=output_dir)
@@ -594,16 +595,28 @@ def _try_loremflickr(image_infos: list, log, output_dir=None) -> dict:
 
 
 def _generate_other(image_infos: list, skip_webp: bool, log, output_dir=None) -> dict:
-    """Tistory/WP: Bing만 사용. 실패 시 스킵 (Pollinations/loremflickr 금지 — 엉뚱한 이미지 방지)"""
+    """Tistory/WP: Bing 우선, Playwright 충돌 등 전체 실패 시 Pollinations 폴백."""
     bing_res = _try_bing(image_infos, skip_webp, log, output_dir=output_dir)
     if bing_res:
         failed = [info for info in image_infos if info['index'] not in bing_res]
-        if failed:
-            log(f"[Router] Bing 실패 {len(failed)}장 → 스킵 (폴백 없음)")
-        return bing_res
+        if not failed:
+            return bing_res
+        # 일부 실패 — 나머지를 Pollinations로
+        log(f"[Router] Bing 일부 실패 {len(failed)}장 → Pollinations 폴백")
+        results = dict(bing_res)
+    else:
+        log("[Router] Bing 전체 실패 → Pollinations 폴백")
+        results = {}
+        failed = image_infos
 
-    log("[Router] Bing 전체 실패 → 스킵 (폴백 없음)")
-    return {}
+    _out = output_dir or (IMAGES_DIR / "tmp")
+    Path(_out).mkdir(parents=True, exist_ok=True)
+    for info in failed:
+        _fp = str(Path(_out) / info["filename"])
+        ok = _pollinations_image(info.get("prompt", ""), _fp, on_log=log)
+        if ok:
+            results[info["index"]] = _fp
+    return results
 
 
 def _try_bing(image_infos: list, skip_webp: bool, log, output_dir=None) -> dict:
