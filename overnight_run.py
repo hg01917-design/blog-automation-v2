@@ -1770,11 +1770,12 @@ def _upload_image_to_host(img_data: bytes, filename: str) -> str:
 
 
 def _blogger_insert_images_pw(blogger_blog_id: str, post_id: str, image_paths: dict, on_log=None) -> bool:
-    """Blogger 포스트에 이미지 삽입 (이미지 호스팅 + Blogger API PATCH 방식).
+    """Blogger 포스트에 이미지 삽입 (Playwright + Google Picker 로컬 업로드 방식).
     image_paths: {1: '/path/img1.webp', 2: '/path/img2.webp', ...}
-    H2 헤딩 순서대로 각 이미지 삽입.
+    Chrome CDP(9222)로 에디터 열어 이미지 삽입 후 저장.
     """
-    import io as _io
+    import time as _time
+
     def log(msg):
         if on_log: on_log(msg)
 
@@ -1782,85 +1783,159 @@ def _blogger_insert_images_pw(blogger_blog_id: str, post_id: str, image_paths: d
         log("[Blogger이미지] 삽입할 이미지 없음")
         return False
 
-    # 1. 이미지를 JPEG로 변환 + 외부 호스팅 업로드
-    image_urls = {}
+    # JS: 드롭다운에서 '컴퓨터에서 업로드' 요소 좌표 반환
+    JS_FIND_UPLOAD = """() => {
+        function traverse(node) {
+            if (!node) return null;
+            if (node.shadowRoot) {
+                let r = traverse(node.shadowRoot);
+                if (r) return r;
+            }
+            let text = (node.textContent || '').trim();
+            if (text === '컴퓨터에서 업로드' && node.tagName === 'DIV') {
+                let rect = node.getBoundingClientRect();
+                if (rect.width > 10 && rect.height > 10 && rect.width < 300) {
+                    return {x: Math.round(rect.left + rect.width/2),
+                            y: Math.round(rect.top + rect.height/2)};
+                }
+            }
+            for (let c of (node.children || [])) {
+                let r = traverse(c);
+                if (r) return r;
+            }
+            return null;
+        }
+        return traverse(document.body);
+    }"""
+
+    def _find_file_input(page, timeout=12):
+        start = _time.time()
+        while _time.time() - start < timeout:
+            for f in page.frames:
+                try:
+                    if f.locator('input[type="file"]').count() > 0:
+                        return f
+                except: pass
+            _time.sleep(0.5)
+        return None
+
+    def _wait_picker_closed(page, timeout=40):
+        start = _time.time()
+        while _time.time() - start < timeout:
+            try:
+                has_input = any(
+                    f.locator('input[type="file"]').count() > 0
+                    for f in page.frames
+                )
+            except:
+                has_input = False
+            if not has_input:
+                return True
+            _time.sleep(0.5)
+        return False
+
+    try:
+        from playwright.sync_api import sync_playwright as _pw
+    except ImportError:
+        log("[Blogger이미지] playwright 미설치")
+        return False
+
+    edit_url = f"https://www.blogger.com/blog/post/edit/{blogger_blog_id}/{post_id}"
     sorted_imgs = sorted(image_paths.items())
-    for img_num, img_path in sorted_imgs:
-        p = Path(img_path)
-        if not p.exists():
-            log(f"[Blogger이미지] 파일 없음: {img_path}")
-            continue
-        try:
-            from PIL import Image as _PILImage
-            img = _PILImage.open(p).convert("RGB")
-            w, h = img.size
-            if w > 1200 or h > 1200:
-                r = min(1200/w, 1200/h)
-                img = img.resize((int(w*r), int(h*r)), _PILImage.LANCZOS)
-            buf = _io.BytesIO()
-            img.save(buf, "JPEG", quality=80, optimize=True)
-            img_data = buf.getvalue()
-        except ImportError:
-            img_data = p.read_bytes()
+    success_count = 0
 
-        log(f"[Blogger이미지] 업로드 중: {p.name} ({len(img_data)//1024}KB)")
-        url = _upload_image_to_host(img_data, f"blogger_{img_num}.jpg")
-        if url:
-            image_urls[img_num] = url
-            log(f"[Blogger이미지] 업로드 완료: {url[:60]}")
-        else:
-            log(f"[Blogger이미지] 업로드 실패: {p.name}")
-
-    if not image_urls:
-        log("[Blogger이미지] 업로드된 이미지 없음")
-        return False
-
-    # 2. Blogger API로 현재 포스트 내용 가져오기
     try:
-        from gsc_indexing import _get_access_token
-        token = _get_access_token()
+        with _pw() as pw:
+            browser = pw.chromium.connect_over_cdp("http://localhost:9222")
+            ctx = browser.contexts[0]
+
+            # 기존 에디터 탭 재사용 또는 새 탭
+            page = None
+            for p in ctx.pages:
+                if f"post/edit/{blogger_blog_id}/{post_id}" in p.url:
+                    page = p
+                    break
+            if page is None:
+                page = ctx.new_page()
+                page.goto(edit_url, wait_until="domcontentloaded", timeout=30000)
+                _time.sleep(5)
+            else:
+                page.bring_to_front()
+                _time.sleep(1)
+
+            page.keyboard.press("Escape")
+            _time.sleep(1)
+
+            for img_num, img_path in sorted_imgs:
+                p_path = Path(img_path)
+                if not p_path.exists():
+                    log(f"[Blogger이미지] 파일 없음: {img_path}")
+                    continue
+
+                log(f"[Blogger이미지] 삽입 중 ({img_num}/{len(sorted_imgs)}): {p_path.name}")
+
+                page.evaluate("window.scrollTo(0, 0)")
+                _time.sleep(0.3)
+
+                # 이미지 삽입 버튼 → 드롭다운
+                img_btn = page.locator("div[role='button'][aria-label='이미지 삽입']").first
+                img_btn.click(force=True)
+                _time.sleep(1.5)
+
+                # '컴퓨터에서 업로드' 좌표 동적 탐색
+                coords = page.evaluate(JS_FIND_UPLOAD)
+                if not coords:
+                    log(f"[Blogger이미지] '컴퓨터에서 업로드' 요소 없음, 스킵")
+                    page.keyboard.press("Escape")
+                    continue
+
+                page.mouse.click(coords['x'], coords['y'])
+
+                # Google Picker 파일 입력 대기
+                picker_frame = _find_file_input(page, timeout=12)
+                if not picker_frame:
+                    log(f"[Blogger이미지] Picker 없음, 스킵")
+                    page.keyboard.press("Escape")
+                    continue
+
+                _time.sleep(2)  # Picker JS 초기화 대기
+
+                try:
+                    file_input = picker_frame.locator('input[type="file"]').first
+                    file_input.set_input_files(str(img_path))
+                except Exception as e:
+                    log(f"[Blogger이미지] set_input_files 오류: {e}")
+                    page.keyboard.press("Escape")
+                    continue
+
+                # 업로드 완료 대기 (picker 자동 닫힘)
+                _wait_picker_closed(page, timeout=40)
+                _time.sleep(2)
+                success_count += 1
+                log(f"[Blogger이미지] ✅ 이미지 {img_num} 삽입 완료")
+
+            if success_count == 0:
+                log("[Blogger이미지] 삽입된 이미지 없음")
+                page.close()
+                return False
+
+            # 업데이트 저장
+            try:
+                update_btn = page.locator("div[role='button'][aria-label='업데이트']").first
+                if update_btn.get_attribute("aria-disabled") != "true":
+                    update_btn.click(force=True)
+                    _time.sleep(5)
+                    log(f"[Blogger이미지] ✅ 저장 완료 ({success_count}/{len(sorted_imgs)}장)")
+                else:
+                    log("[Blogger이미지] 변경사항 없음 (저장 불필요)")
+            except Exception as e:
+                log(f"[Blogger이미지] 저장 오류: {e}")
+
+            page.close()
+            return success_count > 0
+
     except Exception as e:
-        log(f"[Blogger이미지] 토큰 획득 실패: {e}")
-        return False
-
-    import urllib.request as _ur, json as _json, re as _re
-    get_url = f"https://www.googleapis.com/blogger/v3/blogs/{blogger_blog_id}/posts/{post_id}"
-    try:
-        req = _ur.Request(get_url, headers={"Authorization": f"Bearer {token}"})
-        with _ur.urlopen(req) as resp:
-            post = _json.loads(resp.read())
-    except Exception as e:
-        log(f"[Blogger이미지] 포스트 조회 실패: {e}")
-        return False
-
-    content = post.get("content", "")
-    h2_matches = list(_re.finditer(r'(<h2[^>]*>.*?</h2>)', content, _re.DOTALL | _re.IGNORECASE))
-    log(f"[Blogger이미지] H2 요소: {len(h2_matches)}개")
-
-    # 3. H2 다음에 이미지 삽입 (역순)
-    for img_num, url in reversed(sorted(image_urls.items())):
-        idx = img_num - 1
-        img_tag = f'\n<figure style="text-align:center;margin:20px 0"><img src="{url}" alt="이미지{img_num}" style="max-width:100%;height:auto;border-radius:6px" /></figure>\n'
-        if idx < len(h2_matches):
-            m = h2_matches[idx]
-            content = content[:m.end()] + img_tag + content[m.end():]
-        else:
-            content = img_tag + content
-
-    # 4. Blogger API PATCH로 업데이트
-    patch_url = f"https://www.googleapis.com/blogger/v3/blogs/{blogger_blog_id}/posts/{post_id}"
-    body = _json.dumps({"content": content}).encode("utf-8")
-    try:
-        req = _ur.Request(patch_url, data=body, headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }, method="PATCH")
-        with _ur.urlopen(req) as resp:
-            result = _json.loads(resp.read())
-            log(f"[Blogger이미지] ✅ 이미지 삽입 완료: {result.get('url', '')}")
-            return True
-    except Exception as e:
-        log(f"[Blogger이미지] 업데이트 실패: {e}")
+        log(f"[Blogger이미지] Playwright 오류: {e}")
         return False
 
 
