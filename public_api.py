@@ -484,6 +484,145 @@ def fetch_tmdb_context(keyword: str, on_log=None) -> str:
     return context
 
 
+# 교통 API 엔드포인트
+_EXPRESS_BUS_URL = "https://apis.data.go.kr/1613000/ExpBusInfoService2/getStrtpntAlocFndExpbsInfo"
+_INTERCITY_BUS_URL = "https://apis.data.go.kr/1613000/SubwayInfoService2/getSubwaySttnAcctoSchdulList"
+_BUS_TERMINAL_URL = "https://apis.data.go.kr/1613000/ExpBusInfoService2/getCtyCodeList"
+
+# 주요 터미널 코드 (고속버스)
+_TERMINAL_CODES = {
+    "서울": "NAEK", "강남": "NAKS", "동서울": "NAED", "수원": "NAE2",
+    "인천": "NAEI", "부산": "BUEX", "대구": "DAEG", "광주": "GJUS",
+    "대전": "DAEJ", "울산": "ULSA", "전주": "JNJU", "청주": "CHJU",
+    "춘천": "CHCH", "강릉": "GANG", "속초": "SOKC", "여수": "YEOS",
+    "순천": "SUCH", "목포": "MOKP", "포항": "POHN", "경주": "GYJU",
+    "안동": "ANDO", "진주": "JINJU", "통영": "TONG", "제주": "JEJU",
+}
+
+
+def _extract_transport_locations(keyword: str):
+    """키워드에서 출발지/도착지 추출."""
+    # "A에서 B" / "A-B" / "A B" 패턴
+    import re
+    m = re.search(r'([가-힣]+)\s*(?:에서|→|->|-)\s*([가-힣]+)', keyword)
+    if m:
+        return m.group(1), m.group(2)
+    # 지역명 2개 연속
+    regions = list(_TERMINAL_CODES.keys())
+    found = [r for r in regions if r in keyword]
+    if len(found) >= 2:
+        return found[0], found[1]
+    if len(found) == 1:
+        return found[0], ""
+    return "", ""
+
+
+def fetch_transport_context(keyword: str, on_log=None) -> str:
+    """교통 키워드에서 실제 노선/요금/시간표 정보를 반환.
+
+    고속버스, 시외버스, KTX, 공항버스를 자동 감지.
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    if not SERVICE_KEY:
+        log("[교통API] 공공데이터 API 키 없음 — 스킵")
+        return ""
+
+    dep, arr = _extract_transport_locations(keyword)
+    is_express = any(w in keyword for w in ["고속버스", "고속", "강남버스", "동서울버스"])
+    is_ktx = any(w in keyword for w in ["KTX", "ktx", "기차", "무궁화", "새마을", "ITX"])
+    is_airport = any(w in keyword for w in ["공항버스", "공항리무진", "리무진", "인천공항", "김포공항", "김해공항"])
+    is_intercity = any(w in keyword for w in ["시외버스", "시외"])
+
+    lines = []
+    log(f"[교통API] 키워드 분석: dep={dep}, arr={arr}, 유형={'공항' if is_airport else 'KTX' if is_ktx else '고속' if is_express else '시외' if is_intercity else '교통'}")
+
+    # 고속버스 노선 조회
+    if is_express or (dep and arr and not is_ktx and not is_airport):
+        dep_code = _TERMINAL_CODES.get(dep, "")
+        arr_code = _TERMINAL_CODES.get(arr, "")
+        if dep_code and arr_code:
+            params = {
+                "numOfRows": "10", "pageNo": "1",
+                "MobileOS": "ETC", "MobileApp": "blog-auto",
+                "depTerminalId": dep_code, "arrTerminalId": arr_code,
+            }
+            data = _get(_EXPRESS_BUS_URL, params)
+            try:
+                items = data["response"]["body"]["items"]
+                item_list = items.get("item", []) if items else []
+                if isinstance(item_list, dict):
+                    item_list = [item_list]
+                if item_list:
+                    lines.append(f"[고속버스 운행정보: {dep} → {arr}]")
+                    for it in item_list[:5]:
+                        dep_time = it.get("depPlandTime", "")[:4] if it.get("depPlandTime") else ""
+                        arr_time = it.get("arrPlandTime", "")[:4] if it.get("arrPlandTime") else ""
+                        charge = it.get("charge", "")
+                        grade = it.get("gradeNm", "")
+                        if dep_time:
+                            if len(dep_time) == 4:
+                                dep_time = f"{dep_time[:2]}:{dep_time[2:]}"
+                            if len(str(arr_time)) == 4:
+                                arr_time = f"{str(arr_time)[:2]}:{str(arr_time)[2:]}"
+                            line = f"- {dep_time} 출발 → {arr_time} 도착"
+                            if grade:
+                                line += f" ({grade})"
+                            if charge:
+                                line += f" / {int(charge):,}원"
+                            lines.append(line)
+                    log(f"[교통API] 고속버스 {len(item_list)}건 수집")
+            except Exception as e:
+                log(f"[교통API] 고속버스 파싱 오류: {e}")
+        else:
+            log(f"[교통API] 터미널 코드 없음: dep={dep}({dep_code}), arr={arr}({arr_code})")
+
+    # KTX/기차
+    if is_ktx:
+        lines.append(f"[KTX/열차 정보: {dep or '출발지'} → {arr or '도착지'}]")
+        lines.append("- 코레일 예약: www.letskorail.com / 1544-7788")
+        lines.append(f"- KTX 서울-부산 약 2시간 30분, 59,800원~")
+        lines.append(f"- KTX 서울-광주송정 약 1시간 40분, 46,800원~")
+        lines.append(f"- KTX 서울-대전 약 50분, 23,700원~")
+        lines.append(f"- KTX 서울-강릉 약 1시간 50분, 27,600원~")
+        lines.append("※ 실제 요금/시간은 코레일 사이트에서 확인 (할인 운임 별도)")
+        log("[교통API] KTX 기본 정보 삽입")
+
+    # 공항버스/리무진
+    if is_airport:
+        airport = "인천공항" if "인천" in keyword else "김포공항" if "김포" in keyword else "김해공항" if "김해" in keyword else "공항"
+        lines.append(f"[{airport} 버스/리무진 정보]")
+        if "인천" in keyword:
+            lines.append("- 인천공항 제1터미널·제2터미널 운행")
+            lines.append("- 공항버스 예약: www.airportbus.or.kr / 1644-2700")
+            lines.append("- 서울 주요 지역까지 6,000~18,000원 / 60~90분 소요")
+            lines.append("- 김포공항 ↔ 인천공항 리무진: 약 7,000원 / 40~60분")
+        elif "김포" in keyword:
+            lines.append("- 김포공항 버스 예약: 1644-2700")
+            lines.append("- 서울 시내까지 3,000~6,000원 / 30~60분 소요")
+        lines.append("※ 시간대별 배차·요금은 공항버스 공식 사이트에서 확인")
+        log("[교통API] 공항버스 기본 정보 삽입")
+
+    # 시외버스
+    if is_intercity:
+        lines.append(f"[시외버스 정보: {dep or '출발지'} → {arr or '도착지'}]")
+        lines.append("- 시외버스 예약: www.bustago.or.kr / 1588-6900")
+        lines.append("- 전국 주요 노선 시간표·요금 조회 가능")
+        log("[교통API] 시외버스 기본 정보 삽입")
+
+    if not lines:
+        log(f"[교통API] 매칭 유형 없음 — 기본 교통 안내만 제공")
+        lines.append(f"[교통 정보: {keyword}]")
+        lines.append("- 고속버스: www.kobus.co.kr / 1588-6900")
+        lines.append("- 시외버스: www.bustago.or.kr")
+        lines.append("- KTX·열차: www.letskorail.com / 1544-7788")
+        lines.append("- 공항버스: www.airportbus.or.kr / 1644-2700")
+
+    return "\n".join(lines)
+
+
 def fetch_context_for_blog(blog_id: str, keyword: str, on_log=None) -> str:
     """blog_id에 따라 적합한 공공API 데이터를 가져와 extra_context로 반환.
 
@@ -500,4 +639,7 @@ def fetch_context_for_blog(blog_id: str, keyword: str, on_log=None) -> str:
     elif blog_id == "phn0502":
         # 영화/드라마 블로그: TMDB 실제 정보 + OTT 시청 가능 플랫폼
         return fetch_tmdb_context(keyword, on_log=on_log)
+    elif blog_id == "woll100":
+        # 교통 블로그: 고속버스·시외버스·KTX·공항버스 노선/요금/시간표
+        return fetch_transport_context(keyword, on_log=on_log)
     return ""
