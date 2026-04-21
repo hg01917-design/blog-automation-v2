@@ -235,7 +235,7 @@ def _run_claude(full_prompt: str, on_log=None, timeout: int = 300) -> str:
 
     try:
         result = subprocess.run(
-            [str(CLAUDE_BIN), "--dangerously-skip-permissions", "--print"],
+            [str(CLAUDE_BIN), "--dangerously-skip-permissions", "--print", "--model", "haiku"],
             input=full_prompt,
             capture_output=True,
             text=True,
