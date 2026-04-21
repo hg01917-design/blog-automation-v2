@@ -343,6 +343,12 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     input_el.click()
     page.wait_for_timeout(300)
 
+    # 프롬프트 전송 전 다운로드 버튼 수 기록 (새로 생성된 이미지 버튼만 클릭하기 위함)
+    try:
+        _dl_btn_count_before = page.locator('[data-test-id="download-generated-image-button"]').count()
+    except Exception:
+        _dl_btn_count_before = 0
+
     if reference_image and Path(reference_image).exists():
         # 참고 이미지 있을 때: Claude가 만든 프롬프트를 Gemini 지시어로 감싸서 사용
         full_prompt = (
@@ -535,70 +541,42 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     final_path = _save_dir / filename
     saved = False
 
-    # ── 1차: Gemini 다운로드 버튼 방식 (사람처럼 직접 다운로드) ──
+    # ── 1차: Gemini 다운로드 버튼 방식 (새로 생성된 버튼만 클릭) ──
     if not saved:
         log("[이미지] 다운로드 버튼 방식 시도...")
         try:
-            # 생성된 이미지 요소 찾기
-            img_el = page.locator(
-                'model-response img:not(.user-icon), '
-                '.response-container img:not(.user-icon)'
-            ).last
-            if img_el.is_visible(timeout=5000):
-                # 이미지 hover → 다운로드 버튼 표시
-                img_el.hover()
-                page.wait_for_timeout(800)
-                dl_btn = page.locator(
-                    'button[aria-label*="다운로드"], button[aria-label*="Download"], '
-                    'button[aria-label*="download"], [data-tooltip*="다운로드"], '
-                    '[data-tooltip*="Download"]'
-                ).first
-                if dl_btn.is_visible(timeout=3000):
-                    with page.expect_download(timeout=30000) as dl_info:
-                        dl_btn.click()
-                    dl = dl_info.value
-                    temp_dl_path = _save_dir / f"temp_dl_{filename}"
-                    dl.save_as(str(temp_dl_path))
-                    # 워터마크 제거 후 저장
-                    dl_img = Image.open(str(temp_dl_path))
-                    dw, dh = dl_img.size
-                    cropped_dl = dl_img.crop((0, 0, dw, int(dh * 0.90)))
-                    if skip_webp:
-                        cropped_dl.convert("RGB").save(str(final_path), "JPEG", quality=90)
-                    else:
-                        cropped_dl.convert("RGB").save(str(final_path), "WEBP", quality=85)
-                    Path(str(temp_dl_path)).unlink(missing_ok=True)
-                    saved = True
-                    log(f"[이미지] 다운로드 방식 저장 완료: {final_path.name} ({dw}x{dh})")
+            # 새로 생성된 다운로드 버튼 찾기 (before 카운트 이후에 추가된 버튼)
+            try:
+                page.wait_for_function(
+                    f"() => document.querySelectorAll('[data-test-id=\"download-generated-image-button\"]').length > {_dl_btn_count_before}",
+                    timeout=5000
+                )
+            except Exception:
+                pass
+            dl_btns = page.locator('[data-test-id="download-generated-image-button"]')
+            total_dl = dl_btns.count()
+            # _dl_btn_count_before 이후에 추가된 첫 번째 버튼 클릭
+            new_btn_idx = _dl_btn_count_before if total_dl > _dl_btn_count_before else (total_dl - 1 if total_dl > 0 else 0)
+            dl_btn = dl_btns.nth(new_btn_idx)
+            if dl_btn.is_visible(timeout=3000):
+                with page.expect_download(timeout=30000) as dl_info:
+                    dl_btn.evaluate("el => el.click()")
+                dl = dl_info.value
+                temp_dl_path = _save_dir / f"temp_dl_{filename}"
+                dl.save_as(str(temp_dl_path))
+                # 워터마크 제거 후 저장
+                dl_img = Image.open(str(temp_dl_path))
+                dw, dh = dl_img.size
+                cropped_dl = dl_img.crop((0, 0, dw, int(dh * 0.90)))
+                if skip_webp:
+                    cropped_dl.convert("RGB").save(str(final_path), "JPEG", quality=90)
                 else:
-                    log("[이미지] 다운로드 버튼 미발견 — 이미지 클릭 후 dialog에서 재시도")
-                    # 이미지 클릭으로 확대 뷰 열기
-                    img_el.click()
-                    page.wait_for_timeout(2000)
-                    dl_btn2 = page.locator(
-                        '[role="dialog"] button[aria-label*="다운로드"], '
-                        '[role="dialog"] button[aria-label*="Download"]'
-                    ).first
-                    if dl_btn2.is_visible(timeout=3000):
-                        with page.expect_download(timeout=30000) as dl_info2:
-                            dl_btn2.click()
-                        dl2 = dl_info2.value
-                        temp_dl_path2 = _save_dir / f"temp_dl2_{filename}"
-                        dl2.save_as(str(temp_dl_path2))
-                        dl_img2 = Image.open(str(temp_dl_path2))
-                        dw2, dh2 = dl_img2.size
-                        cropped_dl2 = dl_img2.crop((0, 0, dw2, int(dh2 * 0.90)))
-                        if skip_webp:
-                            cropped_dl2.convert("RGB").save(str(final_path), "JPEG", quality=90)
-                        else:
-                            cropped_dl2.convert("RGB").save(str(final_path), "WEBP", quality=85)
-                        Path(str(temp_dl_path2)).unlink(missing_ok=True)
-                        saved = True
-                        log(f"[이미지] 다운로드(dialog) 방식 저장 완료: {final_path.name}")
-                    try:
-                        page.keyboard.press("Escape")
-                    except Exception:
-                        pass
+                    cropped_dl.convert("RGB").save(str(final_path), "WEBP", quality=85)
+                Path(str(temp_dl_path)).unlink(missing_ok=True)
+                saved = True
+                log(f"[이미지] 다운로드 방식 저장 완료: {final_path.name} ({dw}x{dh})")
+            else:
+                log("[이미지] 다운로드 버튼 미발견 — 네트워크 캡처 폴백으로 전환")
         except Exception as e:
             log(f"[이미지] 다운로드 버튼 방식 실패: {e}")
 
