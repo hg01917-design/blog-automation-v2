@@ -25,7 +25,7 @@ def _chunked_type(page, text, chunk_size=50, delay_per_char=None):
     try:
         _sp.run(['pbcopy'], input=text.encode('utf-8'), check=True)
         page.keyboard.press('Meta+v')
-        time.sleep(0.3)
+        time.sleep(random.uniform(0.6, 1.5))
     except Exception:
         # pbcopy 실패 시 기존 방식으로 폴백
         if delay_per_char is None:
@@ -1618,13 +1618,13 @@ def _post_naver(account, title, content, tags=None,
                 # 소제목 앞 빈 줄 (첫 섹션 제외)
                 if si > 0:
                     page.keyboard.press("Enter")
-                    time.sleep(0.05)
+                    time.sleep(random.uniform(0.3, 0.7))
                     page.keyboard.press("Enter")
-                    time.sleep(0.05)
+                    time.sleep(random.uniform(0.3, 0.7))
 
                 # 텍스트 먼저 입력 → ElementHandle.click()으로 포커스 이동 → 서식 적용
                 _chunked_type(page, heading, chunk_size=50)
-                time.sleep(0.3)
+                time.sleep(random.uniform(0.5, 1.0))
 
                 # 방금 입력한 소제목 텍스트 paragraph를 ElementHandle.click()으로 클릭
                 # (JS click은 SE3 포커스 이동 안 됨 → ElementHandle 필수)
@@ -1634,7 +1634,7 @@ def _post_naver(account, title, content, tags=None,
                         if el.text_content().strip() == heading:
                             el.scroll_into_view_if_needed()
                             el.click()
-                            time.sleep(0.3)
+                            time.sleep(random.uniform(0.3, 0.6))
                             break
                     except Exception:
                         pass
@@ -1646,17 +1646,15 @@ def _post_naver(account, title, content, tags=None,
                     log(f"[포스팅] ✅ 소제목 서식 적용 완료")
                 page.keyboard.press("End")
                 page.keyboard.press("Enter")
-                time.sleep(0.5)
-                # _naver_restore_body_format 제거 — SE3에서 Enter 후 자동으로 본문 서식 전환됨
-                # 호출하면 소제목 서식까지 본문으로 바꿔버리는 부작용 발생
+                time.sleep(random.uniform(0.8, 1.5))
 
                 # 소제목 후 마지막 본문 paragraph 클릭으로 포커스 확보
                 body_ps = page.query_selector_all('.se-component.se-text .se-text-paragraph')
                 if body_ps:
                     body_ps[-1].click()
-                    time.sleep(0.3)
+                    time.sleep(random.uniform(0.4, 0.8))
                 page.keyboard.press("Enter")
-                time.sleep(0.3)
+                time.sleep(random.uniform(0.4, 0.8))
 
             elif stype == "image":
                 idx = section["index"]
@@ -1718,18 +1716,18 @@ def _post_naver(account, title, content, tags=None,
                         if li < len(lines) - 1:
                             # 모바일 가독성: 줄 사이 Enter 두 번 (독립 문단으로 분리)
                             page.keyboard.press("Enter")
-                            time.sleep(0.1)
+                            time.sleep(random.uniform(0.2, 0.5))
                             page.keyboard.press("Enter")
-                            time.sleep(0.1)
+                            time.sleep(random.uniform(0.2, 0.5))
                     # 문단 사이 Enter 두 번
                     if pi < len(paragraphs) - 1:
                         page.keyboard.press("Enter")
-                        time.sleep(0.1)
+                        time.sleep(random.uniform(0.3, 0.6))
                         page.keyboard.press("Enter")
-                        time.sleep(0.1)
+                        time.sleep(random.uniform(0.3, 0.6))
                 # 섹션 끝 Enter
                 page.keyboard.press("Enter")
-                time.sleep(0.5)
+                time.sleep(random.uniform(0.8, 1.5))
 
         _rand_delay(page, 1000, 2000)
 
@@ -1748,44 +1746,71 @@ def _post_naver(account, title, content, tags=None,
             log("[포스팅] 에디터 글자수 확인 실패")
         log("[포스팅] 본문 입력 완료")
 
-        # ── 해시태그 입력 ──
-        if tags:
-            try:
-                _naver_dismiss_overlays(page)
-                _TAG_SELS = [
-                    '#tagText',
-                    'input[placeholder*="태그"]',
-                    '.se-tag-hashtag-input input',
-                    '.se-hashtag-input input',
-                    '#postWriteTagText',
-                    'input[class*="tag"]',
-                ]
-                tag_input = None
-                for sel in _TAG_SELS:
-                    loc = page.locator(sel).first
+        # ── 발행 패널 열기 → 카테고리 + 태그 설정 ──
+        try:
+            _naver_dismiss_overlays(page)
+            pub_panel_btn = page.locator('.publish_btn__m9KHH')
+            if pub_panel_btn.is_visible(timeout=3000):
+                pub_panel_btn.click()
+                time.sleep(random.uniform(1.5, 2.5))
+                log("[포스팅] 발행 패널 열림")
+
+                # 카테고리 선택
+                category = account.get("category", "")
+                if category:
                     try:
-                        if loc.is_visible(timeout=2000):
-                            tag_input = loc
-                            break
-                    except Exception:
-                        continue
-                if tag_input:
-                    tag_ok = 0
-                    for tag in tags[:10]:
-                        try:
-                            tag_input.click()
-                            time.sleep(0.2)
-                            tag_input.fill(tag.strip())
-                            page.keyboard.press("Enter")
-                            time.sleep(0.5)
-                            tag_ok += 1
-                        except Exception as _te:
-                            log(f"[포스팅] 태그 '{tag}' 입력 오류: {_te}")
-                    log(f"[포스팅] 태그 {tag_ok}개 입력 완료")
-                else:
-                    log("[포스팅] 태그 입력창 미발견 — 건너뜀")
-            except Exception as _tage:
-                log(f"[포스팅] 태그 입력 실패: {_tage}")
+                        cat_btn = page.locator('.selectbox_button__jb1Dt')
+                        if cat_btn.is_visible(timeout=3000):
+                            cat_btn.click()
+                            time.sleep(random.uniform(0.8, 1.5))
+                            items = page.locator('.item__sAGX9')
+                            count = items.count()
+                            for i in range(count):
+                                item = items.nth(i)
+                                item_text = (item.text_content() or "").strip()
+                                if category in item_text:
+                                    item.click()
+                                    time.sleep(random.uniform(0.5, 1.0))
+                                    log(f"[포스팅] 카테고리 '{item_text}' 선택 완료")
+                                    break
+                    except Exception as _ce:
+                        log(f"[포스팅] 카테고리 선택 오류: {_ce}")
+
+                # 태그 입력
+                if tags:
+                    try:
+                        tag_input = page.locator('#tag-input')
+                        if tag_input.is_visible(timeout=3000):
+                            tag_ok = 0
+                            for tag in tags[:10]:
+                                try:
+                                    tag_input.click()
+                                    time.sleep(random.uniform(0.2, 0.5))
+                                    tag_input.fill(tag.strip())
+                                    page.keyboard.press("Enter")
+                                    time.sleep(random.uniform(0.5, 1.0))
+                                    tag_ok += 1
+                                except Exception as _te:
+                                    log(f"[포스팅] 태그 '{tag}' 입력 오류: {_te}")
+                            log(f"[포스팅] 태그 {tag_ok}개 입력 완료")
+                        else:
+                            log("[포스팅] 태그 입력창 미발견 — 건너뜀")
+                    except Exception as _tage:
+                        log(f"[포스팅] 태그 입력 실패: {_tage}")
+
+                # 발행 패널 닫기
+                try:
+                    close_btn = page.locator('.se-sidebar-close-button')
+                    if close_btn.is_visible(timeout=2000):
+                        close_btn.click()
+                        time.sleep(random.uniform(0.8, 1.5))
+                        log("[포스팅] 발행 패널 닫힘")
+                except Exception:
+                    pass
+            else:
+                log("[포스팅] 발행 패널 버튼 미발견 — 태그/카테고리 건너뜀")
+        except Exception as _panel_e:
+            log(f"[포스팅] 발행 패널 처리 오류: {_panel_e}")
 
         # ── 임시저장 (발행은 사용자가 직접 수행) ──
         log("[포스팅] 임시저장 중...")
