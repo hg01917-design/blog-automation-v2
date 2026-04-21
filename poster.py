@@ -1662,12 +1662,14 @@ def _post_naver(account, title, content, tags=None,
                 if not filepath:
                     for info in image_infos:
                         if info["index"] == idx:
-                            candidate = images_dir / info.get("filename", "")
-                            if candidate.exists():
-                                filepath = str(candidate)
+                            fname = info.get("filename", "")
+                            if fname:
+                                candidate = images_dir / fname
+                                if candidate.is_file():
+                                    filepath = str(candidate)
                             break
 
-                if filepath and os.path.exists(filepath):
+                if filepath and os.path.isfile(filepath):
                     log(f"[포스팅] 이미지 {idx} 업로드: {Path(filepath).name}")
                     ok = _naver_upload_image(page, filepath, log, alt=img_alt)
                     if ok:
