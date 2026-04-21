@@ -1753,6 +1753,7 @@ def _post_naver(account, title, content, tags=None,
             try:
                 _naver_dismiss_overlays(page)
                 _TAG_SELS = [
+                    '#tagText',
                     'input[placeholder*="태그"]',
                     '.se-tag-hashtag-input input',
                     '.se-hashtag-input input',
