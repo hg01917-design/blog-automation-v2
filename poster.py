@@ -1640,10 +1640,10 @@ def _post_naver(account, title, content, tags=None,
                 page.keyboard.press("End")
                 page.keyboard.press("Enter")
                 time.sleep(0.5)
-                _naver_restore_body_format(page)
-                time.sleep(0.3)
+                # _naver_restore_body_format 제거 — SE3에서 Enter 후 자동으로 본문 서식 전환됨
+                # 호출하면 소제목 서식까지 본문으로 바꿔버리는 부작용 발생
 
-                # 소제목 후 본문 영역 재클릭으로 포커스 확보
+                # 소제목 후 마지막 본문 paragraph 클릭으로 포커스 확보
                 body_ps = page.query_selector_all('.se-component.se-text .se-text-paragraph')
                 if body_ps:
                     body_ps[-1].click()
