@@ -196,7 +196,7 @@ def generate_images(image_infos: list, on_log=None, skip_webp=False, reference_i
                 filepath = _generate_single(
                     browser, prompt, filename, on_log,
                     skip_webp=skip_webp,
-                    open_new_chat=(_img_i == 0),  # 첫 이미지만 새 채팅
+                    open_new_chat=True,  # 매 이미지마다 새 채팅 (같은 채팅 이어가면 동일 이미지 반복됨)
                     reference_image=ref_img,
                     save_dir=save_dir,
                 )
