@@ -997,10 +997,17 @@ def _naver_upload_image(page, filepath, log_fn=None, alt: str = ""):
             "() => document.querySelectorAll('.se-component.se-image').length"
         )
 
-        # 사진 버튼 클릭 + file_chooser 인터셉트 (Finder 열지 않음)
+        # 사진 버튼 클릭 + file_chooser 인터셉트
+        # 주의: set_files 전에 input[type=file] value를 초기화해야 같은 파일 재선택 시 change 이벤트 발생
         with page.expect_file_chooser(timeout=8000) as fc_info:
             photo_btn.click(timeout=5000)
-        fc_info.value.set_files(filepath)
+        chooser = fc_info.value
+        # 파일 선택기 초기화 후 재설정 (브라우저 캐싱으로 동일 파일 무시 방지)
+        try:
+            chooser.page.evaluate("() => { document.querySelectorAll('input[type=file]').forEach(el => { el.value = ''; }); }")
+        except Exception:
+            pass
+        chooser.set_files(filepath)
         time.sleep(4)
 
         # 이미지 로드 확인
