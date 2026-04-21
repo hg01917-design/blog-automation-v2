@@ -1202,8 +1202,16 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
 
 def _run_image_and_post(blog_id, keyword, title, body, tags, images):
     """이미지 생성 → 내부링크 → 임시저장 (텍스트 생성 이후 단계만)"""
-    from image_router import generate_images_for_blog, generate_thumbnail
+    from image_router import generate_images_for_blog, generate_thumbnail, IMAGES_DIR
     from poster import post_single
+    import shutil
+
+    # 이미지 폴더 초기화 — 이전 글 이미지가 섞이는 것 방지
+    blog_img_dir = IMAGES_DIR / blog_id
+    if blog_img_dir.exists():
+        shutil.rmtree(blog_img_dir)
+        log(f"[파이프라인] 이미지 폴더 초기화: {blog_img_dir}")
+    blog_img_dir.mkdir(parents=True, exist_ok=True)
 
     # H2 소제목 개수 = 본문 이미지 수 (최소 1)
     h2_count = len(re.findall(r'^##\s+', body, re.MULTILINE))

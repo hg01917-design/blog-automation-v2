@@ -393,38 +393,62 @@ def _generate_all_four(page, prompt: str, base_filename: str, skip_webp: bool = 
             pass
         return False
 
-    # 제출 후 URL 변경(결과 페이지 이동) 대기 — 최대 15초
+    # 제출 후 URL에서 세션 ID 추출 (최대 20초 대기)
+    # Bing은 제출 후 ?id=XXXX 파라미터가 포함된 URL로 리다이렉트
     pre_url = page.url
-    for _ in range(15):
-        page.wait_for_timeout(1000)
-        _dismiss_content_warning()
-        if page.url != pre_url:
-            log(f"[Bing] 결과 페이지 이동 감지: {page.url[:80]}")
-            break
-
-    # 로딩 인디케이터가 나타날 때까지 대기 — 최대 20초
-    loading_detected = False
+    session_id = None
     for _ in range(20):
         page.wait_for_timeout(1000)
         _dismiss_content_warning()
-        if _safe_eval("""() => !!(document.querySelector('.gil_status, .giic_loading, [class*="loading"], .loader, [aria-label*="loading"]'))"""):
-            log("[Bing] 생성 중 로딩 감지됨, 완료 대기...")
-            loading_detected = True
+        cur_url = page.url
+        m = re.search(r'[?&]id=([a-zA-Z0-9\-]+)', cur_url)
+        if m:
+            session_id = m.group(1)
+            log(f"[Bing] 세션 ID 확보: {session_id}")
+            break
+        if cur_url != pre_url:
+            log(f"[Bing] URL 변경됨 (ID 없음): {cur_url[:80]}")
             break
 
-    if not loading_detected:
-        # 로딩 표시 못 잡은 경우 — 이미 완료됐거나 즉시 실패, 추가 10초 고정 대기
-        log("[Bing] 로딩 인디케이터 미감지 — 10초 추가 대기")
-        page.wait_for_timeout(10000)
-
-    # 로딩이 사라질 때까지 대기 — 최대 90초
-    for _ in range(90):
-        page.wait_for_timeout(1000)
-        _dismiss_content_warning()
-        if not _safe_eval("""() => !!(document.querySelector('.gil_status, .giic_loading, [class*="loading"], .loader, [aria-label*="loading"]'))"""):
-            break
+    # 세션 ID가 있으면 async/results API로 생성 완료까지 폴링
+    if session_id:
+        import urllib.parse as _up
+        q_enc = _up.quote(prompt)
+        result_url = f"https://www.bing.com/images/create/async/results/{session_id}?q={q_enc}"
+        log(f"[Bing] 결과 API 폴링 시작...")
+        for tick in range(90):
+            page.wait_for_timeout(1000)
+            _dismiss_content_warning()
+            try:
+                resp_text = page.evaluate(f"""async () => {{
+                    const r = await fetch('{result_url}', {{credentials: 'include'}});
+                    return await r.text();
+                }}""")
+                if resp_text and 'th.bing.com' in resp_text and 'gil_status' not in resp_text:
+                    log(f"[Bing] 결과 API 응답 확인 ({tick+1}초)")
+                    break
+            except Exception:
+                pass
+        else:
+            log("[Bing] 결과 API 90초 초과 — 강제 진행")
     else:
-        log("[Bing] 90초 초과 — 강제 진행")
+        # 세션 ID 없는 경우 — 로딩 인디케이터 방식으로 대기
+        loading_detected = False
+        for _ in range(20):
+            page.wait_for_timeout(1000)
+            _dismiss_content_warning()
+            if _safe_eval("""() => !!(document.querySelector('.gil_status, .giic_loading, [class*="loading"]'))"""):
+                log("[Bing] 로딩 감지됨, 완료 대기...")
+                loading_detected = True
+                break
+        if not loading_detected:
+            log("[Bing] 로딩 미감지 — 15초 고정 대기")
+            page.wait_for_timeout(15000)
+        for _ in range(90):
+            page.wait_for_timeout(1000)
+            _dismiss_content_warning()
+            if not _safe_eval("""() => !!(document.querySelector('.gil_status, .giic_loading, [class*="loading"]'))"""):
+                break
 
     # 새로 생성된 이미지 컨테이너 대기 (최대 20초)
     img_containers = []
