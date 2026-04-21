@@ -1798,32 +1798,36 @@ def _post_naver(account, title, content, tags=None,
                     except Exception as _tage:
                         log(f"[포스팅] 태그 입력 실패: {_tage}")
 
-                # 발행 패널 닫기
+                # 발행 패널 닫기 — 에디터 본문 아무데나 클릭 후 저장 버튼
                 try:
-                    close_btn = page.locator('.se-sidebar-close-button')
-                    if close_btn.is_visible(timeout=2000):
-                        close_btn.click()
-                        time.sleep(random.uniform(0.8, 1.5))
-                        log("[포스팅] 발행 패널 닫힘")
+                    editor_area = page.locator('.se-editor')
+                    if editor_area.is_visible(timeout=2000):
+                        editor_area.click(position={"x": 100, "y": 100})
+                    else:
+                        page.keyboard.press("Escape")
+                    time.sleep(random.uniform(0.8, 1.5))
+                    log("[포스팅] 발행 패널 닫힘")
                 except Exception:
-                    pass
+                    page.keyboard.press("Escape")
+                    time.sleep(0.8)
             else:
                 log("[포스팅] 발행 패널 버튼 미발견 — 태그/카테고리 건너뜀")
         except Exception as _panel_e:
             log(f"[포스팅] 발행 패널 처리 오류: {_panel_e}")
 
-        # ── 임시저장 (발행은 사용자가 직접 수행) ──
+        # ── 임시저장 ──
         log("[포스팅] 임시저장 중...")
         _naver_dismiss_overlays(page)
-        saved = page.evaluate("""() => {
-            const buttons = document.querySelectorAll('button');
-            for (const btn of buttons) {
-                if (btn.textContent.trim().includes('임시저장')) {
-                    btn.click(); return true;
-                }
-            }
-            return false;
-        }""")
+        saved = False
+        try:
+            save_btn = page.locator('.save_btn__bzc5B')
+            if save_btn.is_visible(timeout=3000):
+                save_btn.click()
+                saved = True
+        except Exception:
+            pass
+        if not saved:
+            page.keyboard.press("Meta+s")
         _rand_delay(page, 2000, 3000)
         if saved:
             log(f"[포스팅] 임시저장 완료: {title[:30]}...")
