@@ -1,10 +1,11 @@
-"""공공데이터포털 API 연동 모듈
+"""공공데이터포털 + TMDB API 연동 모듈
 
 블로그 글 생성 전 실제 데이터를 extra_context로 주입해 할루시네이션 방지.
 
 지원 API:
 - 한국관광공사 축제/행사정보  → nolja100, triplog
 - 정부24 공공서비스 정보      → baremi542, goodisak, salim1su
+- TMDB 영화/드라마 정보       → phn0502 (OTT 시청 가능 플랫폼 포함)
 """
 import json
 import os
@@ -216,6 +217,132 @@ def fetch_gov_service_context(keyword: str, on_log=None) -> str:
         return ""
 
 
+_TMDB_KEY = os.environ.get("TMDB_API_KEY", "")
+_TMDB_BASE = "https://api.themoviedb.org/3"
+
+# 한국 OTT 제공업체 ID 매핑
+_KR_PROVIDER_NAMES = {
+    8: "넷플릭스",
+    356: "웨이브",
+    97: "왓챠",
+    96: "티빙",
+    337: "디즈니+",
+    582: "쿠팡플레이",
+    119: "아마존 프라임",
+    350: "애플TV+",
+}
+
+
+def _tmdb_get(path: str, params: dict = None) -> dict:
+    params = params or {}
+    params["api_key"] = _TMDB_KEY
+    params["language"] = "ko-KR"
+    url = _TMDB_BASE + path + "?" + urllib.parse.urlencode(params)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def fetch_tmdb_context(keyword: str, on_log=None) -> str:
+    """키워드로 TMDB 영화/드라마 검색 후 OTT 시청 정보 포함한 context 반환."""
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    if not _TMDB_KEY:
+        return ""
+
+    # 영화/드라마 구분 힌트
+    is_tv = any(w in keyword for w in ["드라마", "시즌", "시리즈", "OTT", "오리지널"])
+
+    # 제목 추출 (OTT명, "추천", "분석" 등 제거)
+    remove_words = ["넷플릭스", "웨이브", "왓챠", "티빙", "디즈니+", "쿠팡플레이",
+                    "추천", "분석", "리뷰", "결말", "해석", "줄거리", "드라마", "영화",
+                    "시즌", "오리지널", "시리즈"]
+    search_q = keyword
+    for w in remove_words:
+        search_q = search_q.replace(w, "").strip()
+    search_q = search_q.strip()
+    if not search_q:
+        search_q = keyword
+
+    # 검색
+    media_type = "tv" if is_tv else "movie"
+    data = _tmdb_get(f"/search/{media_type}", {"query": search_q})
+    results = data.get("results", [])
+
+    # movie 실패시 tv도 시도
+    if not results and media_type == "movie":
+        data2 = _tmdb_get("/search/tv", {"query": search_q})
+        results2 = data2.get("results", [])
+        if results2:
+            results = results2
+            media_type = "tv"
+
+    if not results:
+        log(f"[TMDB] '{search_q}' 검색 결과 없음")
+        return ""
+
+    item = results[0]
+    tmdb_id = item.get("id")
+    title = item.get("title") or item.get("name", "")
+    overview = item.get("overview", "")
+    vote = item.get("vote_average", 0)
+    release = item.get("release_date") or item.get("first_air_date", "")
+    log(f"[TMDB] 검색 결과: {title} ({release[:4] if release else '?'}) — {vote}/10")
+
+    # 상세 정보
+    detail = _tmdb_get(f"/{media_type}/{tmdb_id}", {"append_to_response": "credits"})
+    genres = [g["name"] for g in detail.get("genres", [])]
+    runtime = detail.get("runtime") or detail.get("episode_run_time", [None])[0] if detail.get("episode_run_time") else None
+    cast = [c["name"] for c in detail.get("credits", {}).get("cast", [])[:5]]
+    crew = detail.get("credits", {}).get("crew", [])
+    director = next((c["name"] for c in crew if c.get("job") == "Director"), "")
+
+    # 한국 OTT 시청 가능 플랫폼
+    watch_data = _tmdb_get(f"/{media_type}/{tmdb_id}/watch/providers")
+    kr_providers = watch_data.get("results", {}).get("KR", {})
+    flatrate = kr_providers.get("flatrate", [])  # 월정액 포함
+    rent = kr_providers.get("rent", [])          # 개별 구매/렌탈
+    ott_list = []
+    seen = set()
+    for p in flatrate + rent:
+        pid = p.get("provider_id")
+        name = _KR_PROVIDER_NAMES.get(pid, p.get("provider_name", ""))
+        if name and name not in seen:
+            ott_list.append(name + ("(월정액)" if p in flatrate else "(개별구매)"))
+            seen.add(name)
+
+    # context 조립
+    lines = [
+        f"[TMDB 실제 데이터]",
+        f"제목: {title}",
+        f"장르: {', '.join(genres)}",
+        f"평점: {vote}/10 (TMDB 기준)",
+    ]
+    if release:
+        lines.append(f"개봉/공개: {release[:7]}")
+    if runtime:
+        lines.append(f"러닝타임: {runtime}분")
+    if director:
+        lines.append(f"감독: {director}")
+    if cast:
+        lines.append(f"주요 출연: {', '.join(cast)}")
+    if overview:
+        lines.append(f"줄거리(참고용): {overview[:200]}")
+    if ott_list:
+        lines.append(f"한국 OTT 시청 가능: {', '.join(ott_list)}")
+    else:
+        lines.append("한국 OTT 시청 가능: 정보 없음 (직접 각 플랫폼에서 확인)")
+
+    context = "\n".join(lines)
+    log(f"[TMDB] context 생성 완료 ({len(context)}자)")
+    return context
+
+
 def fetch_context_for_blog(blog_id: str, keyword: str, on_log=None) -> str:
     """blog_id에 따라 적합한 공공API 데이터를 가져와 extra_context로 반환.
 
@@ -226,8 +353,10 @@ def fetch_context_for_blog(blog_id: str, keyword: str, on_log=None) -> str:
         return fetch_festival_context(keyword, on_log=on_log)
     elif blog_id in {"baremi542", "goodisak", "salim1su"}:
         # 정보성 블로그: 정부24 공공서비스
-        # 복지/지원금/혜택 키워드일 때만 (IT나 살림 키워드엔 무관)
         welfare_hints = ["지원", "혜택", "신청", "급여", "보조", "복지", "정책", "수당", "바우처"]
         if any(h in keyword for h in welfare_hints):
             return fetch_gov_service_context(keyword, on_log=on_log)
+    elif blog_id == "phn0502":
+        # 영화/드라마 블로그: TMDB 실제 정보 + OTT 시청 가능 플랫폼
+        return fetch_tmdb_context(keyword, on_log=on_log)
     return ""
