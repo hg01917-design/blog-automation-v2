@@ -454,11 +454,13 @@ def generate_images_for_blog(
         return {}
 
     # 프롬프트에 블로그별 스타일 + 구도 변형 적용
-    # 파일명은 SEO 최적화: {blog_id}-{keyword_slug}-{index}.{ext}
+    # 파일명은 SEO 최적화: {blog_id}-{keyword_slug}-{index}-{ts}.{ext}
+    import time as _time
+    _ts = str(int(_time.time()))[-6:]  # 마지막 6자리로 고유성 확보
     def _seo_filename(info: dict, kw_slug: str, skip_webp: bool) -> str:
         idx = info.get('index', 1)
         ext = 'jpg' if skip_webp else 'webp'
-        return f"{blog_id}-{kw_slug}-{idx}.{ext}"
+        return f"{blog_id}-{kw_slug}-{idx}-{_ts}.{ext}"
 
     # keyword_slug: 이미지 infos의 alt 또는 prompt 첫 단어로 슬러그 생성
     first_alt = image_infos[0].get('alt', '') or image_infos[0].get('prompt', '')
@@ -621,14 +623,13 @@ def _try_loremflickr(image_infos: list, log, output_dir=None) -> dict:
     return results
 
 
-def _generate_other(image_infos: list, skip_webp: bool, log, output_dir=None) -> dict:
-    """Tistory/WP: Bing 우선, Playwright 충돌 등 전체 실패 시 Pollinations 폴백."""
+def _generate_other(image_infos: list, skip_webp: bool, log, output_dir=None, blog_id: str = "") -> dict:
+    """Tistory/WP: Bing 우선 → Pollinations → Gemini 순 폴백."""
     bing_res = _try_bing(image_infos, skip_webp, log, output_dir=output_dir)
     if bing_res:
         failed = [info for info in image_infos if info['index'] not in bing_res]
         if not failed:
             return bing_res
-        # 일부 실패 — 나머지를 Pollinations로
         log(f"[Router] Bing 일부 실패 {len(failed)}장 → Pollinations 폴백")
         results = dict(bing_res)
     else:
@@ -638,11 +639,25 @@ def _generate_other(image_infos: list, skip_webp: bool, log, output_dir=None) ->
 
     _out = output_dir or (IMAGES_DIR / "tmp")
     Path(_out).mkdir(parents=True, exist_ok=True)
+    still_failed = []
     for info in failed:
         _fp = str(Path(_out) / info["filename"])
         ok = _pollinations_image(info.get("prompt", ""), _fp, on_log=log)
         if ok:
             results[info["index"]] = _fp
+        else:
+            still_failed.append(info)
+
+    # Pollinations도 실패한 경우 Gemini로 최종 폴백
+    if still_failed:
+        log(f"[Router] Pollinations {len(still_failed)}장 실패 → Gemini 폴백")
+        try:
+            from gemini_image import generate_images as _gemini_gen
+            gemini_res = _gemini_gen(still_failed, on_log=log, skip_webp=skip_webp, output_dir=str(_out))
+            results.update(gemini_res)
+        except Exception as e:
+            log(f"[Router] Gemini 폴백 오류: {e}")
+
     return results
 
 

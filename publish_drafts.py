@@ -378,6 +378,7 @@ def _content_quality_gate(content: str, title: str, blog_id: str) -> list:
         '===이미지끝===', 'Gemini프롬프트:', '- 파일명:', '- alt:',
         '===본문끝===', '===제목끝===', '{{이미지1}}', '{{이미지2}}', '{{이미지3}}',
         '[검증 필요]', '[출처 필요]', '[애드센스]', '[TODO]', '[FIXME]',
+        '프롬프트:', 'alt:',
     ]
     for marker in BAD_MARKERS:
         if marker in content:
@@ -386,6 +387,9 @@ def _content_quality_gate(content: str, title: str, blog_id: str) -> list:
     # 동적 이미지 마커 잔재: {{이미지N}} (숫자 무관)
     if re.search(r'\{\{이미지\d+\}\}', content):
         issues.append("이미지 마커 미교체: '{{이미지N}}' 잔재 발견")
+    # [이미지N] / [/이미지N] 태그 잔재
+    if re.search(r'\[/?이미지\s*\d+\]', content):
+        issues.append("이미지 태그 잔재: '[이미지N]' 또는 '[/이미지N]' 발견")
 
     # 2. 본문 길이 체크 (HTML 태그 제거 후 순수 텍스트)
     plain = re.sub(r'<[^>]+>', ' ', content)
@@ -470,11 +474,14 @@ def _auto_repair_content(content: str, issues: list) -> tuple[str, list]:
                 r'===본문===\s*', r'===본문끝===\s*',
                 r'===이미지===.*?===이미지끝===\s*',
                 r'===태그===.*?===태그끝===\s*',
-                r'\[이미지\d+\]\s*\n?- Gemini프롬프트:.*?\n.*?\n.*?\n',
+                r'\[이미지\s*(\d+)\][\s\S]*?\[/이미지\s*\1\]',
+                r'\[이미지\d+\]\s*\n?-( Gemini)?프롬프트:.*?\n.*?\n.*?\n',
                 r'- Gemini프롬프트:.*?\n',
                 r'- 파일명:.*?\n',
                 r'- alt:.*?\n',
-                r'\[이미지\d+\]\s*',
+                r'(?m)^\s*(프롬프트|alt|Gemini프롬프트|파일명):.*$',
+                r'\[/?이미지\s*\d+\]',
+                r'\[/?H\d\]|\[/?BOLD\]',
                 r'\{\{이미지\d+\}\}',
                 r'===제목===\s*', r'===이미지===\s*', r'===태그===\s*',
                 r'\[검증 필요\]', r'\[출처 필요\]', r'\[애드센스\]',
@@ -485,6 +492,16 @@ def _auto_repair_content(content: str, issues: list) -> tuple[str, list]:
                 fixed = re.sub(pattern, '', fixed, flags=re.DOTALL)
             if fixed != before:
                 _log(f"  → 마커 자동 제거 완료")
+            else:
+                remaining.append(issue)
+
+        elif "이미지 태그 잔재" in issue:
+            before = fixed
+            fixed = re.sub(r'\[이미지\s*(\d+)\][\s\S]*?\[/이미지\s*\1\]', '', fixed, flags=re.DOTALL)
+            fixed = re.sub(r'\[/?이미지\s*\d+\]', '', fixed)
+            fixed = re.sub(r'(?m)^(프롬프트|Gemini프롬프트|alt):.*$', '', fixed)
+            if fixed != before:
+                _log(f"  → 이미지 태그 자동 제거 완료")
             else:
                 remaining.append(issue)
 

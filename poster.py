@@ -205,6 +205,12 @@ def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int =
                 except Exception:
                     pass
             _log(f"[이미지업로드] 업로드 완료 (시도 {attempt})")
+            # 업로드 성공 후 로컬 파일 삭제
+            try:
+                os.remove(filepath)
+                _log(f"[이미지업로드] 로컬 파일 삭제: {filepath}")
+            except Exception:
+                pass
             return True
 
         except Exception as e:
@@ -386,7 +392,8 @@ def _tistory_inject_internal_links(page, blog_id: str, log_fn=None):
             titles = re.findall(r'<title>(.*?)</title>', rss)[1:4]
             links  = re.findall(r'<link>(.*?)</link>', rss)[1:4]
             items = list(zip(titles, links))
-        items = [(t.strip(), l.strip()) for t, l in items[:3] if t.strip() and l.strip()]
+        import html as _html
+        items = [(_html.unescape(t.strip()), l.strip()) for t, l in items[:3] if t.strip() and l.strip()]
         if not items:
             log(f"[내부링크] {blog_id}: RSS 항목 없음")
             return
@@ -402,7 +409,7 @@ def _tistory_inject_internal_links(page, blog_id: str, log_fn=None):
             '</div>'
         )
         page.evaluate(
-            "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.insertContent(html); }",
+            "(html) => { if(tinymce.activeEditor) { const ed = tinymce.activeEditor; ed.setContent(ed.getContent() + html); } }",
             section_html,
         )
         log(f"[내부링크] {blog_id}: {len(items)}개 삽입 완료")
@@ -573,6 +580,17 @@ def _post_tistory(account, title, body_html, tags=None,
         # 본문을 줄 단위로 처리
         # Claude 응답 형식: ## H2, {{이미지N}}, [애드센스], | 표 |, 일반 텍스트
 
+        # 안전장치: [이미지N]...[/이미지N] 블록이 {{이미지N}}으로 미변환된 경우 강제 치환
+        body_html = re.sub(
+            r'\[이미지\s*(\d+)\][\s\S]*?\[/이미지\s*\1\]',
+            lambda m: f'\n{{{{이미지{m.group(1)}}}}}\n',
+            body_html
+        )
+        # 인라인 잔재 [이미지N] / [/이미지N] 태그 제거
+        body_html = re.sub(r'\[/?이미지\s*\d+\]', '', body_html)
+        # 프롬프트:/alt: 줄이 본문에 남아있으면 제거
+        body_html = re.sub(r'(?m)^\s*(프롬프트|alt|Gemini프롬프트):.*$', '', body_html)
+
         # 애드센스 자동 삽입 (content_builder 규칙 적용)
         body_text = insert_adsense_markers(body_html, blog_id)
 
@@ -586,8 +604,8 @@ def _post_tistory(account, title, body_html, tags=None,
                 i += 1
                 continue
 
-            # ── ### H3 소소제목 ──
-            h3_match = re.match(r'^###\s+(.+)$', stripped)
+            # ── ### H3 소소제목 (마크다운 or [H3]...[/H3]) ──
+            h3_match = re.match(r'^###\s+(.+)$', stripped) or re.match(r'^\[H3\](.+?)\[/H3\]$', stripped, re.IGNORECASE)
             if h3_match:
                 heading = h3_match.group(1).strip()
                 heading = re.sub(r'<[^>]+>', '', heading).strip()
@@ -601,8 +619,8 @@ def _post_tistory(account, title, body_html, tags=None,
                 i += 1
                 continue
 
-            # ── ## H2 소제목 ──
-            h2_match = re.match(r'^##\s+(.+)$', stripped)
+            # ── ## H2 소제목 (마크다운 or [H2]...[/H2]) ──
+            h2_match = re.match(r'^##\s+(.+)$', stripped) or re.match(r'^\[H2\](.+?)\[/H2\]$', stripped, re.IGNORECASE)
             if h2_match:
                 heading = h2_match.group(1).strip()
                 heading = re.sub(r'<[^>]+>', '', heading).strip()
@@ -708,9 +726,12 @@ def _post_tistory(account, title, body_html, tags=None,
                 i += 1
                 continue
 
-            # ── **볼드**, *이탤릭* → insertContent ──
-            if '**' in stripped or re.search(r'(?<!\*)\*(?!\*)', stripped):
+            # ── **볼드**, *이탤릭*, [BOLD]...[/BOLD] → insertContent ──
+            has_bold = '**' in stripped or re.search(r'\[BOLD\]', stripped, re.IGNORECASE)
+            has_italic = re.search(r'(?<!\*)\*(?!\*)', stripped)
+            if has_bold or has_italic:
                 html_line = stripped
+                html_line = re.sub(r'\[BOLD\](.+?)\[/BOLD\]', r'<strong>\1</strong>', html_line, flags=re.IGNORECASE)
                 html_line = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html_line)
                 html_line = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', html_line)
                 html_line = f'<p data-ke-size="size19">{html_line}</p>'
@@ -719,6 +740,22 @@ def _post_tistory(account, title, body_html, tags=None,
                     html_line,
                 )
                 time.sleep(0.2)
+                i += 1
+                continue
+
+            # ── HTML <a href> 버튼/링크 → insertContent (텍스트로 타이핑하면 태그 노출) ──
+            if re.match(r'<a\s+href=', stripped, re.IGNORECASE):
+                spacer = '<p data-ke-size="size19">&nbsp;</p>'
+                btn_html = (
+                    spacer + spacer +
+                    f'<p data-ke-size="size19" style="text-align:center;">{stripped}</p>' +
+                    spacer + spacer
+                )
+                page.evaluate(
+                    "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.insertContent(html); }",
+                    btn_html,
+                )
+                time.sleep(0.3)
                 i += 1
                 continue
 
@@ -1347,8 +1384,8 @@ def _parse_naver_sections(content):
             current_text_lines.append('')
             continue
 
-        # ## 소제목
-        h_match = re.match(r'^#{1,3}\s+(.+)$', stripped)
+        # ## 소제목 또는 [H2]...[/H2] 마커
+        h_match = re.match(r'^#{1,3}\s+(.+)$', stripped) or re.match(r'^\s*\[H2\](.+?)\[/H2\]\s*$', stripped, re.IGNORECASE)
         if h_match:
             flush_text()
             heading = h_match.group(1).strip()
