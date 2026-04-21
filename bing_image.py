@@ -410,12 +410,13 @@ def _generate_all_four(page, prompt: str, base_filename: str, skip_webp: bool = 
             log(f"[Bing] URL 변경됨 (ID 없음): {cur_url[:80]}")
             break
 
-    # 세션 ID가 있으면 async/results API로 생성 완료까지 폴링
+    # 세션 ID가 있으면 async/results API로 이미지 URL 직접 추출
+    api_image_urls = []
     if session_id:
         import urllib.parse as _up
         q_enc = _up.quote(prompt)
         result_url = f"https://www.bing.com/images/create/async/results/{session_id}?q={q_enc}"
-        log(f"[Bing] 결과 API 폴링 시작...")
+        log(f"[Bing] 결과 API 폴링 시작 (세션: {session_id[:20]}...)")
         for tick in range(90):
             page.wait_for_timeout(1000)
             _dismiss_content_warning()
@@ -425,12 +426,27 @@ def _generate_all_four(page, prompt: str, base_filename: str, skip_webp: bool = 
                     return await r.text();
                 }}""")
                 if resp_text and 'th.bing.com' in resp_text and 'gil_status' not in resp_text:
-                    log(f"[Bing] 결과 API 응답 확인 ({tick+1}초)")
-                    break
-            except Exception:
-                pass
+                    # API 응답에서 이미지 URL 직접 파싱
+                    found = re.findall(r'(https://th\.bing\.com/th/id/OIG[^\s"\'<>]+)', resp_text)
+                    # 쿼리스트링 정리 및 중복 제거
+                    clean = []
+                    seen_ids = set()
+                    for u in found:
+                        u = u.split('?')[0].rstrip('\\/')
+                        oid = _extract_oig_id(u)
+                        if oid not in seen_ids and oid not in exclude_oig_ids:
+                            seen_ids.add(oid)
+                            clean.append(u)
+                    if clean:
+                        api_image_urls = clean[:4]
+                        log(f"[Bing] API에서 새 이미지 {len(api_image_urls)}개 URL 추출 ({tick+1}초)")
+                        break
+                    elif resp_text and 'th.bing.com' in resp_text:
+                        log(f"[Bing] API 응답 있지만 새 이미지 없음 ({tick+1}초) — 계속 대기")
+            except Exception as e:
+                log(f"[Bing] API 폴링 오류: {e}")
         else:
-            log("[Bing] 결과 API 90초 초과 — 강제 진행")
+            log("[Bing] 결과 API 90초 초과 — DOM 폴백으로 전환")
     else:
         # 세션 ID 없는 경우 — 로딩 인디케이터 방식으로 대기
         loading_detected = False
@@ -449,6 +465,23 @@ def _generate_all_four(page, prompt: str, base_filename: str, skip_webp: bool = 
             _dismiss_content_warning()
             if not _safe_eval("""() => !!(document.querySelector('.gil_status, .giic_loading, [class*="loading"]'))"""):
                 break
+
+    # ★ API에서 URL 직접 추출 성공 시 바로 다운로드 (가장 신뢰도 높음)
+    if api_image_urls:
+        paths = []
+        for n, url in enumerate(api_image_urls, start=1):
+            fname = f"{base_stem}-{n}{ext}"
+            out_path = str(save_dir / fname)
+            ok = _download_image(url, out_path, on_log)
+            if ok:
+                paths.append(out_path)
+                _save_used_oig(_extract_oig_id(url))
+                session_used.add(url)
+                log(f"[Bing] API 직접 다운로드 [{n}]: {fname}")
+        if paths:
+            log(f"[Bing] API 다운로드 완료: {len(paths)}장")
+            return paths
+        log("[Bing] API URL 다운로드 실패 — DOM 폴백")
 
     # 새로 생성된 이미지 컨테이너 대기 (최대 20초)
     img_containers = []
