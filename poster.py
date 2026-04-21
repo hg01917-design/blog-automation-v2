@@ -221,6 +221,55 @@ def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int =
     return False
 
 
+def _body_to_tinymce_html(body_text: str, blog_id: str) -> str:
+    """본문 마커를 TinyMCE HTML로 변환. 이미지/애드센스는 placeholder로 처리."""
+    # [이미지N]...[/이미지N] → {{이미지N}}
+    body = re.sub(
+        r'\[이미지\s*(\d+)\][\s\S]*?\[/이미지\s*\1\]',
+        lambda m: f'\n{{{{이미지{m.group(1)}}}}}\n',
+        body_text
+    )
+    body = re.sub(r'\[/?이미지\s*\d+\]', '', body)
+    body = re.sub(r'(?m)^\s*(프롬프트|alt|Gemini프롬프트):.*$', '', body)
+    body = insert_adsense_markers(body, blog_id)
+
+    parts = []
+    for line in body.split('\n'):
+        s = line.strip()
+        if not s:
+            continue
+        # H3
+        h3 = re.match(r'^###\s+(.+)$', s) or re.match(r'^\[H3\](.+?)\[/H3\]$', s, re.IGNORECASE)
+        if h3:
+            parts.append(f'<h3 data-ke-size="size23">{re.sub(r"<[^>]+>","",h3.group(1)).strip()}</h3>')
+            continue
+        # H2
+        h2 = re.match(r'^##\s+(.+)$', s) or re.match(r'^\[H2\](.+?)\[/H2\]$', s, re.IGNORECASE)
+        if h2:
+            parts.append(f'<h2 data-ke-size="size26">{re.sub(r"<[^>]+>","",h2.group(1)).strip()}</h2>')
+            continue
+        # 이미지 placeholder
+        img = re.match(r'\{\{이미지(\d+)\}\}', s)
+        if img:
+            parts.append(f'<p data-ke-size="size19" data-img-slot="{img.group(1)}">&nbsp;</p>')
+            continue
+        # 애드센스 placeholder
+        if s in ('[애드센스]', '##AD##'):
+            parts.append('<p data-ke-size="size19" data-adsense="1">&nbsp;</p>')
+            continue
+        # 마크다운 표 (줄 단위 처리 불가 — 스킵)
+        if s.startswith('|') and s.endswith('|'):
+            continue
+        # Bold / Italic / 링크
+        text = s
+        text = re.sub(r'\[BOLD\](.+?)\[/BOLD\]', r'<strong>\1</strong>', text, flags=re.IGNORECASE)
+        text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+        text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', text)
+        parts.append(f'<p data-ke-size="size19">{text}</p>')
+
+    return '\n'.join(parts)
+
+
 def _tistory_insert_adsense_format(page, log_fn=None) -> bool:
     """Tistory 에디터 애드센스 서식 삽입.
     점세개(#more-plugin-btn-open) → 서식(.mce-tistory-plugin-item) → 애드센스(.list_editor a.link_info)
@@ -577,211 +626,117 @@ def _post_tistory(account, title, body_html, tags=None,
             else:
                 log("[포스팅] 썸네일 업로드 실패 — 스킵")
 
-        # 본문을 줄 단위로 처리
-        # Claude 응답 형식: ## H2, {{이미지N}}, [애드센스], | 표 |, 일반 텍스트
+        # ── 본문 HTML 변환 후 setContent() 한 번에 삽입 ──
+        log("[포스팅] 본문 HTML 변환 중...")
+        full_html = _body_to_tinymce_html(body_html, blog_id)
+        page.evaluate("""(html) => {
+            const ed = tinymce.activeEditor;
+            if (!ed) return;
+            ed.setContent(html);
+            ed.fire('change');
+            ed.save();
+        }""", full_html)
+        _rand_delay(page, 1000, 1500)
+        log("[포스팅] 본문 setContent 완료")
 
-        # 안전장치: [이미지N]...[/이미지N] 블록이 {{이미지N}}으로 미변환된 경우 강제 치환
-        body_html = re.sub(
-            r'\[이미지\s*(\d+)\][\s\S]*?\[/이미지\s*\1\]',
-            lambda m: f'\n{{{{이미지{m.group(1)}}}}}\n',
-            body_html
-        )
-        # 인라인 잔재 [이미지N] / [/이미지N] 태그 제거
-        body_html = re.sub(r'\[/?이미지\s*\d+\]', '', body_html)
-        # 프롬프트:/alt: 줄이 본문에 남아있으면 제거
-        body_html = re.sub(r'(?m)^\s*(프롬프트|alt|Gemini프롬프트):.*$', '', body_html)
-
-        # 애드센스 자동 삽입 (content_builder 규칙 적용)
-        body_text = insert_adsense_markers(body_html, blog_id)
-
-        lines = body_text.split('\n')
-        i = 0
-        while i < len(lines):
-            stripped = lines[i].strip()
-            if not stripped:
-                frame.page.keyboard.press("Enter")
-                time.sleep(0.05)
-                i += 1
-                continue
-
-            # ── ### H3 소소제목 (마크다운 or [H3]...[/H3]) ──
-            h3_match = re.match(r'^###\s+(.+)$', stripped) or re.match(r'^\[H3\](.+?)\[/H3\]$', stripped, re.IGNORECASE)
-            if h3_match:
-                heading = h3_match.group(1).strip()
-                heading = re.sub(r'<[^>]+>', '', heading).strip()
-                h3_html = f'<h3 data-ke-size="size23">{heading}</h3>'
-                page.evaluate(
-                    "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.execCommand('mceInsertContent', false, html); }",
-                    h3_html,
-                )
-                time.sleep(0.3)
-                log(f"[포스팅] H3: {heading[:20]}...")
-                i += 1
-                continue
-
-            # ── ## H2 소제목 (마크다운 or [H2]...[/H2]) ──
-            h2_match = re.match(r'^##\s+(.+)$', stripped) or re.match(r'^\[H2\](.+?)\[/H2\]$', stripped, re.IGNORECASE)
-            if h2_match:
-                heading = h2_match.group(1).strip()
-                heading = re.sub(r'<[^>]+>', '', heading).strip()
-                h2_html = f'<h2 data-ke-size="size26">{heading}</h2>'
-                page.evaluate(
-                    "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.execCommand('mceInsertContent', false, html); }",
-                    h2_html,
-                )
-                time.sleep(0.5)
-                log(f"[포스팅] H2: {heading[:20]}...")
-                i += 1
-                continue
-
-            # ── | 마크다운 표 ──
-            if stripped.startswith("|") and "|" in stripped[1:]:
-                table_lines = []
-                while i < len(lines) and lines[i].strip().startswith("|"):
-                    table_lines.append(lines[i])
-                    i += 1
-                if len(table_lines) >= 2:
-                    table_html = _markdown_table_to_html(table_lines)
-                    if table_html:
-                        page.evaluate(
-                            "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.insertContent(html); }",
-                            table_html,
-                        )
-                        time.sleep(0.5)
-                        log("[포스팅] 표 삽입 완료")
-                        continue
-                # 표 변환 실패 시 텍스트로 입력
-                for tl in table_lines:
-                    _chunked_type(frame.page, tl.strip(), chunk_size=100)
-                    frame.page.keyboard.press("Enter")
-                    time.sleep(0.1)
-                continue
-
-            # ── {{이미지N}} → 이미지 파일 업로드 삽입 ──
-            img_match = re.match(r'\{\{이미지(\d+)\}\}', stripped)
-            if img_match:
-                idx = int(img_match.group(1))
-                if idx in image_paths:
-                    alt = ""
-                    for info in image_infos:
-                        if info["index"] == idx:
-                            alt = info.get("alt", "")
-                            break
-                    log(f"[포스팅] 이미지 {idx} 파일 업로드: {Path(image_paths[idx]).name}")
-                    ok = _tistory_upload_image(page, image_paths[idx], alt, on_log=log)
-                    if ok:
-                        log(f"[포스팅] 이미지 {idx} 업로드 완료")
-                        # 이미지 업로드 후 TinyMCE 포커스가 캡션으로 이동할 수 있음 → 본문으로 복구
-                        page.evaluate("""() => {
-                            const ed = tinymce && tinymce.activeEditor;
-                            if (!ed) return;
-                            const body = ed.getBody();
-                            const doc = ed.getDoc();
-                            // 본문 끝에 새 단락 추가 후 커서 이동
-                            const p = doc.createElement('p');
-                            p.setAttribute('data-ke-size', 'size19');
-                            p.innerHTML = '<br data-mce-bogus="1">';
-                            body.appendChild(p);
-                            const range = doc.createRange();
-                            range.setStart(p, 0);
-                            range.collapse(true);
-                            ed.selection.setRng(range);
-                            ed.focus();
-                        }""")
-                        time.sleep(0.3)
-                    else:
-                        log(f"[포스팅] 이미지 {idx} 업로드 실패 — 스킵")
-                else:
-                    log(f"[포스팅] 이미지 {idx} 파일 없음 — 스킵")
-                i += 1
-                continue
-
-            # ── [애드센스] → 서식 탭에서 삽입 (실패 시 스킵) ──
-            if stripped == '[애드센스]' or stripped == '##AD##':
-                # 새 단락에서 삽입 (이전 텍스트와 분리)
-                frame.page.keyboard.press("Enter")
-                time.sleep(0.1)
-                ok = _tistory_insert_adsense_format(page, log)
+        # ── 이미지 placeholder 위치에 업로드 ──
+        for idx in sorted(image_paths.keys()):
+            img_path = image_paths[idx]
+            alt = next((info.get("alt", "") for info in image_infos if info["index"] == idx), "")
+            # placeholder 단락으로 커서 이동 후 삭제
+            placed = page.evaluate(f"""() => {{
+                const ed = tinymce.activeEditor;
+                const body = ed.getBody();
+                const p = body.querySelector('[data-img-slot="{idx}"]');
+                if (!p) return false;
+                const range = ed.getDoc().createRange();
+                range.selectNode(p);
+                ed.selection.setRng(range);
+                ed.focus();
+                p.parentNode.removeChild(p);
+                ed.fire('change');
+                return true;
+            }}""")
+            if placed:
+                log(f"[포스팅] 이미지 {idx} 업로드: {Path(img_path).name}")
+                ok = _tistory_upload_image(page, img_path, alt, on_log=log)
                 if ok:
-                    time.sleep(0.5)
-                    # TinyMCE 포커스 복구 + adsense 이후 새 빈 단락으로 커서 이동
+                    log(f"[포스팅] 이미지 {idx} 업로드 완료")
+                    # 커서를 본문 끝으로 복구
                     page.evaluate("""() => {
-                        const ed = tinymce && tinymce.activeEditor;
+                        const ed = tinymce.activeEditor;
                         if (!ed) return;
                         const body = ed.getBody();
-                        const doc = ed.getDoc();
-                        const p = doc.createElement('p');
-                        p.setAttribute('data-ke-size', 'size16');
+                        const p = ed.getDoc().createElement('p');
+                        p.setAttribute('data-ke-size', 'size19');
                         p.innerHTML = '<br data-mce-bogus="1">';
                         body.appendChild(p);
-                        const range = doc.createRange();
+                        const range = ed.getDoc().createRange();
                         range.setStart(p, 0);
                         range.collapse(true);
                         ed.selection.setRng(range);
                         ed.focus();
                     }""")
-                    time.sleep(0.1)
+                    time.sleep(0.3)
                 else:
-                    log("[포스팅] 애드센스 서식 삽입 실패 — 스킵 (HTML 직접 삽입 시 코드 깨짐)")
-                i += 1
-                continue
+                    log(f"[포스팅] 이미지 {idx} 업로드 실패 — 스킵")
+            else:
+                log(f"[포스팅] 이미지 {idx} placeholder 없음 — 스킵")
 
-            # ── **볼드**, *이탤릭*, [BOLD]...[/BOLD] → insertContent ──
-            has_bold = '**' in stripped or re.search(r'\[BOLD\]', stripped, re.IGNORECASE)
-            has_italic = re.search(r'(?<!\*)\*(?!\*)', stripped)
-            if has_bold or has_italic:
-                html_line = stripped
-                html_line = re.sub(r'\[BOLD\](.+?)\[/BOLD\]', r'<strong>\1</strong>', html_line, flags=re.IGNORECASE)
-                html_line = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html_line)
-                html_line = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', html_line)
-                html_line = f'<p data-ke-size="size19">{html_line}</p>'
-                page.evaluate(
-                    "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.insertContent(html); }",
-                    html_line,
-                )
-                time.sleep(0.2)
-                i += 1
-                continue
+        # ── 애드센스 placeholder 위치에 서식 삽입 ──
+        has_adsense = page.evaluate("""() => {
+            const ed = tinymce.activeEditor;
+            const body = ed.getBody();
+            const p = body.querySelector('[data-adsense]');
+            if (!p) return false;
+            const range = ed.getDoc().createRange();
+            range.selectNode(p);
+            ed.selection.setRng(range);
+            ed.focus();
+            p.parentNode.removeChild(p);
+            ed.fire('change');
+            return true;
+        }""")
+        if has_adsense:
+            ok = _tistory_insert_adsense_format(page, log)
+            if ok:
+                page.evaluate("""() => {
+                    const ed = tinymce.activeEditor;
+                    if (!ed) return;
+                    const body = ed.getBody();
+                    const p = ed.getDoc().createElement('p');
+                    p.setAttribute('data-ke-size', 'size19');
+                    p.innerHTML = '<br data-mce-bogus="1">';
+                    body.appendChild(p);
+                    const range = ed.getDoc().createRange();
+                    range.setStart(p, 0);
+                    range.collapse(true);
+                    ed.selection.setRng(range);
+                    ed.focus();
+                }""")
+            else:
+                log("[포스팅] 애드센스 서식 삽입 실패 — 스킵")
 
-            # ── HTML <a href> 버튼/링크 → insertContent (텍스트로 타이핑하면 태그 노출) ──
-            if re.match(r'<a\s+href=', stripped, re.IGNORECASE):
-                spacer = '<p data-ke-size="size19">&nbsp;</p>'
-                btn_html = (
-                    spacer + spacer +
-                    f'<p data-ke-size="size19" style="text-align:center;">{stripped}</p>' +
-                    spacer + spacer
-                )
-                page.evaluate(
-                    "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.insertContent(html); }",
-                    btn_html,
-                )
-                time.sleep(0.3)
-                i += 1
-                continue
-
-            # ── 일반 텍스트 → keyboard.type (100자씩 분할) ──
-            _chunked_type(frame.page, stripped, chunk_size=100)
-            frame.page.keyboard.press("Enter")
-            time.sleep(random.uniform(0.1, 0.3))
-            i += 1
-
-        # 본문 단락 글자크기 size19 일괄 적용 (모바일 가독성)
+        # size19 일괄 적용 + 저장
         page.evaluate("""() => {
             const ed = window.tinymce && tinymce.activeEditor;
             if (!ed) return;
             const body = ed.getBody();
-            body.querySelectorAll('p[data-ke-size="size16"]').forEach(p => {
-                p.setAttribute('data-ke-size', 'size19');
-            });
-            // data-ke-size 없는 p 태그도 size19로 설정
             body.querySelectorAll('p:not([data-ke-size])').forEach(p => {
                 p.setAttribute('data-ke-size', 'size19');
             });
             ed.fire('change');
             ed.save();
         }""")
-        _rand_delay(page, 1000, 2000)
-        log("[포스팅] 본문 입력 완료 (글자크기 size19 적용)")
+
+        # ── 스크롤 (봇 감지 방지) ──
+        page.evaluate("() => window.scrollTo(0, document.body.scrollHeight / 2)")
+        time.sleep(random.uniform(1.0, 2.0))
+        page.evaluate("() => window.scrollTo(0, 0)")
+        time.sleep(random.uniform(0.5, 1.0))
+        page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+        time.sleep(random.uniform(1.0, 2.0))
+        log("[포스팅] 본문 입력 완료")
 
         # ── 태그 입력 ──
         if tags:
@@ -874,8 +829,6 @@ def _post_tistory(account, title, body_html, tags=None,
         # ── 내부링크 삽입 (Tistory: TinyMCE insertContent) ──
         _tistory_inject_internal_links(page, blog_id_local, log)
 
-        # ── 메타디스크립션 보장 (첫 단락에 키워드 삽입) ──
-        _tistory_ensure_meta_description(page, keyword, log)
 
         # ── 임시저장 (검수 후 수동 발행) ──
         log("[포스팅] 임시저장 중...")
