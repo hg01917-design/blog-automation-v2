@@ -37,19 +37,21 @@ BUSAN_BUS_KEY = os.environ.get("BUSAN_BUS_API_KEY", SERVICE_KEY)
 _FESTIVAL_URL = "https://apis.data.go.kr/B551011/KorService2/searchFestival2"
 # 정부24 공공서비스 API
 _GOV_SERVICE_URL = "https://api.odcloud.kr/api/gov24/v3/serviceList"
-# 버스정류소 API (TAGO)
-_BUS_STOP_URL = "https://apis.data.go.kr/1613000/BusSttnInfoInqireService/getSttnNoList"
-# 도시코드 (TAGO 버스정류소)
+# 버스정류소 API (TAGO) — 서울은 자체 TOPIS 사용이라 제외
+_BUS_STOP_URL = "http://apis.data.go.kr/1613000/BusSttnInfoInqireService/getSttnNoList"
+# 도시코드 (TAGO 버스정류소) — 서울(11) 제외
 _BUS_CITY_CODES = {
-    "서울": "11", "부산": "21", "대구": "22", "인천": "23", "광주": "24",
-    "대전": "25", "울산": "26", "세종": "29", "경기": "31", "강원": "32",
-    "충북": "33", "충남": "34", "전북": "35", "전남": "36", "경북": "37",
-    "경남": "38", "제주": "39",
+    "부산": "21", "대구": "22", "인천": "23", "광주": "24",
+    "대전": "25", "울산": "26", "세종": "29",
+    "수원": "31060", "춘천": "32010", "강릉": "32030", "속초": "32050",
+    "청주": "33010", "천안": "34020", "전주": "35010", "여수": "36040",
+    "순천": "36050", "목포": "36060", "포항": "37030", "경주": "37040",
+    "안동": "37010", "창원": "38010", "진주": "38030", "통영": "38050",
 }
 
 
-def _get(url: str, params: dict) -> dict:
-    params["serviceKey"] = SERVICE_KEY
+def _get(url: str, params: dict, service_key: str = None) -> dict:
+    params["serviceKey"] = service_key or SERVICE_KEY
     params["_type"] = "json"
     full_url = url + "?" + urllib.parse.urlencode(params)
     try:
@@ -499,19 +501,20 @@ def fetch_tmdb_context(keyword: str, on_log=None) -> str:
     return context
 
 
-# 교통 API 엔드포인트
-_EXPRESS_BUS_URL = "https://apis.data.go.kr/1613000/ExpBusInfoService2/getStrtpntAlocFndExpbsInfo"
-_INTERCITY_BUS_URL = "https://apis.data.go.kr/1613000/SubwayInfoService2/getSubwaySttnAcctoSchdulList"
-_BUS_TERMINAL_URL = "https://apis.data.go.kr/1613000/ExpBusInfoService2/getCtyCodeList"
+# 교통 API 엔드포인트 (http 필수 — https 사용 시 500 오류)
+_EXPRESS_BUS_URL = "http://apis.data.go.kr/1613000/ExpBusInfo/GetStrtpntAlocFndExpbusInfo"
+_EXPRESS_BUS_TERMINAL_URL = "http://apis.data.go.kr/1613000/ExpBusInfo/GetExpBusTrminlList"
 
-# 주요 터미널 코드 (고속버스)
+# 주요 터미널 코드 (고속버스) — GetExpBusTrminlList API 기준
 _TERMINAL_CODES = {
-    "서울": "NAEK", "강남": "NAKS", "동서울": "NAED", "수원": "NAE2",
-    "인천": "NAEI", "부산": "BUEX", "대구": "DAEG", "광주": "GJUS",
-    "대전": "DAEJ", "울산": "ULSA", "전주": "JNJU", "청주": "CHJU",
-    "춘천": "CHCH", "강릉": "GANG", "속초": "SOKC", "여수": "YEOS",
-    "순천": "SUCH", "목포": "MOKP", "포항": "POHN", "경주": "GYJU",
-    "안동": "ANDO", "진주": "JINJU", "통영": "TONG", "제주": "JEJU",
+    "서울": "NAEK010", "강남": "NAEK020", "센트럴": "NAEK020", "동서울": "NAEK030",
+    "수원": "NAEK110", "인천": "NAEK100", "부산": "NAEK700",
+    "대구": "NAEK800", "광주": "NAEK500", "대전": "NAEK300",
+    "울산": "NAEK750", "전주": "NAEK600", "청주": "NAEK400",
+    "춘천": "NAEK250", "강릉": "NAEK200", "속초": "NAEK230",
+    "여수": "NAEK550", "순천": "NAEK530", "목포": "NAEK560",
+    "포항": "NAEK850", "경주": "NAEK830", "안동": "NAEK820",
+    "진주": "NAEK780", "통영": "NAEK770", "제주": "NAEK900",
 }
 
 
@@ -559,12 +562,13 @@ def fetch_transport_context(keyword: str, on_log=None) -> str:
         dep_code = _TERMINAL_CODES.get(dep, "")
         arr_code = _TERMINAL_CODES.get(arr, "")
         if dep_code and arr_code:
+            today = datetime.now().strftime("%Y%m%d")
             params = {
                 "numOfRows": "10", "pageNo": "1",
-                "MobileOS": "ETC", "MobileApp": "blog-auto",
                 "depTerminalId": dep_code, "arrTerminalId": arr_code,
+                "depPlandTime": today,
             }
-            data = _get(_EXPRESS_BUS_URL, params)
+            data = _get(_EXPRESS_BUS_URL, params, service_key=EXPRESS_BUS_KEY)
             try:
                 items = data["response"]["body"]["items"]
                 item_list = items.get("item", []) if items else []
@@ -573,15 +577,14 @@ def fetch_transport_context(keyword: str, on_log=None) -> str:
                 if item_list:
                     lines.append(f"[고속버스 운행정보: {dep} → {arr}]")
                     for it in item_list[:5]:
-                        dep_time = it.get("depPlandTime", "")[:4] if it.get("depPlandTime") else ""
-                        arr_time = it.get("arrPlandTime", "")[:4] if it.get("arrPlandTime") else ""
+                        dep_raw = str(it.get("depPlandTime", ""))
+                        arr_raw = str(it.get("arrPlandTime", ""))
+                        # 형식: YYYYMMDDHHMM (12자리) or YYYYMMDD (8자리)
+                        dep_time = f"{dep_raw[8:10]}:{dep_raw[10:12]}" if len(dep_raw) >= 12 else dep_raw[8:]
+                        arr_time = f"{arr_raw[8:10]}:{arr_raw[10:12]}" if len(arr_raw) >= 12 else arr_raw[8:]
                         charge = it.get("charge", "")
                         grade = it.get("gradeNm", "")
-                        if dep_time:
-                            if len(dep_time) == 4:
-                                dep_time = f"{dep_time[:2]}:{dep_time[2:]}"
-                            if len(str(arr_time)) == 4:
-                                arr_time = f"{str(arr_time)[:2]}:{str(arr_time)[2:]}"
+                        if dep_time.strip(":"):
                             line = f"- {dep_time} 출발 → {arr_time} 도착"
                             if grade:
                                 line += f" ({grade})"
@@ -626,6 +629,30 @@ def fetch_transport_context(keyword: str, on_log=None) -> str:
         lines.append("- 시외버스 예약: www.bustago.or.kr / 1588-6900")
         lines.append("- 전국 주요 노선 시간표·요금 조회 가능")
         log("[교통API] 시외버스 기본 정보 삽입")
+
+    # 버스정류소 위치 조회 (도착지 기준)
+    stop_city = arr or dep
+    city_code = _BUS_CITY_CODES.get(stop_city, "")
+    if city_code and stop_city:
+        params_stop = {"cityCode": city_code, "nodeName": stop_city, "numOfRows": "5", "pageNo": "1"}
+        try:
+            data_stop = _get(_BUS_STOP_URL, params_stop, service_key=BUS_STOP_KEY)
+            stop_items = (data_stop.get("response", {}).get("body", {}).get("items") or {})
+            stop_list = stop_items.get("item", []) if isinstance(stop_items, dict) else []
+            if isinstance(stop_list, dict):
+                stop_list = [stop_list]
+            if stop_list:
+                lines.append(f"[{stop_city} 주요 버스정류소]")
+                for s in stop_list[:5]:
+                    nm = s.get("nodenm", "")
+                    lat = s.get("gpslati", "")
+                    lng = s.get("gpslong", "")
+                    if nm:
+                        loc = f" (위도 {lat:.4f}, 경도 {lng:.4f})" if lat and lng else ""
+                        lines.append(f"- {nm}{loc}")
+                log(f"[교통API] {stop_city} 버스정류소 {len(stop_list)}개 수집")
+        except Exception as e:
+            log(f"[교통API] 버스정류소 조회 오류: {e}")
 
     if not lines:
         log(f"[교통API] 매칭 유형 없음 — 기본 교통 안내만 제공")
