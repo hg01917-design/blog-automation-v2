@@ -153,6 +153,147 @@ def fetch_festival_context(keyword: str, on_log=None) -> str:
         return ""
 
 
+_TOUR_SPOT_URL = "https://apis.data.go.kr/B551011/KorService2/searchKeyword2"
+_TOUR_DETAIL_URL = "https://apis.data.go.kr/B551011/KorService2/detailCommon2"
+
+# 한국관광공사 contentTypeId
+_CONTENT_TYPE = {
+    "관광지": "12",
+    "숙박": "32",
+    "음식점": "39",
+    "행사": "15",
+}
+
+_AREA_MAP = {
+    "서울": "1", "인천": "2", "대전": "3", "대구": "4", "광주": "5",
+    "부산": "6", "울산": "7", "세종": "8", "경기": "31", "강원": "32",
+    "충북": "33", "충남": "34", "경북": "35", "경남": "36", "전북": "37",
+    "전남": "38", "제주": "39",
+}
+
+
+def fetch_travel_context(keyword: str, on_log=None) -> str:
+    """키워드 지역의 관광지 + 숙박 + 음식점 + 축제 정보를 반환.
+
+    Returns: extra_context 문자열 (없으면 빈 문자열)
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    if not SERVICE_KEY:
+        log("[PublicAPI] API 키 없음 — 여행 데이터 스킵")
+        return ""
+
+    region = _extract_region(keyword)
+
+    # 키워드에서 구체적인 장소명 추출 (지역명 제거 후 나머지)
+    spot_query = keyword
+    for r in list(_AREA_MAP.keys()) + ["국내", "해외", "추천", "여행", "코스"]:
+        spot_query = spot_query.replace(r, "").strip()
+    spot_query = spot_query.strip() or region or keyword
+
+    area_code = _AREA_MAP.get(region, "")
+    base_params = {
+        "numOfRows": "5",
+        "pageNo": "1",
+        "MobileOS": "ETC",
+        "MobileApp": "blog-auto",
+        "arrange": "Q",  # 평점순
+        "keyword": spot_query,
+    }
+    if area_code:
+        base_params["areaCode"] = area_code
+
+    all_lines = []
+
+    # 1. 관광지
+    p = {**base_params, "contentTypeId": _CONTENT_TYPE["관광지"]}
+    data = _get(_TOUR_SPOT_URL, p)
+    try:
+        items = data["response"]["body"]["items"]
+        item_list = items.get("item", []) if items else []
+        if isinstance(item_list, dict):
+            item_list = [item_list]
+        if item_list:
+            all_lines.append(f"[관광지 정보 ({region or spot_query})]")
+            for it in item_list[:3]:
+                name = it.get("title", "")
+                addr = (it.get("addr1", "") + " " + it.get("addr2", "")).strip()
+                tel = it.get("tel", "")
+                if name:
+                    line = f"- {name}"
+                    if addr:
+                        line += f" / {addr}"
+                    if tel:
+                        line += f" / {tel}"
+                    all_lines.append(line)
+            log(f"[PublicAPI] 관광지 {len(item_list)}건 수집")
+    except Exception:
+        pass
+
+    # 2. 숙박
+    p2 = {**base_params, "contentTypeId": _CONTENT_TYPE["숙박"], "keyword": region or spot_query}
+    data2 = _get(_TOUR_SPOT_URL, p2)
+    try:
+        items2 = data2["response"]["body"]["items"]
+        item_list2 = items2.get("item", []) if items2 else []
+        if isinstance(item_list2, dict):
+            item_list2 = [item_list2]
+        if item_list2:
+            all_lines.append(f"[숙박 정보 ({region or spot_query})]")
+            for it in item_list2[:3]:
+                name = it.get("title", "")
+                addr = (it.get("addr1", "") + " " + it.get("addr2", "")).strip()
+                tel = it.get("tel", "")
+                if name:
+                    line = f"- {name}"
+                    if addr:
+                        line += f" / {addr}"
+                    if tel:
+                        line += f" / {tel}"
+                    all_lines.append(line)
+            log(f"[PublicAPI] 숙박 {len(item_list2)}건 수집")
+    except Exception:
+        pass
+
+    # 3. 음식점
+    p3 = {**base_params, "contentTypeId": _CONTENT_TYPE["음식점"], "keyword": region or spot_query}
+    data3 = _get(_TOUR_SPOT_URL, p3)
+    try:
+        items3 = data3["response"]["body"]["items"]
+        item_list3 = items3.get("item", []) if items3 else []
+        if isinstance(item_list3, dict):
+            item_list3 = [item_list3]
+        if item_list3:
+            all_lines.append(f"[맛집/음식점 정보 ({region or spot_query})]")
+            for it in item_list3[:3]:
+                name = it.get("title", "")
+                addr = (it.get("addr1", "") + " " + it.get("addr2", "")).strip()
+                tel = it.get("tel", "")
+                if name:
+                    line = f"- {name}"
+                    if addr:
+                        line += f" / {addr}"
+                    if tel:
+                        line += f" / {tel}"
+                    all_lines.append(line)
+            log(f"[PublicAPI] 음식점 {len(item_list3)}건 수집")
+    except Exception:
+        pass
+
+    # 4. 축제 (기존 함수 결과 병합)
+    festival_ctx = fetch_festival_context(keyword, on_log=on_log)
+    if festival_ctx:
+        all_lines.append(festival_ctx)
+
+    if not all_lines:
+        log(f"[PublicAPI] 여행 데이터 없음 ({keyword})")
+        return ""
+
+    return "\n".join(all_lines)
+
+
 def fetch_gov_service_context(keyword: str, on_log=None) -> str:
     """키워드 관련 정부24 공공서비스 정보를 문자열로 반환.
 
@@ -349,8 +490,8 @@ def fetch_context_for_blog(blog_id: str, keyword: str, on_log=None) -> str:
     overnight_run.py → generate_text(..., extra_context=...) 에 주입용.
     """
     if blog_id in {"nolja100", "triplog"}:
-        # 여행 블로그: 축제/행사 정보
-        return fetch_festival_context(keyword, on_log=on_log)
+        # 여행 블로그: 관광지 + 숙박 + 음식점 + 축제 통합 정보
+        return fetch_travel_context(keyword, on_log=on_log)
     elif blog_id in {"baremi542", "goodisak", "salim1su"}:
         # 정보성 블로그: 정부24 공공서비스
         welfare_hints = ["지원", "혜택", "신청", "급여", "보조", "복지", "정책", "수당", "바우처"]
