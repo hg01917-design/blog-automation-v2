@@ -683,6 +683,15 @@ def _post_tistory(account, title, body_html, tags=None,
             else:
                 log(f"[포스팅] 이미지 {idx} placeholder 없음 — 스킵")
 
+        # ── 채워지지 않은 이미지 placeholder 제거 ──
+        page.evaluate("""() => {
+            const ed = tinymce.activeEditor;
+            if (!ed) return;
+            const body = ed.getBody();
+            body.querySelectorAll('[data-img-slot]').forEach(p => p.parentNode.removeChild(p));
+            ed.fire('change');
+        }""")
+
         # ── 애드센스 placeholder 위치에 서식 삽입 ──
         has_adsense = page.evaluate("""() => {
             const ed = tinymce.activeEditor;
