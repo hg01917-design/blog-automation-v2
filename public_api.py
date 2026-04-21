@@ -27,10 +27,25 @@ _RAW_KEY = os.environ.get("PUBLIC_DATA_API_KEY", "")
 # URL 인코딩된 키를 디코딩
 SERVICE_KEY = urllib.parse.unquote(_RAW_KEY)
 
+# 교통 전용 API 키 (data.go.kr 별도 신청)
+EXPRESS_BUS_KEY = os.environ.get("EXPRESS_BUS_API_KEY", SERVICE_KEY)
+BUS_STOP_KEY = os.environ.get("BUS_STOP_API_KEY", SERVICE_KEY)
+SEOUL_BUS_KEY = os.environ.get("SEOUL_BUS_API_KEY", SERVICE_KEY)
+BUSAN_BUS_KEY = os.environ.get("BUSAN_BUS_API_KEY", SERVICE_KEY)
+
 # 한국관광공사 API
 _FESTIVAL_URL = "https://apis.data.go.kr/B551011/KorService2/searchFestival2"
 # 정부24 공공서비스 API
 _GOV_SERVICE_URL = "https://api.odcloud.kr/api/gov24/v3/serviceList"
+# 버스정류소 API (TAGO)
+_BUS_STOP_URL = "https://apis.data.go.kr/1613000/BusSttnInfoInqireService/getSttnNoList"
+# 도시코드 (TAGO 버스정류소)
+_BUS_CITY_CODES = {
+    "서울": "11", "부산": "21", "대구": "22", "인천": "23", "광주": "24",
+    "대전": "25", "울산": "26", "세종": "29", "경기": "31", "강원": "32",
+    "충북": "33", "충남": "34", "전북": "35", "전남": "36", "경북": "37",
+    "경남": "38", "제주": "39",
+}
 
 
 def _get(url: str, params: dict) -> dict:
