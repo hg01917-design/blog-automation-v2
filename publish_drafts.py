@@ -1480,6 +1480,11 @@ def publish_tistory_draft(blog_id: str) -> bool:
             _clean_title = _re2.sub(r'\s*\d+선\s*', ' ', _clean_title)
             # 앞에 연도 단독으로 있으면 제거 (예: "2026 코미디" → "코미디")
             _clean_title = _re2.sub(r'^20\d\d\s+', '', _clean_title)
+            # 현재 연도가 아닌 연도(20XX)가 제목 중간/끝에 있으면 제거
+            # 예: "폭싹 속았수다 2025 —" → "폭싹 속았수다 —"
+            import datetime as _dt
+            _cur_year = str(_dt.datetime.now().year)
+            _clean_title = _re2.sub(r'\s+20(?!' + _cur_year[-2:] + r')\d\d\b', '', _clean_title)
             # 파이프(|) 구분자 정리
             _clean_title = _re2.sub(r'\s*\|\s*', ' — ', _clean_title)
             _clean_title = _re2.sub(r'\s{2,}', ' ', _clean_title).strip(' —')
