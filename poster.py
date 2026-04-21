@@ -1748,6 +1748,44 @@ def _post_naver(account, title, content, tags=None,
             log("[포스팅] 에디터 글자수 확인 실패")
         log("[포스팅] 본문 입력 완료")
 
+        # ── 해시태그 입력 ──
+        if tags:
+            try:
+                _naver_dismiss_overlays(page)
+                _TAG_SELS = [
+                    'input[placeholder*="태그"]',
+                    '.se-tag-hashtag-input input',
+                    '.se-hashtag-input input',
+                    '#postWriteTagText',
+                    'input[class*="tag"]',
+                ]
+                tag_input = None
+                for sel in _TAG_SELS:
+                    loc = page.locator(sel).first
+                    try:
+                        if loc.is_visible(timeout=2000):
+                            tag_input = loc
+                            break
+                    except Exception:
+                        continue
+                if tag_input:
+                    tag_ok = 0
+                    for tag in tags[:10]:
+                        try:
+                            tag_input.click()
+                            time.sleep(0.2)
+                            tag_input.fill(tag.strip())
+                            page.keyboard.press("Enter")
+                            time.sleep(0.5)
+                            tag_ok += 1
+                        except Exception as _te:
+                            log(f"[포스팅] 태그 '{tag}' 입력 오류: {_te}")
+                    log(f"[포스팅] 태그 {tag_ok}개 입력 완료")
+                else:
+                    log("[포스팅] 태그 입력창 미발견 — 건너뜀")
+            except Exception as _tage:
+                log(f"[포스팅] 태그 입력 실패: {_tage}")
+
         # ── 임시저장 (발행은 사용자가 직접 수행) ──
         log("[포스팅] 임시저장 중...")
         _naver_dismiss_overlays(page)
