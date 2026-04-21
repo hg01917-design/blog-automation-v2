@@ -911,12 +911,9 @@ def _naver_close_upload_panel(page):
         if closed:
             time.sleep(0.5)
             return
-        # 버튼 못찾으면 Escape로 닫기 시도
+        # 버튼 못찾으면 Escape 1회로 닫기
         page.keyboard.press("Escape")
         time.sleep(0.5)
-        # 한 번 더 (중첩 다이얼로그 대비)
-        page.keyboard.press("Escape")
-        time.sleep(0.3)
     except Exception:
         pass
 
@@ -995,6 +992,11 @@ def _naver_upload_image(page, filepath, log_fn=None, alt: str = ""):
         return False
 
     try:
+        # 업로드 전 이미지 컴포넌트 수 기록 (중복 삽입 방지)
+        img_count_before = page.evaluate(
+            "() => document.querySelectorAll('.se-component.se-image').length"
+        )
+
         # 사진 버튼 클릭 + file_chooser 인터셉트 (Finder 열지 않음)
         with page.expect_file_chooser(timeout=8000) as fc_info:
             photo_btn.click(timeout=5000)
@@ -1005,8 +1007,20 @@ def _naver_upload_image(page, filepath, log_fn=None, alt: str = ""):
         _naver_wait_for_image_load(page)
         _naver_remove_image_placeholders(page)
 
-        # 업로드 후 남아있는 파일선택/라이브러리 패널 닫기
-        _naver_close_upload_panel(page)
+        # 업로드 후 이미지 수 확인 — 이미 삽입된 경우 패널 닫기 생략 (중복 방지)
+        img_count_after = page.evaluate(
+            "() => document.querySelectorAll('.se-component.se-image').length"
+        )
+        if img_count_after > img_count_before:
+            # set_files()로 이미 삽입됨 → 패널만 조용히 닫기 (Escape 1회)
+            try:
+                page.keyboard.press("Escape")
+                time.sleep(0.3)
+            except Exception:
+                pass
+        else:
+            # 아직 삽입 안 됨 → 패널 확인 버튼/닫기 버튼으로 삽입 트리거
+            _naver_close_upload_panel(page)
 
         # alt/caption 설정: 마지막 이미지의 캡션 placeholder 클릭 후 입력
         if alt:
@@ -1230,7 +1244,6 @@ def _naver_restore_body_format(page):
                 if text_btn and text_btn.is_visible():
                     text_btn.click()
                     time.sleep(0.4)
-                    _naver_set_font_size(page, 19)
                     return
             # 드롭다운 미열림 → Escape 후 재시도
             page.keyboard.press("Escape")
@@ -1471,6 +1484,16 @@ def _post_naver(account, title, content, tags=None,
     # 애드센스 마커 삽입
     body_text = insert_adsense_markers(content, blog_id)
 
+    # [이미지N]...[/이미지N] → {{이미지N}} 변환 (프롬프트/alt 줄 제거)
+    body_text = re.sub(
+        r'\[이미지\s*(\d+)\][\s\S]*?\[/이미지\s*\1\]',
+        lambda m: f'\n{{{{이미지{m.group(1)}}}}}\n',
+        body_text
+    )
+    # 혹시 남은 단독 [이미지N] 태그와 프롬프트/alt 줄 제거
+    body_text = re.sub(r'\[/?이미지\s*\d+\]', '', body_text)
+    body_text = re.sub(r'(?m)^\s*(프롬프트|alt|Gemini프롬프트):.*$', '', body_text)
+
     # 본문을 섹션으로 파싱 + 이미지 상단 몰림 방지
     sections = _parse_naver_sections(body_text)
     sections = _redistribute_images_if_top(sections)
@@ -1674,6 +1697,8 @@ def _post_naver(account, title, content, tags=None,
                             time.sleep(0.2)
                             continue
                         # [텍스트](URL) 마크다운 링크 → 하이퍼링크 삽입
+                        # [BOLD]...[/BOLD] → **...** 변환
+                        stripped = re.sub(r'\[BOLD\](.*?)\[/BOLD\]', r'**\1**', stripped, flags=re.IGNORECASE)
                         if re.search(r'\[.+?\]\(https?://[^\)]+\)', stripped):
                             _naver_type_line_with_links(page, stripped)
                         # **볼드** 처리 (Ctrl+B)
@@ -1714,136 +1739,29 @@ def _post_naver(account, title, content, tags=None,
             log("[포스팅] 에디터 글자수 확인 실패")
         log("[포스팅] 본문 입력 완료")
 
-        # ── 발행 ──
-        log("[포스팅] 발행 버튼 클릭...")
+        # ── 임시저장 (발행은 사용자가 직접 수행) ──
+        log("[포스팅] 임시저장 중...")
         _naver_dismiss_overlays(page)
-        publish_btn = page.query_selector('button[class*="publish_btn"]')
-        if not publish_btn:
-            log("[포스팅] 발행 버튼을 찾을 수 없음")
-            return False
-        publish_btn.click()
-        _rand_delay(page, 2000, 3000)
-
-        page.wait_for_selector(
-            '[class*="layer_popup"][class*="is_show"]', timeout=10000
-        )
-
-        # ── 카테고리 선택 (salim1su) ──
-        blog_id_for_cat = account.get("blog", "")
-        if blog_id_for_cat == "salim1su" and keyword:
-            cat_name = _get_salim_category(keyword)
-            log(f"[포스팅] 카테고리 선택: {cat_name}")
-            try:
-                time.sleep(1.0)  # 팝업 완전 로드 대기
-                selected = page.evaluate("""(catName) => {
-                    // 1. 팝업 내 모든 클릭 가능 요소에서 텍스트 일치
-                    const allEls = document.querySelectorAll(
-                        'li, a, button, label, span, div[role="option"], div[role="listitem"]'
-                    );
-                    for (const el of allEls) {
-                        const txt = el.textContent.trim();
-                        if (txt === catName) {
-                            el.click();
-                            return 'clicked:' + txt;
-                        }
-                    }
-                    // 2. 포함 매칭 (완전 일치 실패 시)
-                    for (const el of allEls) {
-                        const txt = el.textContent.trim();
-                        if (txt.includes(catName)) {
-                            el.click();
-                            return 'partial:' + txt;
-                        }
-                    }
-                    // 3. select 드롭다운
-                    const sel = document.querySelector('select');
-                    if (sel) {
-                        for (const opt of sel.options) {
-                            if (opt.text.trim() === catName || opt.text.includes(catName)) {
-                                sel.value = opt.value;
-                                sel.dispatchEvent(new Event('change', {bubbles: true}));
-                                return 'select:' + opt.text;
-                            }
-                        }
-                    }
-                    // 디버그: 팝업 내 텍스트 목록 반환
-                    const popup = document.querySelector('[class*="layer_popup"][class*="is_show"], [class*="publish"]');
-                    if (popup) {
-                        const texts = Array.from(popup.querySelectorAll('li, button, a, label'))
-                            .map(e => e.textContent.trim()).filter(t => t).slice(0, 20);
-                        return 'debug:' + texts.join('|');
-                    }
-                    return false;
-                }""", cat_name)
-                if selected and selected is not False:
-                    if str(selected).startswith('debug:'):
-                        log(f"[포스팅] 카테고리 팝업 요소: {selected[6:]}")
-                        log(f"[포스팅] 카테고리 '{cat_name}' 항목을 찾지 못함 — 스킵")
-                    else:
-                        time.sleep(0.5)
-                        log(f"[포스팅] 카테고리 선택 완료: {selected}")
-                else:
-                    log(f"[포스팅] 카테고리 '{cat_name}' 항목을 찾지 못함 — 스킵")
-            except Exception as e:
-                log(f"[포스팅] 카테고리 선택 오류: {e}")
-
-        if tags:
-            log(f"[포스팅] 태그 입력 중: {tags}")
-            try:
-                tag_input = page.query_selector('#tag-input')
-                if tag_input:
-                    tag_input.click()
-                    time.sleep(0.3)
-                    for tag in tags:
-                        tag_input.fill("")
-                        tag_input.type(tag.strip(), delay=random.randint(40, 100))
-                        page.keyboard.press("Enter")
-                        time.sleep(random.uniform(0.5, 1.0))
-            except Exception:
-                log("[포스팅] 태그 입력 실패 — 스킵")
-
-        # 네이버 대표이미지(썸네일) 설정 — 발행 팝업에서 첫 번째 이미지 선택
-        if image_paths:
-            try:
-                thumb_set = page.evaluate("""() => {
-                    const sels = [
-                        '[class*="thumbnail"] img', '[class*="thumb_img"] img',
-                        '[class*="representative"] img', '[class*="coverImage"] img',
-                        '.se-thumbnail-list img', '.publish-thumbnail img',
-                    ];
-                    for (const s of sels) {
-                        const imgs = document.querySelectorAll(s);
-                        if (imgs.length > 0) { imgs[0].click(); return s; }
-                    }
-                    return null;
-                }""")
-                if thumb_set:
-                    log(f"[포스팅] 네이버 대표이미지 설정 완료 ({thumb_set})")
-                    time.sleep(0.5)
-            except Exception:
-                pass
-
-        # 발행 팝업에서 발행 확인 버튼 클릭 → 직접 발행
-        log("[포스팅] 발행 팝업에서 발행 버튼 클릭...")
-        published = page.evaluate("""() => {
+        saved = page.evaluate("""() => {
             const buttons = document.querySelectorAll('button');
             for (const btn of buttons) {
-                const txt = btn.textContent.trim();
-                if (txt === '발행' || txt === '공개발행' || txt === '확인') {
-                    btn.click(); return txt;
+                if (btn.textContent.trim().includes('임시저장')) {
+                    btn.click(); return true;
                 }
             }
-            return null;
+            return false;
         }""")
-        if published:
-            _rand_delay(page, 2000, 3000)
-            log(f"[포스팅] 네이버 발행 완료: {title[:30]}... (버튼: {published})")
+        _rand_delay(page, 2000, 3000)
+        if saved:
+            log(f"[포스팅] 임시저장 완료: {title[:30]}...")
             return True
+        # 폴백: Ctrl+S
+        page.keyboard.press("Meta+s")
+        _rand_delay(page, 2000, 3000)
+        log(f"[포스팅] 임시저장(Ctrl+S) 시도: {title[:30]}...")
+        return True
 
-        # 폴백: 발행 버튼 못 찾으면 임시저장
-        log("[포스팅] 발행 버튼 없음 — 임시저장으로 폴백...")
-        page.keyboard.press("Escape")
-        _rand_delay(page, 1000, 1500)
+        # ── 아래는 사용 안 함 (임시저장 후 return) — 발행 폴백용 보존 ──
         saved = page.evaluate("""() => {
             const buttons = document.querySelectorAll('button');
             for (const btn of buttons) {
