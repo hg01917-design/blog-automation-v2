@@ -335,38 +335,9 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
             log(f"[이미지] 참고 이미지 첨부 실패 (무시): {e}")
 
     # 프롬프트 입력
-    # "이미지 만들기" 도구 버튼 — 새 세션에서 기본 활성화 상태 확인 후 미활성화 시에만 클릭
-    # 주의: 이미 활성화 상태에서 클릭 시 비활성화됨 → 반드시 상태 확인 후 클릭
-    try:
-        img_tool_btn = None
-        _btn_selectors = [
-            'button[aria-label*="이미지 만들기, 버튼"]',
-            'button[aria-label*="이미지 만들기"]',
-            'button[aria-label*="Generate image"]',
-            'button[aria-label*="Create image"]',
-        ]
-        for _bsel in _btn_selectors:
-            try:
-                _candidate = page.locator(_bsel).first
-                _candidate.wait_for(state="visible", timeout=5000)
-                img_tool_btn = _candidate
-                break
-            except Exception:
-                continue
-        if img_tool_btn is not None:
-            label = img_tool_btn.get_attribute("aria-label") or ""
-            # "선택 해제"(deselect)가 포함되면 이미 활성화 → 클릭하면 비활성화되므로 스킵
-            if "선택 해제" in label or "deselect" in label.lower():
-                log("[이미지] '이미지 만들기' 이미 활성화됨 — 클릭 스킵")
-            else:
-                # 활성화 안 된 상태 → 클릭해서 활성화
-                log(f"[이미지] '이미지 만들기' 버튼 클릭 (label: {label[:40]})")
-                img_tool_btn.click()
-                page.wait_for_timeout(1500)
-        else:
-            log("[이미지] '이미지 만들기' 버튼 못 찾음 — 기본 모드로 진행")
-    except Exception as e:
-        log(f"[이미지] '이미지 만들기' 버튼 처리 실패 (무시): {e}")
+    # "이미지 만들기" 버튼 — Gemini 새 채팅은 기본 활성화 상태이므로 클릭 불필요
+    # 클릭하면 오히려 비활성화됨 → 버튼 조작 생략
+    log("[이미지] '이미지 만들기' 기본 활성화 상태 유지 (클릭 생략)")
 
     input_el = page.locator('.ql-editor').first
     input_el.click()
