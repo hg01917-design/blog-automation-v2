@@ -97,6 +97,20 @@ ACCOUNTS = [
     },
 ]
 
+# 사용자가 앱 UI에서 추가한 커스텀 블로그 (config_custom.json)
+_custom_path = os.path.join(os.path.dirname(__file__), "config_custom.json")
+if os.path.exists(_custom_path):
+    import json as _json
+    try:
+        _custom = _json.loads(open(_custom_path, encoding="utf-8").read())
+        _existing_ids = {a["blog"] for a in ACCOUNTS}
+        for _a in _custom.get("accounts", []):
+            if _a.get("blog") and _a["blog"] not in _existing_ids:
+                ACCOUNTS.append(_a)
+                _existing_ids.add(_a["blog"])
+    except Exception:
+        pass
+
 # 계정별 빠른 조회용
 ACCOUNT_MAP = {a["blog"]: a for a in ACCOUNTS}
 

@@ -363,6 +363,176 @@ class SettingsDialog(QDialog):
         self.accept()
 
 
+# ─── 블로그 추가 다이얼로그 ────────────────────────────────────────────────
+
+class AddBlogDialog(QDialog):
+    """새 블로그 등록 다이얼로그 — config_custom.json + 에이전트 파일 자동 생성"""
+
+    _BASE_DIR = _Path(os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(_Path(__file__).parent)))
+    _CUSTOM_JSON = _BASE_DIR / "config_custom.json"
+    _AGENTS_DIR  = _BASE_DIR / "agents"
+
+    _PLATFORMS = ["tistory", "naver", "wordpress", "blogspot"]
+    _CATEGORIES = ["여행", "IT", "살림", "정부지원금", "교통정보", "영화", "리뷰", "일상", "기타"]
+    _PLATFORM_COLORS = {
+        "tistory":  ("#ff590022", "#ff8c60", "#ff590044", "Tistory"),
+        "naver":    ("#03c75a22", "#22c55e", "#03c75a44", "Naver"),
+        "wordpress":("#0073aa22", "#4f8ef7", "#0073aa44", "WordPress"),
+        "blogspot": ("#ea433522", "#ea4335", "#ea433544", "Blogspot"),
+    }
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("➕ 블로그 추가")
+        self.setMinimumWidth(440)
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        form = QFormLayout()
+        form.setSpacing(8)
+
+        # 블로그 ID
+        self._id_edit = QLineEdit()
+        self._id_edit.setPlaceholderText("예: mytravel (영문+숫자)")
+        self._id_edit.setMinimumHeight(30)
+        form.addRow("블로그 ID:", self._id_edit)
+
+        # 플랫폼
+        self._platform_combo = QComboBox()
+        self._platform_combo.addItems(self._PLATFORMS)
+        self._platform_combo.currentTextChanged.connect(self._on_platform_changed)
+        form.addRow("플랫폼:", self._platform_combo)
+
+        # 카카오 ID (Tistory)
+        self._kakao_edit = QLineEdit()
+        self._kakao_edit.setPlaceholderText("카카오 로그인 ID")
+        self._kakao_edit.setMinimumHeight(30)
+        form.addRow("카카오 ID:", self._kakao_edit)
+
+        # 네이버 ID (Naver)
+        self._naver_edit = QLineEdit()
+        self._naver_edit.setPlaceholderText("네이버 로그인 ID")
+        self._naver_edit.setMinimumHeight(30)
+        form.addRow("네이버 ID:", self._naver_edit)
+
+        # 블로그 URL
+        self._url_edit = QLineEdit()
+        self._url_edit.setPlaceholderText("예: https://myblog.tistory.com")
+        self._url_edit.setMinimumHeight(30)
+        form.addRow("블로그 URL:", self._url_edit)
+
+        # 카테고리
+        self._cat_combo = QComboBox()
+        self._cat_combo.addItems(self._CATEGORIES)
+        form.addRow("카테고리:", self._cat_combo)
+
+        layout.addLayout(form)
+
+        hint = QLabel("※ 입력 후 저장하면 즉시 콤보박스에 추가됩니다.")
+        hint.setStyleSheet("color:#888;font-size:11px;")
+        layout.addWidget(hint)
+
+        btn_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        btn_box.button(QDialogButtonBox.Save).setText("저장")
+        btn_box.button(QDialogButtonBox.Cancel).setText("취소")
+        btn_box.accepted.connect(self._save)
+        btn_box.rejected.connect(self.reject)
+        layout.addWidget(btn_box)
+
+        self._on_platform_changed("tistory")
+
+    def _on_platform_changed(self, platform: str):
+        self._kakao_edit.setVisible(platform == "tistory")
+        self._naver_edit.setVisible(platform == "naver")
+
+    def _save(self):
+        blog_id  = self._id_edit.text().strip()
+        platform = self._platform_combo.currentText()
+        url      = self._url_edit.text().strip().rstrip("/")
+        category = self._cat_combo.currentText()
+        kakao_id = self._kakao_edit.text().strip()
+        naver_id = self._naver_edit.text().strip()
+
+        if not blog_id:
+            QMessageBox.warning(self, "입력 오류", "블로그 ID를 입력해 주세요.")
+            return
+        if not url:
+            QMessageBox.warning(self, "입력 오류", "블로그 URL을 입력해 주세요.")
+            return
+
+        # editor_url 자동 생성
+        if platform == "tistory":
+            editor_url = f"{url}/manage/newpost"
+        elif platform == "naver":
+            editor_url = f"https://blog.naver.com/{blog_id}/postwrite"
+        elif platform == "wordpress":
+            editor_url = f"{url}/wp-admin/post-new.php"
+        else:
+            editor_url = url
+
+        # config_custom.json 업데이트
+        custom = {"accounts": []}
+        if self._CUSTOM_JSON.exists():
+            import json
+            try:
+                custom = json.loads(self._CUSTOM_JSON.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        account = {"blog": blog_id, "platform": platform,
+                   "editor_url": editor_url, "category": category}
+        if platform == "tistory" and kakao_id:
+            account["kakao_id"] = kakao_id
+        if platform == "naver" and naver_id:
+            account["naver_id"] = naver_id
+
+        # 중복 제거 후 추가
+        import json
+        custom["accounts"] = [a for a in custom["accounts"] if a.get("blog") != blog_id]
+        custom["accounts"].append(account)
+        self._CUSTOM_JSON.write_text(json.dumps(custom, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        # 에이전트 파일 자동 생성
+        self._create_agent(blog_id, platform, category)
+
+        # orchestrator BLOG_AGENT_MAP 런타임 업데이트
+        try:
+            from agents import orchestrator as _orc
+            _orc.BLOG_AGENT_MAP[blog_id] = f"{blog_id}_agent"
+            if blog_id not in _orc.DEFAULT_BLOG_ORDER:
+                _orc.DEFAULT_BLOG_ORDER.append(blog_id)
+        except Exception:
+            pass
+
+        # BLOG_CATEGORIES / _PLATFORM_INFO 런타임 업데이트
+        BLOG_CATEGORIES[blog_id] = category
+        _bg, _fg, _border, _name = self._PLATFORM_COLORS.get(platform, ("#33333322","#aaa","#33333344","Unknown"))
+        _PLATFORM_INFO[blog_id] = (_name, _bg, _fg, _border)
+
+        self._result_blog_id = blog_id
+        QMessageBox.information(self, "추가 완료", f"'{blog_id}' 블로그가 추가되었습니다.")
+        self.accept()
+
+    def _create_agent(self, blog_id: str, platform: str, category: str):
+        """orchestrator의 _generate_agent_template으로 에이전트 파일 자동 생성"""
+        agent_path = self._AGENTS_DIR / f"{blog_id}_agent.py"
+        if agent_path.exists():
+            return
+        try:
+            from agents import orchestrator as _orc
+            module_name = f"{blog_id}_agent"
+            _orc._generate_agent_template(blog_id, module_name, category)
+        except Exception:
+            pass
+
+    @property
+    def result_blog_id(self) -> str:
+        return getattr(self, "_result_blog_id", "")
+
+
 # ─── 인라인 설정 패널 (새 콤팩트 GUI용) ──────────────────────────────────
 
 class _SettingsPanel(QWidget):
@@ -1054,8 +1224,21 @@ class BlogAutomationApp(QMainWindow):
             "woll100", "phn0502", "triplog", "me1091",
             "blogspot_travel", "blogspot_it", "blogspot_daily",
         ])
+        # config_custom.json에 저장된 커스텀 블로그 로드
+        self._load_custom_blogs()
         self._agent_combo.currentTextChanged.connect(self._on_agent_changed)
         agent_row.addWidget(self._agent_combo, 1)
+
+        # 블로그 추가 버튼
+        self._add_blog_btn = QPushButton("＋")
+        self._add_blog_btn.setFixedSize(28, 28)
+        self._add_blog_btn.setToolTip("새 블로그 추가")
+        self._add_blog_btn.setStyleSheet(
+            "background:#1a1d2e;color:#4f8ef7;border:1px solid #1e2233;"
+            "border-radius:5px;font-size:15px;font-weight:bold;")
+        self._add_blog_btn.clicked.connect(self._open_add_blog_dialog)
+        agent_row.addWidget(self._add_blog_btn)
+
         self._badge = QLabel()
         self._badge.setFixedHeight(24)
         self._badge.setContentsMargins(8, 2, 8, 2)
@@ -1210,6 +1393,40 @@ class BlogAutomationApp(QMainWindow):
         except Exception:
             pass
         QTimer.singleShot(60000, self._refresh_stats)
+
+    # ── 커스텀 블로그 로드 ──
+    def _load_custom_blogs(self):
+        """config_custom.json에 저장된 블로그를 콤보박스에 추가"""
+        custom_path = _Path(os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(_Path(__file__).parent))) / "config_custom.json"
+        if not custom_path.exists():
+            return
+        import json
+        try:
+            data = json.loads(custom_path.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        existing = [self._agent_combo.itemText(i) for i in range(self._agent_combo.count())]
+        for account in data.get("accounts", []):
+            blog_id  = account.get("blog", "")
+            category = account.get("category", "기타")
+            platform = account.get("platform", "tistory")
+            if blog_id and blog_id not in existing:
+                self._agent_combo.addItem(blog_id)
+                BLOG_CATEGORIES[blog_id] = category
+                _bg, _fg, _border, _name = AddBlogDialog._PLATFORM_COLORS.get(
+                    platform, ("#33333322", "#aaa", "#33333344", "Unknown"))
+                _PLATFORM_INFO[blog_id] = (_name, _bg, _fg, _border)
+
+    # ── 블로그 추가 다이얼로그 열기 ──
+    def _open_add_blog_dialog(self):
+        dlg = AddBlogDialog(self)
+        if dlg.exec_() == QDialog.Accepted:
+            blog_id = dlg.result_blog_id
+            if blog_id:
+                existing = [self._agent_combo.itemText(i) for i in range(self._agent_combo.count())]
+                if blog_id not in existing:
+                    self._agent_combo.addItem(blog_id)
+                self._agent_combo.setCurrentText(blog_id)
 
     # ── 에이전트 선택 → 뱃지 갱신 ──
     def _on_agent_changed(self, blog_id: str):
