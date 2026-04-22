@@ -20,7 +20,8 @@ _USER_DATA_DIR = _Path.home() / "Library" / "Application Support" / "BlogAutomat
 _USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 if getattr(sys, "frozen", False):
-    _PROJECT_ROOT = _USER_DATA_DIR
+    # .app/Contents/MacOS/실행파일 → 5단계 위가 프로젝트 루트
+    _PROJECT_ROOT = _Path(sys.executable).parent.parent.parent.parent.parent
 else:
     _PROJECT_ROOT = _Path(__file__).parent
 
@@ -55,7 +56,7 @@ BLOG_CATEGORIES = {
     "nolja100":        "여행",
     "salim1su":        "살림",
     "baremi542":       "정부지원금",
-    "woll100":         "교통정보",
+    "woll100":         "교통",
     "phn0502":         "영화",
     "triplog":         "여행",
     "me1091":          "리뷰",
@@ -1246,6 +1247,18 @@ class BlogAutomationApp(QMainWindow):
         agent_row.addWidget(self._badge)
         ml.addLayout(agent_row)
 
+        # 2-1. 키워드 직접 입력란
+        kw_row = QHBoxLayout()
+        kw_row.setSpacing(6)
+        self._kw_input = QLineEdit()
+        self._kw_input.setPlaceholderText("키워드 직접 입력 (비워두면 큐에서 자동 선택)")
+        self._kw_input.setStyleSheet(
+            "background:#1a1d2e;color:#e0e0e0;border:1px solid #1e2233;"
+            "border-radius:5px;font-size:12px;padding:5px 8px;")
+        self._kw_input.returnPressed.connect(self._run_selected)
+        kw_row.addWidget(self._kw_input)
+        ml.addLayout(kw_row)
+
         # 3. 통계 카드 3개
         stats_row = QHBoxLayout()
         stats_row.setSpacing(6)
@@ -1458,8 +1471,8 @@ class BlogAutomationApp(QMainWindow):
             self.log_box.append("[실행] 이미 실행 중입니다.")
             return
         blog_id = self._agent_combo.currentText()
-        # 키워드 큐에서 클릭 저장된 키워드 사용 (selectedItems는 포커스 이동 시 초기화됨)
-        keyword = self._selected_keyword or None
+        # 직접 입력 우선, 없으면 큐에서 선택된 키워드
+        keyword = self._kw_input.text().strip() or self._selected_keyword or None
         if keyword:
             self.log_box.append(f"[실행] {blog_id} — 키워드: '{keyword}'")
         else:
