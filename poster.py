@@ -233,6 +233,18 @@ def _body_to_tinymce_html(body_text: str, blog_id: str) -> str:
     body = re.sub(r'(?m)^\s*(프롬프트|alt|Gemini프롬프트):.*$', '', body)
     body = insert_adsense_markers(body, blog_id)
 
+    SP = '<p data-ke-size="size19">&nbsp;</p>'
+
+    def _needs_spacing(html_tag: str) -> bool:
+        """H2/H3/이미지/애드센스/버튼 블록 여부"""
+        return (
+            html_tag.startswith('<h2') or
+            html_tag.startswith('<h3') or
+            'data-img-slot' in html_tag or
+            'data-adsense' in html_tag or
+            ('<a href=' in html_tag and 'display:inline-block' in html_tag)
+        )
+
     parts = []
     for line in body.split('\n'):
         s = line.strip()
@@ -267,7 +279,19 @@ def _body_to_tinymce_html(body_text: str, blog_id: str) -> str:
         text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', text)
         parts.append(f'<p data-ke-size="size19">{text}</p>')
 
-    return '\n'.join(parts)
+    # H2/H3/이미지/애드센스/버튼 블록 앞뒤에 빈 줄 2칸 삽입
+    spaced = []
+    for i, tag in enumerate(parts):
+        prev = parts[i - 1] if i > 0 else None
+        nxt = parts[i + 1] if i < len(parts) - 1 else None
+        cur_needs = _needs_spacing(tag)
+        if cur_needs and spaced and not spaced[-1].startswith(SP):
+            spaced += [SP, SP]
+        spaced.append(tag)
+        if cur_needs and nxt and not nxt.startswith(SP):
+            spaced += [SP, SP]
+
+    return '\n'.join(spaced)
 
 
 def _tistory_insert_adsense_format(page, log_fn=None) -> bool:
