@@ -32,11 +32,29 @@ PUB_PATTERN = re.compile(r"ca-pub-(\d{14,16})")
 TISTORY_PATTERN = re.compile(r"https?://([a-zA-Z0-9\-]+)\.tistory\.com")
 # 블로그/워드프레스/일반 도메인 패턴 — 구글 검색 결과에서 추출
 BLOG_URL_PATTERN = re.compile(r"https?://([a-zA-Z0-9\-]+\.[a-zA-Z0-9\-\.]+)/")
-# 수집 제외 도메인 (검색엔진/소셜/뉴스 등)
+# 수집 제외 도메인 (검색엔진/소셜/쇼핑/포털/여행예약)
 _SKIP_DOMAINS = {
     "google", "youtube", "facebook", "instagram", "twitter", "naver", "kakao",
     "daum", "wikipedia", "namuwiki", "gmarket", "coupang", "11st", "amazon",
     "netflix", "apple", "microsoft", "github", "stackoverflow",
+    "pstatic.net", "nate.com", "zum.com",
+    "hanatour", "klook", "kkday", "myrealtrip", "tripstore", "ybtour",
+    "modetour", "onlinetour", "interpark", "expedia", "getyourguide",
+    "visitkorea", "visitbusan", "visitseoul", "go.kr",
+}
+# 뉴스/언론/기업 도메인 판별 키워드 (domain host 포함 여부로 체크)
+_NEWS_KEYWORDS = {
+    "news", "press", "times", "daily", "herald", "tribune", "journal",
+    "media", "cast", "joongang", "hankyung", "hankyung", "chosun",
+    "seoul", "donga", "yonhap", "yna", "sbs", "kbs", "mbc", "jtbc",
+    "newsis", "news1", "mt.co", "fnnews", "pressian", "wikitree",
+    "sportsseoul", "stardailynews", "weeklytoday", "discoverynews",
+    "ibabynews", "topstarnews", "tournews", "ardentnews", "jeonmae",
+    "mhns", "greenpostkorea", "biztribune", "sisacast", "gukjenews",
+    "joongangenews", "pinpointnews", "businesskorea", "ezyeconomy",
+    "travie",  # 여행 잡지
+    "marieclairekorea", "gqkorea", "elle.co",  # 패션잡지
+    "efnews", "gybelife", "ss78.co",
 }
 
 MIN_SITES_PER_PUB = 3   # 파워 운영자 기준: 3개 이상 사이트
@@ -87,17 +105,20 @@ def log(msg, on_log=None):
 # ── 1단계: 구글 검색 → 블로그 URL 수집 (Tistory + WordPress 등 모두) ──────────
 
 def _extract_root_url(href: str) -> str | None:
-    """Google 검색 결과 href에서 루트 도메인 URL 추출. 스킵 대상은 None."""
+    """검색 결과 href에서 개인 블로그 루트 도메인 URL 추출. 뉴스/언론/예약 사이트는 None."""
     try:
         parsed = urllib.parse.urlparse(href)
         host = parsed.netloc.lower()
         if not host or parsed.scheme not in ("http", "https"):
             return None
-        # 제외 도메인 필터
+        # 1. 제외 도메인 (포털/쇼핑/예약)
         for skip in _SKIP_DOMAINS:
             if skip in host:
                 return None
-        # 루트 URL 반환
+        # 2. 뉴스/언론 도메인 키워드 필터
+        for kw in _NEWS_KEYWORDS:
+            if kw in host:
+                return None
         return f"{parsed.scheme}://{host}"
     except Exception:
         return None
