@@ -104,19 +104,20 @@ def _extract_root_url(href: str) -> str | None:
 
 
 def google_search_blogs(query: str, page, max_results: int = 100) -> list[str]:
-    """구글에서 query 검색 → 블로그 루트 URL 목록 반환 (Tistory·WordPress·기타 모두)."""
+    """구글 블로그 탭(tbm=blg)에서 query 검색 → 블로그 루트 URL 목록 반환."""
     urls = []
     seen = set()
 
     for start in range(0, max_results, 10):
+        # tbm=blg: 구글 블로그 탭 — 뉴스·쇼핑·예약 사이트 자동 제외
         search_url = (
             f"https://www.google.com/search"
             f"?q={urllib.parse.quote(query)}"
-            f"&num=10&start={start}&hl=ko&gl=kr"
+            f"&tbm=blg&num=10&start={start}&hl=ko&gl=kr"
         )
         try:
-            page.goto(search_url, wait_until="domcontentloaded", timeout=15000)
-            page.wait_for_timeout(1200)
+            page.goto(search_url, wait_until="domcontentloaded", timeout=20000)
+            page.wait_for_timeout(2500)
 
             links = page.eval_on_selector_all(
                 "a[href]",
@@ -131,7 +132,8 @@ def google_search_blogs(query: str, page, max_results: int = 100) -> list[str]:
                     found += 1
             if found == 0:
                 break  # CAPTCHA 또는 결과 없음
-            time.sleep(1.5)
+            # 403 방지: 쿼리 내 페이지 간 딜레이 충분히
+            time.sleep(4 + (start // 10) * 1.5)
         except Exception:
             break
 
@@ -151,7 +153,8 @@ def collect_all_blog_urls(category: str, page, on_log=None) -> list[str]:
         seen.update(new)
         all_urls.extend(new)
         log(f"[구글] '{q}' → {len(urls)}개 (누적 {len(all_urls)}개)", on_log)
-        time.sleep(2)
+        # 쿼리 간 딜레이: 403 방지
+        time.sleep(7)
 
     log(f"[구글] 총 {len(all_urls)}개 블로그 URL 수집 완료 (Tistory+WordPress 등)", on_log)
     return all_urls
@@ -361,6 +364,11 @@ def save_sites_to_db(pub_map: dict[str, str], category: str):
             discovered_at TEXT
         )
     """)
+    # 기존 테이블에 컬럼 누락 시 마이그레이션
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(sites)")}
+    for col, typedef in [("category", "TEXT"), ("discovered_at", "TEXT")]:
+        if col not in existing_cols:
+            conn.execute(f"ALTER TABLE sites ADD COLUMN {col} {typedef}")
     from datetime import datetime
     now = datetime.now().isoformat()
     for url, pub in pub_map.items():
