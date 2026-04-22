@@ -735,12 +735,14 @@ class _KeywordWriteWorker(QThread):
 class KeywordEngineDialog(QDialog):
     """4개 카테고리 전체 수집 + 카테고리 탭별 분류 표시"""
 
-    CATEGORIES = ["IT", "여행", "살림", "정부지원금"]
+    CATEGORIES = ["IT", "여행", "살림", "정부지원금", "교통", "영화"]
     CAT_COLORS  = {
         "IT":         "#4da6ff",
         "여행":       "#ff9966",
         "살림":       "#55dd77",
         "정부지원금": "#cc88ff",
+        "교통":       "#ffdd55",
+        "영화":       "#ff6688",
     }
 
     def __init__(self, parent=None):
@@ -785,6 +787,14 @@ class KeywordEngineDialog(QDialog):
         self._collecting_label = QLabel("")
         self._collecting_label.setStyleSheet("color:#facc15;font-size:11px;font-weight:bold;")
         top_row.addWidget(self._collecting_label)
+
+        refresh_btn = QPushButton("🔄 새로고침")
+        refresh_btn.setFixedHeight(32)
+        refresh_btn.setStyleSheet(
+            "background:#374151;color:#fff;border-radius:6px;"
+            "font-size:12px;font-weight:bold;padding:0 12px;border:none;")
+        refresh_btn.clicked.connect(self._load_all_from_db)
+        top_row.addWidget(refresh_btn)
 
         self._collect_btn = QPushButton("⬇  전체 수집 시작")
         self._collect_btn.setFixedHeight(32)
@@ -887,7 +897,7 @@ class KeywordEngineDialog(QDialog):
         try:
             from keyword_engine.db_handler import get_keywords_by_category
             for cat in self.CATEGORIES:
-                rows = get_keywords_by_category(cat, n=1000)
+                rows = get_keywords_by_category(cat, n=30000)
                 self._cat_keywords[cat] = rows
                 self._update_cat_btn(cat)
             self._render_table(self._selected_category)
