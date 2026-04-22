@@ -1,9 +1,9 @@
 """
-google_harvester.py — 구글 상위 100개 Tistory 사이트 수집 → pub코드 추출 → 파워 운영자 RSS 수집
+google_harvester.py — 구글 상위 블로그 사이트 수집 → pub코드 추출 → 파워 운영자 RSS 수집
 
 파이프라인:
-  1. 구글 검색 `keyword site:tistory.com` → 상위 100개 Tistory URL (페이지네이션)
-  2. Playwright로 각 사이트 방문 → AdSense pub코드 추출 (JS 렌더링 포함)
+  1. 구글 검색 (Tistory/WordPress 포함 모든 블로그) → 상위 URL 수집
+  2. Playwright(새 페이지)로 각 사이트 방문 → AdSense pub코드 추출 (JS 렌더링 포함)
   3. pub코드별 사이트 수 집계 → MIN_SITES_PER_PUB 이상 = 파워 운영자
   4. 파워 운영자 사이트 RSS → 최신 글 제목 수집 → seed 키워드화
   5. seed → 네이버 자동완성 롱테일 확장 → DB 저장
@@ -30,6 +30,14 @@ if _env.exists():
 DB_PATH = _root / "keyword_engine" / "engine.db"
 PUB_PATTERN = re.compile(r"ca-pub-(\d{14,16})")
 TISTORY_PATTERN = re.compile(r"https?://([a-zA-Z0-9\-]+)\.tistory\.com")
+# 블로그/워드프레스/일반 도메인 패턴 — 구글 검색 결과에서 추출
+BLOG_URL_PATTERN = re.compile(r"https?://([a-zA-Z0-9\-]+\.[a-zA-Z0-9\-\.]+)/")
+# 수집 제외 도메인 (검색엔진/소셜/뉴스 등)
+_SKIP_DOMAINS = {
+    "google", "youtube", "facebook", "instagram", "twitter", "naver", "kakao",
+    "daum", "wikipedia", "namuwiki", "gmarket", "coupang", "11st", "amazon",
+    "netflix", "apple", "microsoft", "github", "stackoverflow",
+}
 
 MIN_SITES_PER_PUB = 5   # 파워 운영자 기준: 5개 이상 사이트
 GOOGLE_NUM = 100         # 구글 검색 결과 수 (최대 100)
@@ -37,35 +45,35 @@ MAX_PAGES = 2            # 페이지당 10개 × 최대 10페이지 → 최대 1
 
 CATEGORY_QUERIES = {
     "여행": [
-        "제주도 여행 코스", "부산 여행 추천", "강원도 여행 명소",
-        "속초 여행 코스", "경주 여행 일정", "전주 한옥마을 여행",
-        "여수 여행 코스", "통영 여행 추천", "남해 여행 명소",
-        "국내 여행지 추천", "당일치기 여행 코스", "국내 호텔 추천",
-        "해외여행 추천", "동남아 여행", "일본 여행 코스",
+        "제주도 여행 코스 블로그", "부산 여행 추천 후기", "강원도 여행 명소 정리",
+        "속초 여행 코스 2박3일", "경주 여행 일정 블로그", "전주 한옥마을 여행 후기",
+        "여수 여행 코스 블로그", "통영 여행 추천 코스", "남해 여행 명소 블로그",
+        "국내 여행지 추천 블로그", "당일치기 여행 코스 서울근교", "국내 호텔 추천 후기",
+        "해외여행 추천 블로그", "동남아 여행 코스 후기", "일본 여행 코스 블로그",
     ],
     "IT": [
-        "아이폰 추천", "갤럭시 추천", "노트북 추천 가성비",
-        "무선 이어폰 추천", "태블릿 추천", "공기청정기 추천",
-        "로봇청소기 추천", "스마트워치 추천", "모니터 추천",
-        "OTT 요금제 비교", "넷플릭스 요금", "게이밍 노트북",
+        "아이폰 추천 비교 블로그", "갤럭시 추천 후기", "노트북 추천 가성비 블로그",
+        "무선 이어폰 추천 비교", "태블릿 추천 블로그", "공기청정기 추천 후기",
+        "로봇청소기 추천 비교 블로그", "스마트워치 추천 2025", "모니터 추천 후기",
+        "OTT 요금제 비교 블로그", "넷플릭스 요금 정리", "게이밍 노트북 추천",
     ],
     "살림": [
-        "전기요금 절약", "생활비 줄이기", "식비 절약 방법",
-        "청소 꿀팁", "냉장고 정리법", "세탁 꿀팁",
-        "관리비 절약", "통신비 절약", "도시가스 절약",
+        "전기요금 절약 방법 블로그", "생활비 줄이기 후기", "식비 절약 방법 정리",
+        "청소 꿀팁 블로그", "냉장고 정리법 후기", "세탁 꿀팁 블로그",
+        "관리비 절약 방법", "통신비 절약 후기", "도시가스 절약 방법",
     ],
     "정부지원금": [
-        "청년 지원금", "정부지원금 종류", "복지 혜택 총정리",
-        "기초생활수급자 혜택", "실업급여 신청", "육아휴직 급여",
-        "출산 지원금", "청년도약계좌", "주거급여 신청",
+        "청년 지원금 신청 방법 블로그", "정부지원금 종류 총정리", "복지 혜택 총정리 블로그",
+        "기초생활수급자 혜택 정리", "실업급여 신청 방법", "육아휴직 급여 계산",
+        "출산 지원금 신청 블로그", "청년도약계좌 후기", "주거급여 신청 방법",
     ],
     "교통": [
-        "인천공항 버스 시간표", "공항버스 요금", "KTX 예매",
-        "고속버스 예매", "시외버스 요금", "공항철도 소요시간",
+        "인천공항 버스 시간표 정리", "공항버스 요금 블로그", "KTX 예매 방법",
+        "고속버스 예매 후기", "시외버스 요금 정리", "공항철도 소요시간 블로그",
     ],
     "영화": [
-        "영화 추천 2025", "넷플릭스 신작", "영화 결말 해석",
-        "드라마 추천", "OTT 추천", "공포 영화 추천",
+        "영화 추천 2025 블로그", "넷플릭스 신작 추천", "영화 결말 해석 블로그",
+        "드라마 추천 후기", "OTT 추천 비교 블로그", "공포 영화 추천 정리",
     ],
 }
 
@@ -76,17 +84,34 @@ def log(msg, on_log=None):
         on_log(msg)
 
 
-# ── 1단계: 구글 검색 → Tistory URL 수집 ────────────────────────────────────
+# ── 1단계: 구글 검색 → 블로그 URL 수집 (Tistory + WordPress 등 모두) ──────────
 
-def google_search_tistory(query: str, page, max_results: int = 100) -> list[str]:
-    """구글에서 `query site:tistory.com` 검색 → Tistory 루트 URL 목록 반환."""
+def _extract_root_url(href: str) -> str | None:
+    """Google 검색 결과 href에서 루트 도메인 URL 추출. 스킵 대상은 None."""
+    try:
+        parsed = urllib.parse.urlparse(href)
+        host = parsed.netloc.lower()
+        if not host or parsed.scheme not in ("http", "https"):
+            return None
+        # 제외 도메인 필터
+        for skip in _SKIP_DOMAINS:
+            if skip in host:
+                return None
+        # 루트 URL 반환
+        return f"{parsed.scheme}://{host}"
+    except Exception:
+        return None
+
+
+def google_search_blogs(query: str, page, max_results: int = 100) -> list[str]:
+    """구글에서 query 검색 → 블로그 루트 URL 목록 반환 (Tistory·WordPress·기타 모두)."""
     urls = []
     seen = set()
 
     for start in range(0, max_results, 10):
         search_url = (
             f"https://www.google.com/search"
-            f"?q={urllib.parse.quote(query + ' site:tistory.com')}"
+            f"?q={urllib.parse.quote(query)}"
             f"&num=10&start={start}&hl=ko&gl=kr"
         )
         try:
@@ -99,39 +124,46 @@ def google_search_tistory(query: str, page, max_results: int = 100) -> list[str]
             )
             found = 0
             for link in links:
-                m = TISTORY_PATTERN.match(link)
-                if m:
-                    root = f"https://{m.group(1)}.tistory.com"
-                    if root not in seen:
-                        seen.add(root)
-                        urls.append(root)
-                        found += 1
+                root = _extract_root_url(link)
+                if root and root not in seen:
+                    seen.add(root)
+                    urls.append(root)
+                    found += 1
             if found == 0:
-                break  # 결과 없음 → 중단
+                break  # CAPTCHA 또는 결과 없음
             time.sleep(1.5)
-        except Exception as e:
+        except Exception:
             break
 
     return urls
 
 
-def collect_all_tistory_urls(category: str, page, on_log=None) -> list[str]:
-    """카테고리별 쿼리로 구글 검색 → 전체 Tistory URL 수집."""
+def collect_all_blog_urls(category: str, page, on_log=None) -> list[str]:
+    """카테고리별 쿼리로 구글 검색 → 전체 블로그 URL 수집 (Tistory + WordPress 등)."""
     queries = CATEGORY_QUERIES.get(category, [])
     all_urls = []
     seen = set()
 
     for q in queries:
-        log(f"[구글] '{q} site:tistory.com' 검색 중...", on_log)
-        urls = google_search_tistory(q, page, max_results=GOOGLE_NUM)
+        log(f"[구글] '{q}' 검색 중...", on_log)
+        urls = google_search_blogs(q, page, max_results=GOOGLE_NUM)
         new = [u for u in urls if u not in seen]
         seen.update(new)
         all_urls.extend(new)
         log(f"[구글] '{q}' → {len(urls)}개 (누적 {len(all_urls)}개)", on_log)
         time.sleep(2)
 
-    log(f"[구글] 총 {len(all_urls)}개 Tistory URL 수집 완료", on_log)
+    log(f"[구글] 총 {len(all_urls)}개 블로그 URL 수집 완료 (Tistory+WordPress 등)", on_log)
     return all_urls
+
+
+# 하위 호환 별칭
+def google_search_tistory(query, page, max_results=100):
+    return google_search_blogs(query, page, max_results)
+
+
+def collect_all_tistory_urls(category, page, on_log=None):
+    return collect_all_blog_urls(category, page, on_log)
 
 
 # ── 2단계: pub코드 추출 (Playwright — JS 렌더링) ────────────────────────────
@@ -172,25 +204,29 @@ def find_power_publishers(pub_map: dict[str, str], min_sites: int = MIN_SITES_PE
 # ── 4단계: RSS → 최신 글 제목 수집 ─────────────────────────────────────────
 
 def _fetch_rss_titles(url: str, max_titles: int = 20) -> list[str]:
-    """RSS 피드에서 최신 글 제목 추출."""
-    rss_url = url.rstrip("/") + "/rss"
-    try:
-        req = urllib.request.Request(rss_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            content = resp.read().decode("utf-8", errors="ignore")
-        root_el = ET.fromstring(content)
-        titles = []
-        for item in root_el.iter("item"):
-            title_el = item.find("title")
-            if title_el is not None and title_el.text:
-                title = title_el.text.strip()
-                if len(title) > 5:
-                    titles.append(title)
-            if len(titles) >= max_titles:
-                break
-        return titles
-    except Exception:
-        return []
+    """RSS 피드에서 최신 글 제목 추출. Tistory(/rss) + WordPress(/feed) 모두 지원."""
+    base = url.rstrip("/")
+    candidates = [base + "/rss", base + "/feed", base + "/feed/rss2"]
+    for rss_url in candidates:
+        try:
+            req = urllib.request.Request(rss_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                content = resp.read().decode("utf-8", errors="ignore")
+            root_el = ET.fromstring(content)
+            titles = []
+            for item in root_el.iter("item"):
+                title_el = item.find("title")
+                if title_el is not None and title_el.text:
+                    title = title_el.text.strip()
+                    if len(title) > 5:
+                        titles.append(title)
+                if len(titles) >= max_titles:
+                    break
+            if titles:
+                return titles
+        except Exception:
+            continue
+    return []
 
 
 def collect_power_publisher_titles(power_pubs: dict[str, list[str]], on_log=None) -> list[str]:
@@ -347,21 +383,28 @@ def run(category: str = "여행", on_log=None) -> int:
     log(f"  Google Harvester — 카테고리: {category}", on_log)
     log(f"{'='*55}", on_log)
 
+    blog_urls: list[str] = []
+    power_pubs: dict[str, list[str]] = {}
+
     pw, browser = connect_cdp(on_log=on_log)
     try:
         ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-        page = ctx.new_page()
 
-        # 1. 구글 검색 → Tistory URL 수집
-        tistory_urls = collect_all_tistory_urls(category, page, on_log)
-        if not tistory_urls:
-            log("[오류] Tistory URL 수집 실패", on_log)
+        # 1. 구글 검색 → 블로그 URL 수집 (전용 페이지)
+        search_page = ctx.new_page()
+        blog_urls = collect_all_blog_urls(category, search_page, on_log)
+        search_page.close()  # 구글 검색 페이지 닫기 — pub코드 추출용 새 페이지 필요
+
+        if not blog_urls:
+            log("[오류] 블로그 URL 수집 실패", on_log)
             return 0
 
-        # 2. pub코드 추출 (Playwright)
-        log(f"\n[pub] {len(tistory_urls)}개 사이트 pub코드 추출 중...", on_log)
-        pub_map = extract_pub_codes_playwright(tistory_urls, page, on_log)
-        log(f"[pub] pub코드 확인: {len(pub_map)}개 / {len(tistory_urls)}개", on_log)
+        # 2. pub코드 추출 (새 페이지로 — 구글 CAPTCHA 상태 격리)
+        log(f"\n[pub] {len(blog_urls)}개 사이트 pub코드 추출 중...", on_log)
+        pub_page = ctx.new_page()
+        pub_map = extract_pub_codes_playwright(blog_urls, pub_page, on_log)
+        pub_page.close()
+        log(f"[pub] pub코드 확인: {len(pub_map)}개 / {len(blog_urls)}개", on_log)
 
         # DB에 사이트 저장
         save_sites_to_db(pub_map, category)
@@ -372,15 +415,13 @@ def run(category: str = "여행", on_log=None) -> int:
         for pub, sites in sorted(power_pubs.items(), key=lambda x: -len(x[1]))[:10]:
             log(f"  {pub}: {len(sites)}개 사이트", on_log)
 
-        page.close()
     finally:
         pw.stop()
 
     # 4. 파워 운영자 RSS → 최신 제목 수집
     if not power_pubs:
         log("[경고] 파워 운영자 없음 — 전체 사이트 RSS 수집으로 폴백", on_log)
-        # 폴백: 수집된 전체 사이트 사용
-        power_pubs = {"all": tistory_urls[:50]}
+        power_pubs = {"all": blog_urls[:50]}
 
     raw_titles = collect_power_publisher_titles(power_pubs, on_log)
 
