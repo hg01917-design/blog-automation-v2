@@ -275,52 +275,76 @@ def extract_pub_codes_playwright(urls: list[str], page, on_log=None) -> dict[str
 
 # ── 3단계: pub코드 역검색 → 파워 운영자 전체 사이트 수집 ────────────────────
 
-def reverse_lookup_pub_code(pub_code: str, page, max_results: int = 200) -> list[str]:
-    """pub코드를 Bing에서 역검색(Playwright) → 해당 pub코드를 사용하는 모든 사이트 수집.
-    Bing은 JS 렌더링 결과를 인덱싱하므로 AdSense pub코드 역검색 가능."""
-    query = f'"{pub_code}"'
+def reverse_lookup_pub_code(pub_code: str, page=None, max_results: int = 200) -> list[str]:
+    """SpyOnWeb으로 pub코드 역검색 → 같은 pub코드를 쓰는 모든 사이트 수집.
+    spyonweb.com에 pub코드 직접 조회 → 연관 도메인 목록 파싱."""
     sites = []
     seen = set()
 
-    for start in range(1, max_results // 10 + 2):
-        url = (
-            f"https://www.bing.com/search"
-            f"?q={urllib.parse.quote(query)}"
-            f"&first={start * 10 - 9}&mkt=ko-KR"
-        )
+    # SpyOnWeb: pub코드로 연관 사이트 조회
+    url = f"https://spyonweb.com/{urllib.parse.quote(pub_code)}"
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+
+        # SpyOnWeb 결과: 도메인 목록 파싱
+        # 패턴: <a href="/domain.com"> 또는 도메인 링크
+        domains = re.findall(r'href="https?://([a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,})"', html)
+        domains += re.findall(r'href="/([a-zA-Z0-9\-]+\.[a-zA-Z0-9\-\.]+)"', html)
+        for domain in domains:
+            domain = domain.strip("/").lower()
+            if not domain or "spyonweb" in domain or "." not in domain:
+                continue
+            root = f"https://{domain}"
+            if root not in seen:
+                seen.add(root)
+                sites.append(root)
+        time.sleep(2)
+    except Exception:
+        pass
+
+    # DNSlytics 보조 조회
+    if len(sites) < 5:
+        url2 = f"https://dnslytics.com/adsense/{urllib.parse.quote(pub_code)}"
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=15000)
-            page.wait_for_timeout(1500)
-            links = page.eval_on_selector_all("a[href]", "els => els.map(e => e.href)")
-            found = 0
-            for href in links:
-                root = _extract_root_url(href)
-                if root and root not in seen and "bing.com" not in root and "microsoft.com" not in root:
+            req2 = urllib.request.Request(url2, headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            })
+            with urllib.request.urlopen(req2, timeout=15) as resp2:
+                html2 = resp2.read().decode("utf-8", errors="ignore")
+            domains2 = re.findall(r'href="https?://([a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,})"', html2)
+            for domain in domains2:
+                root = f"https://{domain.lower()}"
+                if root not in seen and "dnslytics" not in root:
                     seen.add(root)
                     sites.append(root)
-                    found += 1
-            if found == 0:
-                break
-            time.sleep(2)
+            time.sleep(1)
         except Exception:
-            break
+            pass
 
     return sites
 
 
-def find_power_publishers(pub_map: dict[str, str], page, min_sites: int = MIN_SITES_PER_PUB, on_log=None) -> dict[str, list[str]]:
-    """pub코드 Bing 역검색으로 파워 운영자(min_sites개 이상) 사이트 목록 반환."""
+def find_power_publishers(pub_map: dict[str, str], page=None, min_sites: int = MIN_SITES_PER_PUB, on_log=None) -> dict[str, list[str]]:
+    """SpyOnWeb/DNSlytics로 pub코드 역검색 → 파워 운영자(min_sites개 이상) 사이트 목록 반환."""
     unique_pubs = list(set(pub_map.values()))
-    log(f"[역검색] {len(unique_pubs)}개 pub코드 Bing 역검색 시작 (기준: {min_sites}개+)", on_log)
+    log(f"[역검색] {len(unique_pubs)}개 pub코드 SpyOnWeb 역검색 시작 (기준: {min_sites}개+)", on_log)
 
     power: dict[str, list[str]] = {}
     for i, pub_code in enumerate(unique_pubs):
-        sites = reverse_lookup_pub_code(pub_code, page, max_results=300)
+        sites = reverse_lookup_pub_code(pub_code, max_results=300)
         log(f"[역검색] ({i+1}/{len(unique_pubs)}) {pub_code} → {len(sites)}개 사이트", on_log)
         if len(sites) >= min_sites:
             power[pub_code] = sites
             log(f"[파워] ★ {pub_code}: {len(sites)}개 사이트 — 파워 운영자!", on_log)
-        time.sleep(2)
+        time.sleep(1)
 
     return power
 
@@ -544,10 +568,8 @@ def run(category: str = "여행", on_log=None) -> int:
         # DB에 사이트 저장
         save_sites_to_db(pub_map, category)
 
-        # 3. pub코드 Bing 역검색 → 파워 운영자 선별 (새 페이지)
-        bing_page = ctx.new_page()
-        power_pubs = find_power_publishers(pub_map, bing_page, min_sites=MIN_SITES_PER_PUB, on_log=on_log)
-        bing_page.close()
+        # 3. SpyOnWeb/DNSlytics pub코드 역검색 → 파워 운영자 선별
+        power_pubs = find_power_publishers(pub_map, min_sites=MIN_SITES_PER_PUB, on_log=on_log)
         log(f"\n[파워] pub코드 {len(power_pubs)}개 ({MIN_SITES_PER_PUB}개 이상 사이트 운영자)", on_log)
         for pub, sites in sorted(power_pubs.items(), key=lambda x: -len(x[1]))[:10]:
             log(f"  {pub}: {len(sites)}개 사이트", on_log)
