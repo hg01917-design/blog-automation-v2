@@ -39,16 +39,27 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 CHECKPOINT_FILE = LOG_DIR / "checkpoint.json"
 
 # 기본 블로그 순서
-DEFAULT_BLOG_ORDER = ["goodisak", "nolja100", "salim1su", "baremi542"]
+DEFAULT_BLOG_ORDER = [
+    "goodisak", "nolja100", "salim1su", "baremi542",
+    "woll100", "phn0502", "triplog", "me1091",
+    "blogspot_travel", "blogspot_it", "blogspot_daily",
+]
 
 MAX_WRITER_RETRIES = 1      # 검수 불합격 시 재생성 (1=재생성 없이 바로 발행)
 
 # 블로그 ID → 전용 에이전트 모듈명 매핑
 BLOG_AGENT_MAP = {
-    "goodisak":  "goodisak_agent",
-    "nolja100":  "nolja100_agent",
-    "salim1su":  "salim1su_agent",
-    "baremi542": "baremi542_agent",
+    "goodisak":        "goodisak_agent",
+    "nolja100":        "nolja100_agent",
+    "salim1su":        "salim1su_agent",
+    "baremi542":       "baremi542_agent",
+    "woll100":         "woll100_agent",
+    "phn0502":         "phn0502_agent",
+    "triplog":         "triplog_agent",
+    "me1091":          "me1091_agent",
+    "blogspot_travel": "blogspot_travel_agent",
+    "blogspot_it":     "blogspot_it_agent",
+    "blogspot_daily":  "blogspot_daily_agent",
 }
 
 AGENTS_DIR = Path(__file__).parent

@@ -51,18 +51,32 @@ except AttributeError:
 ASSETS_DIR = _base / "assets"
 
 BLOG_CATEGORIES = {
-    "goodisak":  "IT",
-    "nolja100":  "여행",
-    "salim1su":  "살림",
-    "baremi542": "정부지원금",
+    "goodisak":        "IT",
+    "nolja100":        "여행",
+    "salim1su":        "살림",
+    "baremi542":       "정부지원금",
+    "woll100":         "교통정보",
+    "phn0502":         "영화",
+    "triplog":         "여행",
+    "me1091":          "리뷰",
+    "blogspot_travel": "여행",
+    "blogspot_it":     "IT",
+    "blogspot_daily":  "일상",
 }
 
 # 플랫폼 뱃지 정보: blog_id → (플랫폼명, bg, text, border)
 _PLATFORM_INFO = {
-    "baremi542": ("WordPress", "#0073aa22", "#4f8ef7", "#0073aa44"),
-    "goodisak":  ("Tistory",   "#ff590022", "#ff8c60", "#ff590044"),
-    "nolja100":  ("Tistory",   "#ff590022", "#ff8c60", "#ff590044"),
-    "salim1su":  ("Naver",     "#03c75a22", "#22c55e", "#03c75a44"),
+    "baremi542":       ("WordPress", "#0073aa22", "#4f8ef7", "#0073aa44"),
+    "triplog":         ("WordPress", "#0073aa22", "#4f8ef7", "#0073aa44"),
+    "goodisak":        ("Tistory",   "#ff590022", "#ff8c60", "#ff590044"),
+    "nolja100":        ("Tistory",   "#ff590022", "#ff8c60", "#ff590044"),
+    "woll100":         ("Tistory",   "#ff590022", "#ff8c60", "#ff590044"),
+    "phn0502":         ("Tistory",   "#ff590022", "#ff8c60", "#ff590044"),
+    "salim1su":        ("Naver",     "#03c75a22", "#22c55e", "#03c75a44"),
+    "me1091":          ("Naver",     "#03c75a22", "#22c55e", "#03c75a44"),
+    "blogspot_travel": ("Blogspot",  "#ea433522", "#ea4335", "#ea433544"),
+    "blogspot_it":     ("Blogspot",  "#ea433522", "#ea4335", "#ea433544"),
+    "blogspot_daily":  ("Blogspot",  "#ea433522", "#ea4335", "#ea433544"),
 }
 
 
@@ -1035,7 +1049,11 @@ class BlogAutomationApp(QMainWindow):
         # 2. 에이전트 드롭다운 + 뱃지
         agent_row = QHBoxLayout()
         self._agent_combo = QComboBox()
-        self._agent_combo.addItems(["baremi542", "goodisak", "nolja100", "salim1su"])
+        self._agent_combo.addItems([
+            "goodisak", "nolja100", "salim1su", "baremi542",
+            "woll100", "phn0502", "triplog", "me1091",
+            "blogspot_travel", "blogspot_it", "blogspot_daily",
+        ])
         self._agent_combo.currentTextChanged.connect(self._on_agent_changed)
         agent_row.addWidget(self._agent_combo, 1)
         self._badge = QLabel()
