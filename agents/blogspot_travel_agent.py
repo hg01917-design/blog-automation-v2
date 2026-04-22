@@ -75,6 +75,13 @@ def run(keyword: str, on_log=None, on_status=None):
     result["image_paths"] = image_paths
     result["raw"] = raw
 
+    # 마이리얼트립 쿠폰 배너 삽입 (여행 블로그 전용)
+    try:
+        from mrt_banner import insert_mrt_banner
+        result["body"] = insert_mrt_banner(result["body"], keyword, blog_id, on_log=log)
+    except Exception as _e:
+        log(f"[MRT배너] 오류 — 스킵: {_e}")
+
     log(f"[작성] ✓ 완료 — 제목: \"{result['title']}\" / 본문: {len(result['body'])}자 / 태그: {len(result['tags'])}개")
     if on_status:
         on_status("writer", "done")
