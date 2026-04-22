@@ -39,7 +39,7 @@ _SKIP_DOMAINS = {
     "netflix", "apple", "microsoft", "github", "stackoverflow",
 }
 
-MIN_SITES_PER_PUB = 5   # 파워 운영자 기준: 5개 이상 사이트
+MIN_SITES_PER_PUB = 3   # 파워 운영자 기준: 3개 이상 사이트
 GOOGLE_NUM = 100         # 구글 검색 결과 수 (최대 100)
 MAX_PAGES = 2            # 페이지당 10개 × 최대 10페이지 → 최대 100개
 
@@ -103,69 +103,129 @@ def _extract_root_url(href: str) -> str | None:
         return None
 
 
-def google_search_blogs(query: str, page, max_results: int = 100) -> list[str]:
-    """구글 블로그 탭(tbm=blg)에서 query 검색 → 블로그 루트 URL 목록 반환."""
+def naver_search_blogs(query: str, max_results: int = 100) -> list[str]:
+    """네이버 블로그 검색 → 티스토리·WordPress 루트 URL 목록 반환 (urllib, 브라우저 불필요)."""
     urls = []
     seen = set()
 
-    for start in range(0, max_results, 10):
-        # tbm=blg: 구글 블로그 탭 — 뉴스·쇼핑·예약 사이트 자동 제외
+    for start in range(1, max_results + 1, 10):
         search_url = (
-            f"https://www.google.com/search"
-            f"?q={urllib.parse.quote(query)}"
-            f"&tbm=blg&num=10&start={start}&hl=ko&gl=kr"
+            f"https://search.naver.com/search.naver"
+            f"?where=blog&query={urllib.parse.quote(query)}&start={start}"
         )
         try:
-            page.goto(search_url, wait_until="domcontentloaded", timeout=20000)
-            page.wait_for_timeout(2500)
-
-            links = page.eval_on_selector_all(
-                "a[href]",
-                "els => els.map(e => e.href)"
+            req = urllib.request.Request(
+                search_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                  "Chrome/124.0.0.0 Safari/537.36",
+                    "Accept-Language": "ko-KR,ko;q=0.9",
+                    "Referer": "https://www.naver.com/",
+                }
             )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+
+            # 결과 링크 추출
+            hrefs = re.findall(r'href="(https?://[^"]+)"', html)
             found = 0
-            for link in links:
-                root = _extract_root_url(link)
+            for href in hrefs:
+                root = _extract_root_url(href)
                 if root and root not in seen:
                     seen.add(root)
                     urls.append(root)
                     found += 1
             if found == 0:
-                break  # CAPTCHA 또는 결과 없음
-            # 403 방지: 쿼리 내 페이지 간 딜레이 충분히
-            time.sleep(4 + (start // 10) * 1.5)
+                break
+            time.sleep(1.2)
         except Exception:
             break
 
     return urls
 
 
-def collect_all_blog_urls(category: str, page, on_log=None) -> list[str]:
-    """카테고리별 쿼리로 구글 검색 → 전체 블로그 URL 수집 (Tistory + WordPress 등)."""
+def daum_search_blogs(query: str, max_results: int = 100) -> list[str]:
+    """다음 블로그 검색 → 티스토리·WordPress 루트 URL 목록 반환."""
+    urls = []
+    seen = set()
+
+    for page_num in range(1, (max_results // 10) + 2):
+        search_url = (
+            f"https://search.daum.net/search"
+            f"?w=blog&q={urllib.parse.quote(query)}&page={page_num}"
+        )
+        try:
+            req = urllib.request.Request(
+                search_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                  "Chrome/124.0.0.0 Safari/537.36",
+                    "Accept-Language": "ko-KR,ko;q=0.9",
+                    "Referer": "https://www.daum.net/",
+                }
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+
+            hrefs = re.findall(r'href="(https?://[^"]+)"', html)
+            found = 0
+            for href in hrefs:
+                root = _extract_root_url(href)
+                if root and root not in seen:
+                    seen.add(root)
+                    urls.append(root)
+                    found += 1
+            if found == 0:
+                break
+            time.sleep(1.2)
+        except Exception:
+            break
+
+    return urls
+
+
+def collect_all_blog_urls(category: str, page=None, on_log=None) -> list[str]:
+    """카테고리별 쿼리로 네이버+다음 블로그 검색 → 전체 블로그 URL 수집 (Tistory + WordPress 등).
+    page 파라미터는 호환성 유지용 (사용 안 함)."""
     queries = CATEGORY_QUERIES.get(category, [])
     all_urls = []
     seen = set()
 
     for q in queries:
-        log(f"[구글] '{q}' 검색 중...", on_log)
-        urls = google_search_blogs(q, page, max_results=GOOGLE_NUM)
-        new = [u for u in urls if u not in seen]
+        # 네이버 블로그 검색
+        log(f"[네이버] '{q}' 검색 중...", on_log)
+        naver_urls = naver_search_blogs(q, max_results=GOOGLE_NUM)
+        new = [u for u in naver_urls if u not in seen]
         seen.update(new)
         all_urls.extend(new)
-        log(f"[구글] '{q}' → {len(urls)}개 (누적 {len(all_urls)}개)", on_log)
-        # 쿼리 간 딜레이: 403 방지
-        time.sleep(7)
+        log(f"[네이버] '{q}' → {len(new)}개 (누적 {len(all_urls)}개)", on_log)
+        time.sleep(1.5)
 
-    log(f"[구글] 총 {len(all_urls)}개 블로그 URL 수집 완료 (Tistory+WordPress 등)", on_log)
+        # 다음 블로그 검색
+        daum_urls = daum_search_blogs(q, max_results=50)
+        new_d = [u for u in daum_urls if u not in seen]
+        seen.update(new_d)
+        all_urls.extend(new_d)
+        if new_d:
+            log(f"[다음] '{q}' → {len(new_d)}개 추가 (누적 {len(all_urls)}개)", on_log)
+        time.sleep(1.5)
+
+    log(f"[수집] 총 {len(all_urls)}개 블로그 URL 수집 완료 (Tistory+WordPress 등)", on_log)
     return all_urls
 
 
 # 하위 호환 별칭
-def google_search_tistory(query, page, max_results=100):
-    return google_search_blogs(query, page, max_results)
+def google_search_blogs(query, page=None, max_results=100):
+    return naver_search_blogs(query, max_results)
 
 
-def collect_all_tistory_urls(category, page, on_log=None):
+def google_search_tistory(query, page=None, max_results=100):
+    return naver_search_blogs(query, max_results)
+
+
+def collect_all_tistory_urls(category, page=None, on_log=None):
     return collect_all_blog_urls(category, page, on_log)
 
 
@@ -263,18 +323,24 @@ def collect_power_publisher_titles(power_pubs: dict[str, list[str]], on_log=None
 # ── 5단계: 제목 → seed 키워드 → 롱테일 확장 → DB 저장 ───────────────────────
 
 def _clean_title_to_keyword(title: str) -> str:
-    """제목에서 핵심 검색 키워드 추출."""
+    """제목에서 핵심 검색 키워드 추출. 자동완성에 맞게 15자 이내로 압축."""
     import html as _html
     title = _html.unescape(title)
     title = re.sub(r"<[^>]+>", "", title)
     # 꼬리말 제거
     title = re.sub(
-        r"\s*(총정리|완벽정리|알아보기|알아보자|소개합니다|해봤어요|꿀팁|입니다|합니다|해요)\s*$",
+        r"\s*(총정리|완벽정리|알아보기|알아보자|소개합니다|해봤어요|꿀팁|입니다|합니다|해요|정리|후기|리뷰)\s*$",
         "", title, flags=re.IGNORECASE
     )
     # 구분자 기준 앞부분만
-    title = re.split(r"[|｜ㅣ\-·]", title)[0]
+    title = re.split(r"[|｜ㅣ\-·:：]", title)[0]
     title = re.sub(r"\s+", " ", title).strip()
+    if not title or len(title) < 5:
+        return ""
+    # 15자 초과 시: 첫 공백 기준 앞 2~3 어절만 추출
+    if len(title) > 15:
+        words = title.split()
+        title = " ".join(words[:3]) if len(words) >= 3 else " ".join(words[:2])
     return title if len(title) >= 5 else ""
 
 
