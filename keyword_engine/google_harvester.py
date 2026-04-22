@@ -275,72 +275,53 @@ def extract_pub_codes_playwright(urls: list[str], page, on_log=None) -> dict[str
 
 # ── 3단계: pub코드 역검색 → 파워 운영자 전체 사이트 수집 ────────────────────
 
-def reverse_lookup_pub_code(pub_code: str, page=None, max_results: int = 200) -> list[str]:
-    """SpyOnWeb으로 pub코드 역검색 → 같은 pub코드를 쓰는 모든 사이트 수집.
-    spyonweb.com에 pub코드 직접 조회 → 연관 도메인 목록 파싱."""
+def reverse_ip_lookup(domain: str) -> list[str]:
+    """hackertarget.com 무료 역IP 조회 → 같은 서버에 올라간 모든 사이트 반환."""
+    import socket
     sites = []
-    seen = set()
-
-    # SpyOnWeb: pub코드로 연관 사이트 조회
-    url = f"https://spyonweb.com/{urllib.parse.quote(pub_code)}"
     try:
-        req = urllib.request.Request(url, headers={
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml",
-            "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
-        })
+        ip = socket.gethostbyname(domain.replace("https://", "").replace("http://", "").split("/")[0])
+        url = f"https://api.hackertarget.com/reverseiplookup/?q={ip}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=15) as resp:
-            html = resp.read().decode("utf-8", errors="ignore")
-
-        # SpyOnWeb 결과: 도메인 목록 파싱
-        # 패턴: <a href="/domain.com"> 또는 도메인 링크
-        domains = re.findall(r'href="https?://([a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,})"', html)
-        domains += re.findall(r'href="/([a-zA-Z0-9\-]+\.[a-zA-Z0-9\-\.]+)"', html)
-        for domain in domains:
-            domain = domain.strip("/").lower()
-            if not domain or "spyonweb" in domain or "." not in domain:
-                continue
-            root = f"https://{domain}"
-            if root not in seen:
-                seen.add(root)
-                sites.append(root)
-        time.sleep(2)
+            result = resp.read().decode("utf-8", errors="ignore")
+        for line in result.strip().splitlines():
+            d = line.strip()
+            if d and "." in d and "error" not in d.lower() and "API count" not in d:
+                sites.append(f"https://{d}")
     except Exception:
         pass
-
-    # DNSlytics 보조 조회
-    if len(sites) < 5:
-        url2 = f"https://dnslytics.com/adsense/{urllib.parse.quote(pub_code)}"
-        try:
-            req2 = urllib.request.Request(url2, headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                              "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            })
-            with urllib.request.urlopen(req2, timeout=15) as resp2:
-                html2 = resp2.read().decode("utf-8", errors="ignore")
-            domains2 = re.findall(r'href="https?://([a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,})"', html2)
-            for domain in domains2:
-                root = f"https://{domain.lower()}"
-                if root not in seen and "dnslytics" not in root:
-                    seen.add(root)
-                    sites.append(root)
-            time.sleep(1)
-        except Exception:
-            pass
-
     return sites
 
 
+def reverse_lookup_pub_code(pub_code: str, site_samples: list[str], page=None, max_results: int = 200) -> list[str]:
+    """pub코드를 공유하는 사이트들의 IP를 역조회 → 같은 서버의 모든 사이트 수집 (무료)."""
+    all_sites = []
+    seen = set()
+    for site_url in site_samples[:3]:  # 대표 사이트 3개만
+        domain = site_url.replace("https://", "").replace("http://", "").split("/")[0]
+        sites = reverse_ip_lookup(domain)
+        for s in sites:
+            if s not in seen:
+                seen.add(s)
+                all_sites.append(s)
+        time.sleep(2)
+    return all_sites
+
+
 def find_power_publishers(pub_map: dict[str, str], page=None, min_sites: int = MIN_SITES_PER_PUB, on_log=None) -> dict[str, list[str]]:
-    """SpyOnWeb/DNSlytics로 pub코드 역검색 → 파워 운영자(min_sites개 이상) 사이트 목록 반환."""
-    unique_pubs = list(set(pub_map.values()))
-    log(f"[역검색] {len(unique_pubs)}개 pub코드 SpyOnWeb 역검색 시작 (기준: {min_sites}개+)", on_log)
+    """역IP 조회(hackertarget, 무료)로 파워 운영자(min_sites개 이상) 사이트 목록 반환."""
+    # pub코드별 사이트 그룹핑
+    groups: dict[str, list[str]] = {}
+    for url, pub in pub_map.items():
+        groups.setdefault(pub, []).append(url)
+
+    log(f"[역IP] {len(groups)}개 pub코드 역IP 조회 시작 (기준: {min_sites}개+)", on_log)
 
     power: dict[str, list[str]] = {}
-    for i, pub_code in enumerate(unique_pubs):
-        sites = reverse_lookup_pub_code(pub_code, max_results=300)
-        log(f"[역검색] ({i+1}/{len(unique_pubs)}) {pub_code} → {len(sites)}개 사이트", on_log)
+    for i, (pub_code, sample_sites) in enumerate(groups.items()):
+        sites = reverse_lookup_pub_code(pub_code, sample_sites, max_results=300)
+        log(f"[역IP] ({i+1}/{len(groups)}) {pub_code[:30]} → {len(sites)}개 사이트 (샘플: {sample_sites[0].split('//')[1][:25]})", on_log)
         if len(sites) >= min_sites:
             power[pub_code] = sites
             log(f"[파워] ★ {pub_code}: {len(sites)}개 사이트 — 파워 운영자!", on_log)
