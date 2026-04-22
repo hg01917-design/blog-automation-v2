@@ -57,7 +57,7 @@ _NEWS_KEYWORDS = {
     "efnews", "gybelife", "ss78.co",
 }
 
-MIN_SITES_PER_PUB = 30  # 파워 운영자 기준: 30개 이상 사이트 (역검색 기준)
+MIN_SITES_PER_PUB = 4   # 파워 운영자 기준: 4개 이상 사이트 (역검색 도구 유료화로 직접 크롤 기준)
 GOOGLE_NUM = 100         # 구글 검색 결과 수 (최대 100)
 MAX_PAGES = 2            # 페이지당 10개 × 최대 10페이지 → 최대 100개
 
