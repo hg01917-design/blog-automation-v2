@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from claude_playwright import generate_text_with_fallback as generate_text
+from claude_direct import generate_text
 from image_router import generate_images_for_blog as _img_router
 from overnight_run import _truncate_title
 

@@ -9,7 +9,7 @@ try:
 except ImportError:
     import naver_agent as _base
 
-from claude_playwright import generate_text_with_fallback as generate_text
+from claude_direct import generate_text
 from image_router import generate_images_for_blog as _img_router
 from overnight_run import _truncate_title, check_duplicate_post
 from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as _db_set_status
