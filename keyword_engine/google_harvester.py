@@ -57,7 +57,7 @@ _NEWS_KEYWORDS = {
     "efnews", "gybelife", "ss78.co",
 }
 
-MIN_SITES_PER_PUB = 3   # 파워 운영자 기준: 3개 이상 사이트
+MIN_SITES_PER_PUB = 30  # 파워 운영자 기준: 30개 이상 사이트 (역검색 기준)
 GOOGLE_NUM = 100         # 구글 검색 결과 수 (최대 100)
 MAX_PAGES = 2            # 페이지당 10개 × 최대 10페이지 → 최대 100개
 
@@ -273,15 +273,63 @@ def extract_pub_codes_playwright(urls: list[str], page, on_log=None) -> dict[str
     return results
 
 
-# ── 3단계: 파워 운영자 선별 ─────────────────────────────────────────────────
+# ── 3단계: pub코드 역검색 → 파워 운영자 전체 사이트 수집 ────────────────────
 
-def find_power_publishers(pub_map: dict[str, str], min_sites: int = MIN_SITES_PER_PUB) -> dict[str, list[str]]:
-    """{pub_code: [url, ...]} 중 min_sites 이상인 파워 운영자만 반환."""
-    groups: dict[str, list[str]] = {}
-    for url, pub in pub_map.items():
-        groups.setdefault(pub, []).append(url)
+def reverse_lookup_pub_code(pub_code: str, max_results: int = 200) -> list[str]:
+    """pub코드를 네이버+다음에서 역검색 → 해당 pub코드를 사용하는 모든 사이트 수집."""
+    query = f'"{pub_code}"'
+    sites = []
+    seen = set()
 
-    power = {pub: sites for pub, sites in groups.items() if len(sites) >= min_sites}
+    for engine, base_url, param in [
+        ("naver", "https://search.naver.com/search.naver", "where=web&query="),
+        ("daum",  "https://search.daum.net/search",        "w=web&q="),
+    ]:
+        for start in range(1, max_results // 10 + 2):
+            if engine == "naver":
+                url = f"{base_url}?{param}{urllib.parse.quote(query)}&start={start}"
+            else:
+                url = f"{base_url}?{param}{urllib.parse.quote(query)}&page={start}"
+            try:
+                req = urllib.request.Request(url, headers={
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                                  "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    "Accept-Language": "ko-KR,ko;q=0.9",
+                })
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    html = resp.read().decode("utf-8", errors="ignore")
+                hrefs = re.findall(r'href="(https?://[^"]+)"', html)
+                found = 0
+                for href in hrefs:
+                    root = _extract_root_url(href)
+                    if root and root not in seen:
+                        seen.add(root)
+                        sites.append(root)
+                        found += 1
+                if found == 0:
+                    break
+                time.sleep(1.0)
+            except Exception:
+                break
+
+    return sites
+
+
+def find_power_publishers(pub_map: dict[str, str], min_sites: int = MIN_SITES_PER_PUB, on_log=None) -> dict[str, list[str]]:
+    """pub코드 역검색으로 파워 운영자(min_sites개 이상) 사이트 목록 반환."""
+    # 1단계: 수집된 pub코드들에서 고유 pub코드 목록
+    unique_pubs = list(set(pub_map.values()))
+    log(f"[역검색] {len(unique_pubs)}개 pub코드 역검색 시작 (기준: {min_sites}개+)", on_log)
+
+    power: dict[str, list[str]] = {}
+    for i, pub_code in enumerate(unique_pubs):
+        sites = reverse_lookup_pub_code(pub_code, max_results=300)
+        log(f"[역검색] ({i+1}/{len(unique_pubs)}) {pub_code} → {len(sites)}개 사이트", on_log)
+        if len(sites) >= min_sites:
+            power[pub_code] = sites
+            log(f"[파워] ★ {pub_code}: {len(sites)}개 사이트 — 파워 운영자!", on_log)
+        time.sleep(2)
+
     return power
 
 
@@ -504,8 +552,8 @@ def run(category: str = "여행", on_log=None) -> int:
         # DB에 사이트 저장
         save_sites_to_db(pub_map, category)
 
-        # 3. 파워 운영자 선별
-        power_pubs = find_power_publishers(pub_map, min_sites=MIN_SITES_PER_PUB)
+        # 3. pub코드 역검색 → 파워 운영자 선별
+        power_pubs = find_power_publishers(pub_map, min_sites=MIN_SITES_PER_PUB, on_log=on_log)
         log(f"\n[파워] pub코드 {len(power_pubs)}개 ({MIN_SITES_PER_PUB}개 이상 사이트 운영자)", on_log)
         for pub, sites in sorted(power_pubs.items(), key=lambda x: -len(x[1]))[:10]:
             log(f"  {pub}: {len(sites)}개 사이트", on_log)
