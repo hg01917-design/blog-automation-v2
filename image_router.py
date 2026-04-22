@@ -425,6 +425,190 @@ def _clean_filename(filename: str, skip_webp: bool) -> str:
     return filename
 
 
+# ─── 여행 블로그 전용 ─────────────────────────────────────────────────────
+_TRAVEL_BLOGS = {"nolja100", "triplog", "blogspot_travel"}
+
+
+def _try_photokorea(image_infos: list, log, keyword: str = "", output_dir=None) -> dict:
+    """한국관광공사 사진 갤러리 API → 지명 키워드 매칭 이미지 다운로드."""
+    import os, json as _json
+    api_key = os.environ.get("PHOTOKOREA_API_KEY", "")
+    if not api_key:
+        log("[PhotoKorea] API키 없음 (PHOTOKOREA_API_KEY) — 스킵")
+        return {}
+
+    save_dir = Path(output_dir) if output_dir else IMAGES_DIR
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    # 검색어: keyword 첫 단어(지명) 추출
+    search_kw = re.split(r'[\s,]+', keyword)[0] if keyword else ""
+    if not search_kw:
+        log("[PhotoKorea] 키워드 없음 — 스킵")
+        return {}
+
+    base_url = "https://apis.data.go.kr/B551011/PhotoGalleryService1/galleryList1"
+    params = urllib.parse.urlencode({
+        "serviceKey": api_key,
+        "numOfRows": len(image_infos) * 3,
+        "pageNo": 1,
+        "MobileOS": "ETC",
+        "MobileApp": "BlogBot",
+        "keyword": search_kw,
+        "_type": "json",
+    })
+    url = f"{base_url}?{params}"
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+            raw = resp.read()
+        data = _json.loads(raw)
+        items = (data.get("response", {}).get("body", {}).get("items", {}) or {}).get("item", [])
+        if isinstance(items, dict):
+            items = [items]
+    except Exception as e:
+        log(f"[PhotoKorea] API 오류: {e}")
+        return {}
+
+    if not items:
+        log(f"[PhotoKorea] '{search_kw}' 결과 없음")
+        return {}
+
+    results = {}
+    img_urls = [it.get("galWebImageUrl") or it.get("galOriginimgUrl", "") for it in items if it.get("galWebImageUrl") or it.get("galOriginimgUrl")]
+    for i, info in enumerate(image_infos):
+        if i >= len(img_urls):
+            break
+        img_url = img_urls[i]
+        filepath = str(save_dir / info["filename"])
+        try:
+            req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=20, context=ctx) as resp:
+                data_bytes = resp.read()
+            if len(data_bytes) < 5000:
+                continue
+            Path(filepath).write_bytes(data_bytes)
+            log(f"[PhotoKorea] [{info['index']}] 저장: {Path(filepath).name}")
+            results[info["index"]] = filepath
+        except Exception as e:
+            log(f"[PhotoKorea] [{info['index']}] 다운로드 실패: {e}")
+        time.sleep(0.5)
+
+    return results
+
+
+def _try_unsplash(image_infos: list, log, keyword: str = "", output_dir=None) -> dict:
+    """Unsplash API → 영문 키워드 변환 후 여행 이미지 검색·다운로드."""
+    import os, json as _json
+    access_key = os.environ.get("UNSPLASH_ACCESS_KEY", "")
+    if not access_key:
+        log("[Unsplash] API키 없음 (UNSPLASH_ACCESS_KEY) — 스킵")
+        return {}
+
+    save_dir = Path(output_dir) if output_dir else IMAGES_DIR
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    # 한국어 → 영문 변환 (간단 사전 + 원문 병용)
+    _KO_EN = {
+        "서울": "Seoul Korea", "부산": "Busan Korea", "제주": "Jeju Island Korea",
+        "경주": "Gyeongju Korea", "강릉": "Gangneung Korea", "속초": "Sokcho Korea",
+        "전주": "Jeonju Korea", "인천": "Incheon Korea", "수원": "Suwon Korea",
+        "여수": "Yeosu Korea", "통영": "Tongyeong Korea", "담양": "Damyang Korea",
+        "안동": "Andong Korea", "춘천": "Chuncheon Korea", "가평": "Gapyeong Korea",
+        "양평": "Yangpyeong Korea", "포항": "Pohang Korea", "울릉도": "Ulleung Island Korea",
+        "독도": "Dokdo Island Korea", "남해": "Namhae Korea", "거제": "Geoje Korea",
+        "에버랜드": "Everland theme park Korea", "롯데월드": "Lotte World Korea",
+        "한라산": "Hallasan Mountain Jeju", "설악산": "Seoraksan Mountain Korea",
+        "북한산": "Bukhansan Mountain Seoul", "지리산": "Jirisan Mountain Korea",
+    }
+    # 키워드에서 지명 추출해 영문으로 변환
+    en_kw = keyword
+    for ko, en in _KO_EN.items():
+        if ko in keyword:
+            en_kw = en
+            break
+    # 한글이 많이 남아 있으면 Korea travel 추가
+    if re.search(r'[가-힣]', en_kw):
+        en_kw = re.sub(r'[가-힣\s]+', ' ', en_kw).strip() + " Korea travel"
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    search_url = (
+        f"https://api.unsplash.com/search/photos"
+        f"?query={urllib.parse.quote(en_kw)}&per_page={len(image_infos) * 2}"
+        f"&orientation=landscape&content_filter=high"
+    )
+    try:
+        req = urllib.request.Request(
+            search_url,
+            headers={"Authorization": f"Client-ID {access_key}", "User-Agent": "Mozilla/5.0"},
+        )
+        with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+            data = _json.loads(resp.read())
+        photos = data.get("results", [])
+    except Exception as e:
+        log(f"[Unsplash] 검색 오류: {e}")
+        return {}
+
+    if not photos:
+        log(f"[Unsplash] '{en_kw}' 결과 없음")
+        return {}
+
+    results = {}
+    for i, info in enumerate(image_infos):
+        if i >= len(photos):
+            break
+        dl_url = photos[i].get("urls", {}).get("regular", "")
+        if not dl_url:
+            continue
+        filepath = str(save_dir / info["filename"])
+        try:
+            req = urllib.request.Request(dl_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=25, context=ctx) as resp:
+                data_bytes = resp.read()
+            if len(data_bytes) < 5000:
+                continue
+            Path(filepath).write_bytes(data_bytes)
+            log(f"[Unsplash] [{info['index']}] 저장: {Path(filepath).name}")
+            results[info["index"]] = filepath
+        except Exception as e:
+            log(f"[Unsplash] [{info['index']}] 다운로드 실패: {e}")
+        time.sleep(0.3)
+
+    return results
+
+
+def _generate_travel(image_infos: list, skip_webp: bool, log, keyword: str = "", output_dir=None) -> dict:
+    """여행 블로그: PhotoKorea → Unsplash → AI(Bing→Pollinations→Gemini) 순 폴백."""
+    # 1. PhotoKorea
+    results = _try_photokorea(image_infos, log, keyword=keyword, output_dir=output_dir)
+    failed = [info for info in image_infos if info["index"] not in results]
+    if not failed:
+        log(f"[Router] 여행: PhotoKorea 전체 성공 {len(results)}장")
+        return results
+
+    log(f"[Router] 여행: PhotoKorea {len(results)}장 성공, {len(failed)}장 → Unsplash")
+    # 2. Unsplash
+    unsplash_res = _try_unsplash(failed, log, keyword=keyword, output_dir=output_dir)
+    results.update(unsplash_res)
+    still_failed = [info for info in failed if info["index"] not in results]
+    if not still_failed:
+        log(f"[Router] 여행: Unsplash 나머지 성공")
+        return results
+
+    log(f"[Router] 여행: {len(still_failed)}장 → AI 폴백(Bing→Pollinations→Gemini)")
+    # 3. AI 폴백
+    ai_res = _generate_other(still_failed, skip_webp, log, output_dir=output_dir)
+    results.update(ai_res)
+    return results
+
+
 # ─── 메인 라우터 ─────────────────────────────────────────────────────────
 def generate_images_for_blog(
     blog_id: str,
@@ -478,11 +662,15 @@ def generate_images_for_blog(
     output_dir = IMAGES_DIR / blog_id
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Gemini 전용: Naver 블로그 + Blogspot (Bing 실패율 높음)
-    # Tistory(nolja100, goodisak) / WP(baremi542, triplog) → Bing 4장 모드
-    is_gemini_only = blog_id in ("salim1su", "me1091", "blogspot_it", "blogspot_travel", "blogspot_daily")
+    # 여행 블로그: PhotoKorea → Unsplash → AI 폴백
+    # Gemini 전용: Naver 블로그 + Blogspot IT/Daily (Bing 실패율 높음)
+    # Tistory(goodisak) / WP(baremi542) → Bing → Pollinations → Gemini
+    # 여행: 글 제목(title) → 지명 키워드로 활용, 없으면 첫 이미지 alt/prompt
+    _travel_kw = title or (image_infos[0].get('alt', '') or image_infos[0].get('prompt', '') if image_infos else "")
 
-    if is_gemini_only:
+    if blog_id in _TRAVEL_BLOGS:
+        results = _generate_travel(enhanced_infos, skip_webp, log, keyword=_travel_kw, output_dir=output_dir)
+    elif blog_id in ("salim1su", "me1091", "blogspot_it", "blogspot_daily"):
         results = _generate_naver(enhanced_infos, skip_webp, log, reference_images=reference_images, output_dir=output_dir)
     else:
         results = _generate_other(enhanced_infos, skip_webp, log, output_dir=output_dir)
