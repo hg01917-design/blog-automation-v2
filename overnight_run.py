@@ -143,12 +143,34 @@ def _naver_competition_check(keyword: str, on_log=None) -> bool:
     return True
 
 
+_PARENT_REGION_MAP = {
+    # 국내 — 시·군 → 도
+    "양양": "강원도", "속초": "강원도", "강릉": "강원도", "춘천": "강원도",
+    "인제": "강원도", "평창": "강원도", "정선": "강원도", "동해": "강원도",
+    "여수": "전남", "순천": "전남", "광양": "전남", "목포": "전남",
+    "전주": "전북", "군산": "전북", "남원": "전북",
+    "경주": "경북", "안동": "경북", "포항": "경북",
+    "통영": "경남", "거제": "경남", "남해": "경남", "하동": "경남",
+    "제주": "제주도", "서귀포": "제주도",
+    "가평": "경기도", "양평": "경기도", "파주": "경기도",
+    "공주": "충남", "부여": "충남", "태안": "충남",
+    "단양": "충북", "충주": "충북",
+    # 해외 — 도시 → 국가
+    "나트랑": "베트남", "다낭": "베트남", "하노이": "베트남", "호치민": "베트남",
+    "발리": "인도네시아", "롬복": "인도네시아", "자카르타": "인도네시아",
+    "방콕": "태국", "치앙마이": "태국", "푸켓": "태국", "파타야": "태국",
+    "도쿄": "일본", "오사카": "일본", "교토": "일본", "후쿠오카": "일본",
+    "세부": "필리핀", "보라카이": "필리핀", "마닐라": "필리핀",
+    "싱가포르": "싱가포르", "홍콩": "홍콩", "타이베이": "대만",
+    "바르셀로나": "스페인", "파리": "프랑스", "로마": "이탈리아",
+}
+
+
 def _simplify_search_query(keyword: str) -> str:
     """검색용 핵심 쿼리 추출 — 위치(1~2단어) + 카테고리.
 
     예: "양양 낙산사 서핑 여행 숙소추천" → "양양 숙소"
         "나트랑 빈펄리조트 3박4일 여행" → "나트랑 투어"
-        "엘지 그램 노트북 발열이랑 스펙" → "엘지 그램"
     """
     STRIP_WORDS = {
         '여행', '코스', '추천', '일정', '동선', '정보', '가이드',
@@ -182,6 +204,25 @@ def _simplify_search_query(keyword: str) -> str:
     if category:
         return f"{location} {category}".strip()
     return location or keyword
+
+
+def _fallback_search_query(query: str) -> str:
+    """검색 결과 없을 때 상위 지역으로 확장.
+
+    예: "양양 숙소" → "강원도 숙소"
+        "나트랑 투어" → "베트남 투어"
+    """
+    parts = query.split()
+    city = parts[0] if parts else ""
+    category = parts[1] if len(parts) > 1 else ""
+
+    parent = _PARENT_REGION_MAP.get(city, "")
+    if not parent:
+        return ""
+
+    if category:
+        return f"{parent} {category}"
+    return parent
 
 
 def _extract_core_words(keyword, blog_id=None):
@@ -816,6 +857,13 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
             mrt_query = _simplify_search_query(keyword)
             log(f"[파이프라인] triplog — MRT 제휴 링크 조회 중: '{keyword}' → 검색어: '{mrt_query}'")
             mrt_links = get_affiliate_links(mrt_query, top_n=5, on_log=log)
+
+            # 결과 없으면 상위 지역(도/국가)으로 재시도
+            if not mrt_links:
+                fallback_query = _fallback_search_query(mrt_query)
+                if fallback_query:
+                    log(f"[파이프라인] MRT 결과 없음 → 상위 지역 재시도: '{fallback_query}'")
+                    mrt_links = get_affiliate_links(fallback_query, top_n=5, on_log=log)
 
             # 관련성 필터: 키워드의 핵심 지역/도시가 상품 제목에 포함되어야 함
             if mrt_links:
