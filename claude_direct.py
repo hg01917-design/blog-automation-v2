@@ -274,6 +274,24 @@ def _run_claude(full_prompt: str, on_log=None, timeout: int = 300) -> str:
         return ""
 
 
+_CLAUDE_META_PHRASES = [
+    "CLAUDE.md", "세션 시작", "확인하겠습니다", "어떻게 진행하면 좋을까요",
+    "임시저장 글 검수", "git pull origin main", "노션 현황판",
+    "draft_saved", "pending_publish", "다음 작업을 지시", "어떻게 진행할까요",
+    "WordPress draft 확인", "먼저 아래를 확인", "확인하고 싶은 것",
+]
+
+def _is_valid_blog_content(text: str) -> bool:
+    """블로그 본문 형식인지 확인. Claude 분석/메타 텍스트면 False."""
+    if "===제목===" not in text and "===본문===" not in text:
+        return False
+    text_lower = text.lower()
+    for phrase in _CLAUDE_META_PHRASES:
+        if phrase.lower() in text_lower:
+            return False
+    return True
+
+
 def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
                   on_log=None, extra_context: str = None) -> str:
     """블로그 텍스트 2단계 생성.
@@ -313,12 +331,16 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         log("[Direct] 1단계 3회 실패")
         return ""
 
+    if not _is_valid_blog_content(raw):
+        log("[Direct] ⛔ 블로그 형식 아님 (Claude 분석 텍스트로 판단) — 폐기")
+        return ""
+
     # ── 2단계: AI 패턴 제거 + 도입부 개선 ──
     log("[Direct] 2단계: 문체 다듬기 중...")
     polish_prompt = _POLISH_PROMPT.format(draft=raw)
     polished = _run_claude(polish_prompt, on_log=on_log, timeout=300)
 
-    if polished and len(polished) >= 500:
+    if polished and len(polished) >= 500 and _is_valid_blog_content(polished):
         log(f"[Direct] 2단계 완료 ({len(polished)}자) ✅")
         return polished
     else:
