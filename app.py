@@ -648,13 +648,13 @@ class _SettingsPanel(QWidget):
 # ─── 키워드 수집 백그라운드 워커 ──────────────────────────────────────────
 
 class KeywordCollectWorker(QThread):
-    """4개 카테고리 순차 수집 — 백그라운드 실행"""
+    """7개 카테고리 순차 수집 — 백그라운드 실행"""
     log_signal      = pyqtSignal(str)
     keyword_signal  = pyqtSignal(str, str, float, int, int)  # category, keyword, score, volume, pub_count
     category_signal = pyqtSignal(str)   # 현재 수집 중인 카테고리 ("" = 완료)
     finished        = pyqtSignal(str)
 
-    ALL_CATEGORIES = ["IT", "여행", "살림", "정부지원금"]
+    ALL_CATEGORIES = ["IT", "금융", "여행", "살림", "정부지원금", "교통", "영화"]
 
     def __init__(self, use_playwright: bool = False):
         super().__init__()
@@ -735,9 +735,10 @@ class _KeywordWriteWorker(QThread):
 class KeywordEngineDialog(QDialog):
     """4개 카테고리 전체 수집 + 카테고리 탭별 분류 표시"""
 
-    CATEGORIES = ["IT", "여행", "살림", "정부지원금", "교통", "영화"]
+    CATEGORIES = ["IT", "금융", "여행", "살림", "정부지원금", "교통", "영화"]
     CAT_COLORS  = {
         "IT":         "#4da6ff",
+        "금융":       "#44ccaa",
         "여행":       "#ff9966",
         "살림":       "#55dd77",
         "정부지원금": "#cc88ff",
@@ -788,13 +789,13 @@ class KeywordEngineDialog(QDialog):
         self._collecting_label.setStyleSheet("color:#facc15;font-size:11px;font-weight:bold;")
         top_row.addWidget(self._collecting_label)
 
-        refresh_btn = QPushButton("🔄 새로고침")
-        refresh_btn.setFixedHeight(32)
-        refresh_btn.setStyleSheet(
+        self._refresh_btn = QPushButton("🔄 새로고침")
+        self._refresh_btn.setFixedHeight(32)
+        self._refresh_btn.setStyleSheet(
             "background:#374151;color:#fff;border-radius:6px;"
             "font-size:12px;font-weight:bold;padding:0 12px;border:none;")
-        refresh_btn.clicked.connect(self._load_all_from_db)
-        top_row.addWidget(refresh_btn)
+        self._refresh_btn.clicked.connect(self._load_all_from_db)
+        top_row.addWidget(self._refresh_btn)
 
         self._collect_btn = QPushButton("⬇  전체 수집 시작")
         self._collect_btn.setFixedHeight(32)
@@ -814,6 +815,37 @@ class KeywordEngineDialog(QDialog):
         top_row.addWidget(self._stop_btn)
 
         root.addLayout(top_row)
+
+        # ── 발행량 필터 행 ──
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("검색량 필터:"))
+        self._filter_min = QLineEdit()
+        self._filter_min.setPlaceholderText("최소 (예: 1000)")
+        self._filter_min.setFixedWidth(90)
+        self._filter_min.setFixedHeight(26)
+        self._filter_min.setStyleSheet(
+            "background:#1a1d2e;color:#fff;border:1px solid #333;"
+            "border-radius:4px;padding:2px 6px;font-size:11px;")
+        filter_row.addWidget(self._filter_min)
+        filter_row.addWidget(QLabel("~"))
+        self._filter_max = QLineEdit()
+        self._filter_max.setPlaceholderText("최대 (예: 3000)")
+        self._filter_max.setFixedWidth(90)
+        self._filter_max.setFixedHeight(26)
+        self._filter_max.setStyleSheet(
+            "background:#1a1d2e;color:#fff;border:1px solid #333;"
+            "border-radius:4px;padding:2px 6px;font-size:11px;")
+        filter_row.addWidget(self._filter_max)
+        filter_apply_btn = QPushButton("적용")
+        filter_apply_btn.setFixedHeight(26)
+        filter_apply_btn.setFixedWidth(50)
+        filter_apply_btn.setStyleSheet(
+            "background:#2563eb;color:#fff;border:none;"
+            "border-radius:4px;font-size:11px;")
+        filter_apply_btn.clicked.connect(lambda: self._render_table(self._selected_category))
+        filter_row.addWidget(filter_apply_btn)
+        filter_row.addStretch()
+        root.addLayout(filter_row)
 
         # ── 중단: 스플리터 (테이블 | 로그) ──
         splitter = QSplitter(Qt.Horizontal)
@@ -914,6 +946,17 @@ class KeywordEngineDialog(QDialog):
     # ── 테이블 렌더링 ──
     def _render_table(self, category: str):
         keywords = self._cat_keywords.get(category, [])
+        # 발행량 필터 적용
+        try:
+            min_pub = int(self._filter_min.text()) if self._filter_min.text().strip() else 0
+        except ValueError:
+            min_pub = 0
+        try:
+            max_pub = int(self._filter_max.text()) if self._filter_max.text().strip() else 99999999
+        except ValueError:
+            max_pub = 99999999
+        if min_pub > 0 or max_pub < 99999999:
+            keywords = [k for k in keywords if min_pub <= k.get("volume", 0) <= max_pub]
         self._table.setRowCount(0)
         for row_idx, item in enumerate(keywords):
             self._table.insertRow(row_idx)
@@ -1317,6 +1360,14 @@ class BlogAutomationApp(QMainWindow):
             "border-radius:5px;font-size:11px;padding:4px;")
         add_kw_btn.clicked.connect(self._add_keyword)
         kw_l.addWidget(add_kw_btn)
+
+        kw_engine_btn = QPushButton("🔑 키워드 엔진")
+        kw_engine_btn.setStyleSheet(
+            "background:#1a2a1a;color:#55dd77;border:1px solid #2a4a2a;"
+            "border-radius:5px;font-size:11px;padding:4px;")
+        kw_engine_btn.clicked.connect(self._open_keyword_engine)
+        kw_l.addWidget(kw_engine_btn)
+
         self._tabs.addTab(kw_w, "키워드 큐")
         self._agent_combo.currentTextChanged.connect(
             lambda _: (self._load_kw_queue(), self._refresh_stats(), setattr(self, '_selected_keyword', None)))
@@ -1547,6 +1598,10 @@ class BlogAutomationApp(QMainWindow):
                 self._kw_list.addItem(item)
         except Exception:
             pass
+
+    def _open_keyword_engine(self):
+        dlg = KeywordEngineDialog(self)
+        dlg.exec()
 
     def _add_keyword(self):
         text, ok = QInputDialog.getText(self, "키워드 추가", "키워드:")
