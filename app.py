@@ -1532,7 +1532,9 @@ class BlogAutomationApp(QMainWindow):
             return
         import subprocess, threading, shutil
         from pathlib import Path
-        script = Path(__file__).parent / "overnight_run.py"
+        # PyInstaller 빌드 내부가 아닌 실제 프로젝트 폴더 사용
+        project_dir = Path("/Users/hana/Downloads/blog-automation-v2")
+        script = project_dir / "overnight_run.py"
         self.log_box.append("[전체실행] overnight_run.py 시작...")
         self.run_all_btn.setEnabled(False)
         self.run_btn.setEnabled(False)
@@ -1542,7 +1544,7 @@ class BlogAutomationApp(QMainWindow):
         python_bin = shutil.which("python3") or shutil.which("python") or "/usr/local/bin/python3"
         self._all_proc = subprocess.Popen(
             [python_bin, str(script)],
-            cwd=str(Path(__file__).parent),
+            cwd=str(project_dir),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1
         )
