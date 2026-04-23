@@ -337,8 +337,8 @@ def _is_valid_blog_content(text: str) -> bool:
         body = body_match[:body_match.find("===본문끝===")]
     else:
         body = body_match
-    if len(body.strip()) < 800:
-        return False  # 본문 800자 미만 = 메타 텍스트로 간주
+    if len(body.strip()) < 1500:
+        return False  # 본문 1500자 미만 = 메타 텍스트로 간주
 
     # 소제목 최소 2개 필수
     import re as _re
