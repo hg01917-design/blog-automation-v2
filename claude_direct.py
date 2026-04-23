@@ -314,7 +314,13 @@ _CLAUDE_META_PHRASES = [
     "임시저장 글 검수", "git pull origin main", "노션 현황판",
     "draft_saved", "pending_publish", "다음 작업을 지시", "어떻게 진행할까요",
     "WordPress draft 확인", "먼저 아래를 확인", "확인하고 싶은 것",
+    # 하이쿠가 clarification 요청 시 뱉는 패턴
+    "명시해 주세요", "지정해 주세요", "알려주세요", "말씀해 주세요",
+    "작성하겠습니다", "글을 써드리겠습니다", "지침에 따라",
+    "구체적으로 어떤", "어떤 주제", "어떤 영화", "어떤 제품",
+    "제목을 지정", "키워드를 알려", "내용을 입력",
 ]
+
 
 def _is_valid_blog_content(text: str) -> bool:
     """블로그 본문 형식인지 확인. Claude 분석/메타 텍스트면 False."""
@@ -324,6 +330,22 @@ def _is_valid_blog_content(text: str) -> bool:
     for phrase in _CLAUDE_META_PHRASES:
         if phrase.lower() in text_lower:
             return False
+
+    # 본문 길이 규칙 기반 검증 (AI 검증보다 신뢰도 높음)
+    body_match = text[text.find("===본문===") + 7:]
+    if "===본문끝===" in body_match:
+        body = body_match[:body_match.find("===본문끝===")]
+    else:
+        body = body_match
+    if len(body.strip()) < 800:
+        return False  # 본문 800자 미만 = 메타 텍스트로 간주
+
+    # 소제목 최소 2개 필수
+    import re as _re
+    h2_count = len(_re.findall(r'\[H2\]|<h2\b', body, _re.IGNORECASE))
+    if h2_count < 2:
+        return False
+
     return True
 
 
