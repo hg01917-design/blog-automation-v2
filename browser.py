@@ -119,12 +119,11 @@ def ensure_chrome_cdp(on_log=None):
 
 
 def _push_chrome_back():
-    """Chrome 창을 다른 모든 창 뒤로 밀어 포커스 탈취 방지"""
+    """Chrome 포커스 제거 — 뒤로 밀어 타이핑 탈취 방지"""
     try:
         subprocess.run(
             ["osascript", "-e",
-             'tell application "System Events" to tell process "Google Chrome" '
-             'to set index of every window to -1'],
+             'tell application "System Events" to tell process "Google Chrome" to set frontmost to false'],
             capture_output=True, timeout=2
         )
     except Exception:
