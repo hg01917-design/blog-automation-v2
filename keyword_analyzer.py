@@ -12,35 +12,22 @@ import urllib.request
 import urllib.parse
 from pathlib import Path
 
-# .env 로드 (PyInstaller 번들 대응: BLOG_AUTO_PROJECT_ROOT 우선)
-_env = Path(os.environ.get("BLOG_AUTO_PROJECT_ROOT", str(Path(__file__).parent))) / ".env"
-if not _env.exists():
-    _env = Path.home() / "Downloads" / "blog-automation-v2" / ".env"
-if _env.exists():
-    for _line in _env.read_text().splitlines():
-        _line = _line.strip()
-        if _line and not _line.startswith("#") and "=" in _line:
-            k, _, v = _line.partition("=")
-            os.environ.setdefault(k.strip(), v.strip())
-
-_CLIENT_ID = os.environ.get("NAVER_SEARCH_CLIENT_ID", "")
-_CLIENT_SECRET = os.environ.get("NAVER_SEARCH_CLIENT_SECRET", "")
-
 _NAVER_BLOG_URL = "https://openapi.naver.com/v1/search/blog.json"
 _NAVER_AC_URL   = "https://ac.search.naver.com/nx/ac"
 
 
 def _naver_headers() -> dict:
+    # 호출 시점마다 os.environ에서 읽음 (앱 설정 저장 후 즉시 반영)
     return {
-        "X-Naver-Client-Id": _CLIENT_ID,
-        "X-Naver-Client-Secret": _CLIENT_SECRET,
+        "X-Naver-Client-Id": os.environ.get("NAVER_SEARCH_CLIENT_ID", ""),
+        "X-Naver-Client-Secret": os.environ.get("NAVER_SEARCH_CLIENT_SECRET", ""),
         "User-Agent": "Mozilla/5.0",
     }
 
 
 def get_blog_count(keyword: str) -> int:
     """네이버 블로그 검색 결과 수 (경쟁도 지표)."""
-    if not _CLIENT_ID:
+    if not os.environ.get("NAVER_SEARCH_CLIENT_ID"):
         return -1
     try:
         url = f"{_NAVER_BLOG_URL}?query={urllib.parse.quote(keyword)}&display=1"
@@ -84,7 +71,7 @@ def get_autocomplete(keyword: str) -> list[str]:
 
 def get_related_from_search(keyword: str) -> list[str]:
     """자동완성 실패 시 네이버 블로그 검색 제목에서 연관 키워드 추출."""
-    if not _CLIENT_ID:
+    if not os.environ.get("NAVER_SEARCH_CLIENT_ID"):
         return []
     try:
         url = f"{_NAVER_BLOG_URL}?query={urllib.parse.quote(keyword)}&display=10&sort=sim"
