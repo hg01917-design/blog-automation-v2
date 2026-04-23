@@ -233,6 +233,30 @@ def _db_conn():
     return conn
 
 
+# 상품 카테고리별 사용 금지 각도 — 상품명에 키워드가 포함되면 해당 각도 제외
+_CATEGORY_EXCLUSIONS = [
+    # (상품명 키워드 목록, 제외할 angle_id 목록)
+    (["비데", "좌욕", "변기", "칫솔", "면도", "면도기", "생리대", "위생"],
+     ["바쁜직장인", "반려동물", "계절환경"]),
+    (["반려", "강아지", "고양이", "펫", "pet"],
+     ["계절환경", "집들이이사"]),
+    (["에어컨", "히터", "난방", "선풍기", "제습", "가습"],
+     ["반려동물", "선물고민"]),
+    (["유아", "아기", "baby", "신생아", "젖병"],
+     ["바쁜직장인", "반려동물", "계절환경"]),
+]
+
+
+def _get_excluded_angles(name: str) -> set:
+    """상품명 기반으로 어울리지 않는 angle_id 집합 반환."""
+    excluded = set()
+    name_lower = name.lower()
+    for keywords, angles in _CATEGORY_EXCLUSIONS:
+        if any(kw in name_lower for kw in keywords):
+            excluded.update(angles)
+    return excluded
+
+
 def get_next_angle(name: str) -> tuple | None:
     """상품명에 대해 아직 사용하지 않은 다음 angle 반환. 모두 소진 시 가장 오래된 것 재사용."""
     with _db_conn() as c:
@@ -242,9 +266,13 @@ def get_next_angle(name: str) -> tuple | None:
                 "SELECT angle FROM me1091_published WHERE product_name=?", (name,)
             ).fetchall()
         }
-    all_ids = [a[0] for a in PRODUCT_ANGLES]
+    excluded = _get_excluded_angles(name)
+    available = [a for a in PRODUCT_ANGLES if a[0] not in excluded]
+    if not available:
+        available = PRODUCT_ANGLES  # 전부 제외되는 극단적 경우 fallback
+
     # 미사용 각도 우선
-    for angle_id, title_hint, instruction in PRODUCT_ANGLES:
+    for angle_id, title_hint, instruction in available:
         if angle_id not in used:
             return angle_id, title_hint, instruction
     # 전부 소진 → 가장 먼저 쓴 각도부터 순환
@@ -255,10 +283,10 @@ def get_next_angle(name: str) -> tuple | None:
         ).fetchone()
     if oldest:
         recycle_id = oldest[0]
-        for angle_id, title_hint, instruction in PRODUCT_ANGLES:
+        for angle_id, title_hint, instruction in available:
             if angle_id == recycle_id:
                 return angle_id, title_hint, instruction
-    return PRODUCT_ANGLES[0][0], PRODUCT_ANGLES[0][1], PRODUCT_ANGLES[0][2]
+    return available[0][0], available[0][1], available[0][2]
 
 
 def mark_done(name: str, link: str, angle: str = "", blog_url: str = ""):

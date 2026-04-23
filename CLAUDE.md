@@ -12,41 +12,24 @@
    - 블로그 에이전트: `3356d296-d9c1-81fc-969d-de0dfa04f463`
    - 쇼핑몰 에이전트: `3356d296-d9c1-8125-bd80-e2209cd06ba5`
 3. Telegram 대기 메시지 확인 (chat_id: 8674424194)
-4. 임시저장 글 검수 후 발행 가능한 것부터 처리
 
-# 봇 임시저장 후 자동 발행 흐름 (overnight_run.py → Claude Code)
-- overnight_run.py가 임시저장 완료 시 `claude --print` 로 새 세션을 자동 실행함
-- 이 세션에서 반드시 해당 블로그 임시저장 글을 검수 후 발행해야 함
-- 프롬프트에 blog_id와 keyword가 명시되어 있음
+# 발행 규칙 (사용자가 명시적으로 요청할 때만 실행)
+- 발행은 사용자가 직접 요청할 때만 수행. 임시저장 알림을 받아도 자동으로 발행하지 않음
+- 발행 요청 시 체크리스트:
+  1. 마크다운 잔재 없는지 (**bold**, ## heading 텍스트가 그대로 노출되는지)
+  2. 이미지 3장 이상 있는지
+  3. [검증 필요][출처 필요] 등 내부 마커 없는지
+  4. 블로그 테마와 글 주제 일치 여부 (nolja100=여행만, salim1su=생활정보)
+  5. 1700자 이상인지
+  6. 같은 블로그 마지막 발행 후 3.5시간 이상 경과했는지
+  7. nolja100은 반드시 댓글 비허용으로 발행
 
-## 발행 전 필수 체크리스트 (매번 지킬 것)
-1. 마크다운 잔재 없는지 (**bold**, ## heading 텍스트가 그대로 노출되는지)
-2. 이미지 3장 이상 있는지
-3. [검증 필요][출처 필요] 등 내부 마커 없는지
-4. 블로그 테마와 글 주제 일치 여부 (nolja100=여행만, salim1su=생활정보)
-5. 1700자 이상인지
-6. 같은 블로그 마지막 발행 후 3.5시간 이상 경과했는지
-7. nolja100은 반드시 댓글 비허용으로 발행
-
-## 미충족 시 처리
-- 마크다운/마커: 직접 수정 후 발행
-- 이미지 부족: Gemini로 생성 후 삽입 후 발행 (네이버는 Gemini만, loremflickr 금지)
-- 1700자 미만: 내용 보완 후 발행
-- 간격 미충족: 충족될 때까지 대기 후 발행
-
-## 블로그별 추가 규칙
-- **nolja100** (Tistory): 여행 주제만 발행. 댓글 비허용으로 발행.
-- **salim1su** (Naver): 이미지는 Gemini만 사용, loremflickr 절대 금지.
+## 블로그별 규칙 (발행 시 참고)
+- **nolja100** (Tistory): 여행 주제만. 댓글 비허용.
+- **salim1su** (Naver): 이미지는 Gemini만, loremflickr 절대 금지.
 - **goodisak** (Tistory, welfare.baremi542.com): IT + 금융 주제. 댓글 비허용.
-- **baremi542** (WordPress): 생활정보/정부지원. 봇이 API로 임시저장(draft) → 검수 후 REST API로 발행.
-- **triplog** (WordPress, app.baremi542.com): 여행 주제. 봇이 API로 임시저장(draft) → 검수 후 REST API로 발행.
-
-## WordPress 검수 후 발행 방법 (baremi542, triplog)
-봇이 임시저장(draft) 상태로 저장. `/wp-json/wp/v2/posts?status=draft` 로 최신 draft 확인 후:
-- 마크다운 잔재/내부마커 → content 수정
-- 이미지 부족 → Gemini로 생성 후 미디어 업로드 → 본문에 삽입
-- 1700자 미만 → 내용 보완
-- 검수 완료 후 `PATCH /wp-json/wp/v2/posts/{id}` 에 `{"status": "publish"}` 로 발행
+- **baremi542** (WordPress): 생활정보/정부지원. `PATCH /wp-json/wp/v2/posts/{id}` 로 발행.
+- **triplog** (WordPress, app.baremi542.com): 여행 주제. 동일 방식으로 발행.
 
 # 텔레그램 메시지 송수신 규칙
 - 텔레그램 수신 메시지는 `[텔레그램] 내용` 형식으로 터미널에 주입됨

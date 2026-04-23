@@ -1663,7 +1663,8 @@ def _post_one_blogger_blog(blog_id: str) -> bool:
 
         log(f"[{blog_id}] Blogger API 임시저장 중: '{title}' (HTML {len(html_body)}자, 라벨 {len(tags[:12])}개, blog_id={blogger_id})")
         result = _blogger_publish(title=title, content=html_body, labels=tags[:12],
-                                  status="DRAFT", blog_id=blogger_id)
+                                  status="DRAFT", blog_id=blogger_id,
+                                  meta_description=meta_desc or None)
         if not result.get("ok"):
             log(f"[{blog_id}] Blogger 발행 실패: {result.get('reason')}")
             log(f"[{blog_id}] 디버그: 라벨={tags[:12]}, HTML앞100={html_body[:100]!r}")

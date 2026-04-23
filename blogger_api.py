@@ -44,7 +44,8 @@ def _inject_adsense(content: str, env: dict) -> str:
 
 
 def publish_post(title: str, content: str, labels: list = None,
-                 status: str = "LIVE", blog_id: str = None) -> dict:
+                 status: str = "LIVE", blog_id: str = None,
+                 meta_description: str = None) -> dict:
     """Blogger에 글 발행 또는 임시저장.
 
     Args:
@@ -53,6 +54,7 @@ def publish_post(title: str, content: str, labels: list = None,
         labels: 태그 목록
         status: "LIVE" (발행) or "DRAFT" (임시저장)
         blog_id: 블로그 ID (None이면 .env에서 읽음)
+        meta_description: 검색 설명 (customMetaData)
 
     Returns:
         {"ok": True, "url": "...", "id": "..."} or {"ok": False, "reason": "..."}
@@ -75,6 +77,8 @@ def publish_post(title: str, content: str, labels: list = None,
     }
     if labels:
         body["labels"] = labels
+    if meta_description:
+        body["customMetaData"] = meta_description
 
     url = f"https://www.googleapis.com/blogger/v3/blogs/{blog_id}/posts/"
     if status == "DRAFT":
