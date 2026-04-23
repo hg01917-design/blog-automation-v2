@@ -52,40 +52,39 @@ def difficulty_label(total: int) -> str:
     return "높음 ❌"
 
 
-def get_autocomplete(keyword: str) -> list[str]:
-    """구글 자동완성으로 연관 키워드 수집 (API 키 불필요, 한국어 지원)."""
+def _google_suggest(query: str) -> list[str]:
+    """구글 자동완성 내부 호출."""
     try:
         url = (
             f"http://suggestqueries.google.com/complete/search"
-            f"?client=firefox&hl=ko&q={urllib.parse.quote(keyword)}"
+            f"?client=firefox&hl=ko&q={urllib.parse.quote(query)}"
         )
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=5) as r:
             data = json.loads(r.read())
-        # 응답: [query, [suggestion1, suggestion2, ...]]
-        suggestions = data[1] if len(data) > 1 else []
-        results = [s for s in suggestions if s != keyword]
-        return list(dict.fromkeys(results))[:15]
+        return data[1] if len(data) > 1 else []
     except Exception:
         return []
+
+
+def get_autocomplete(keyword: str) -> list[str]:
+    """구글 자동완성 — 공백 있는 키워드는 공백 제거 버전도 병합."""
+    results = _google_suggest(keyword)
+    # 공백 제거 버전 추가 수집 (더 많은 결과)
+    compact = keyword.replace(" ", "")
+    if compact != keyword:
+        results += _google_suggest(compact)
+    cleaned = [s for s in results if s not in (keyword, compact)]
+    return list(dict.fromkeys(cleaned))[:15]
 
 
 def get_daum_autocomplete(keyword: str) -> list[str]:
-    """구글 자동완성 (다음 탭용 — 같은 소스, 다른 파라미터로 추가 결과)."""
-    try:
-        # gl=KR 파라미터로 한국 지역 결과
-        url = (
-            f"http://suggestqueries.google.com/complete/search"
-            f"?client=firefox&hl=ko&gl=KR&q={urllib.parse.quote(keyword)}"
-        )
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=5) as r:
-            data = json.loads(r.read())
-        suggestions = data[1] if len(data) > 1 else []
-        results = [s for s in suggestions if s != keyword]
-        return list(dict.fromkeys(results))[:15]
-    except Exception:
-        return []
+    """구글 자동완성 변형 — 공백 없는 버전 우선, 공백 있는 버전 병합."""
+    compact = keyword.replace(" ", "")
+    results = _google_suggest(compact)
+    results += _google_suggest(keyword)
+    cleaned = [s for s in results if s not in (keyword, compact)]
+    return list(dict.fromkeys(cleaned))[:15]
 
 
 def get_related_from_search(keyword: str) -> list[str]:
@@ -121,6 +120,25 @@ def get_related_from_search(keyword: str) -> list[str]:
         return []
 
 
+def _load_env():
+    """앱 시작 후에도 .env 미로드 상태면 직접 로드."""
+    if os.environ.get("NAVER_SEARCH_CLIENT_ID"):
+        return  # 이미 로드됨
+    candidates = [
+        Path(os.environ.get("BLOG_AUTO_PROJECT_ROOT", "")) / ".env",
+        Path(__file__).parent / ".env",
+        Path.home() / "Downloads" / "blog-automation-v2" / ".env",
+    ]
+    for env_path in candidates:
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, _, v = line.partition("=")
+                    os.environ.setdefault(k.strip(), v.strip())
+            break
+
+
 def analyze_keyword(keyword: str, on_log=None) -> dict:
     """키워드 전체 분석: 경쟁도 + 연관키워드 각각 경쟁도 체크.
 
@@ -132,6 +150,8 @@ def analyze_keyword(keyword: str, on_log=None) -> dict:
             "related": [{"keyword": str, "total": int, "level": str}, ...],
         }
     """
+    _load_env()
+
     def log(msg):
         if on_log:
             on_log(msg)
@@ -243,11 +263,12 @@ def generate_titles(keyword: str, blog_id: str, on_log=None) -> list[str]:
         from claude_direct import _run_claude, _FORMAT_ENFORCE_PREFIX
         raw = _run_claude(prompt, on_log=on_log, timeout=60)
         lines = [l.strip() for l in raw.strip().splitlines() if l.strip()]
-        # 번호/기호 제거
         import re
         titles = []
         for line in lines:
-            line = re.sub(r'^[\d\.\-\*\#\s]+', '', line).strip()
+            # 번호/기호/=== 마커 제거
+            line = re.sub(r'^[\d\.\-\*\#\s=]+', '', line).strip()
+            line = re.sub(r'=+$', '', line).strip()
             if 5 < len(line) < 80:
                 titles.append(line)
         log(f"[분석] 제목 {len(titles)}개 생성 완료")
