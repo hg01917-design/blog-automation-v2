@@ -725,6 +725,11 @@ class _KeywordAnalysisWorker(QThread):
 
     def run(self):
         try:
+            with open("/tmp/blogauto_debug.log", "a") as f:
+                f.write(f"[_KeywordAnalysisWorker] 시작: {self.keyword}\n")
+        except Exception:
+            pass
+        try:
             from keyword_analyzer import analyze_keyword, filter_by_blog, generate_titles
             result = analyze_keyword(self.keyword, on_log=self.log_signal.emit)
             result["filtered"] = filter_by_blog(result["related"], self.blog_id)
@@ -736,6 +741,11 @@ class _KeywordAnalysisWorker(QThread):
         except Exception as e:
             self.log_signal.emit(f"[분석] 오류: {e}")
         finally:
+            try:
+                with open("/tmp/blogauto_debug.log", "a") as f:
+                    f.write(f"[_KeywordAnalysisWorker] 완료: {self.keyword}\n")
+            except Exception:
+                pass
             self.finished.emit()
 
 
@@ -772,8 +782,9 @@ class KeywordAnalysisDialog(QDialog):
         self._selected_kw = keyword
 
         self._build_ui()
-        # 모든 자식 위젯에 Enter키 차단 이벤트필터 설치
-        for child in self.findChildren(QLineEdit):
+        # 다이얼로그 자체 + 모든 자식 위젯에 Enter키 차단 이벤트필터 설치
+        self.installEventFilter(self)
+        for child in self.findChildren(QWidget):
             child.installEventFilter(self)
         self._run_analysis()
 
@@ -1837,6 +1848,13 @@ class BlogAutomationApp(QMainWindow):
 
     def _run_selected(self):
         try:
+            from datetime import datetime as _dt
+            _dbg = f"[{_dt.now().strftime('%H:%M:%S')}] _run_selected 호출\n"
+            with open("/tmp/blogauto_debug.log", "a") as f:
+                f.write(_dbg)
+        except Exception:
+            pass
+        try:
             if self._single_worker and self._single_worker.isRunning():
                 self.log_box.append("[실행] 이미 실행 중입니다.")
                 return
@@ -1855,6 +1873,11 @@ class BlogAutomationApp(QMainWindow):
             self._single_worker.status_signal.connect(self._on_status)
             self._single_worker.finished.connect(self._on_run_done)
             self._single_worker.start()
+            try:
+                with open("/tmp/blogauto_debug.log", "a") as f:
+                    f.write(f"  → SingleRunWorker 시작됨: blog={blog_id}, kw={keyword}, title={forced_title}\n")
+            except Exception:
+                pass
         except Exception as e:
             import traceback
             self.log_box.append(f"[오류] 실행 실패: {e}")
@@ -1961,6 +1984,18 @@ class BlogAutomationApp(QMainWindow):
             self.log_box.append(f"[오류] 키워드 추가 실패: {e}")
         self._load_kw_queue()
         self._refresh_stats()
+
+    def closeEvent(self, event):
+        import traceback
+        from datetime import datetime
+        stack = "".join(traceback.format_stack())
+        msg = f"\n{'='*60}\n[{datetime.now().isoformat()}] BlogAutomationApp.closeEvent 호출\n{stack}\n"
+        try:
+            with open("/tmp/blogauto_close.log", "a") as f:
+                f.write(msg)
+        except Exception:
+            pass
+        super().closeEvent(event)
 
 
 if __name__ == "__main__":
