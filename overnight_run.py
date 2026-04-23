@@ -2025,34 +2025,50 @@ def _post_one_blog_inner(blog_id):
     if not kw:
         log(f"[{blog_id}] 대기 키워드 없음 — 스킵")
         return False
-    log(f"[{blog_id}] 키워드: {kw}")
-    _db_set(kw, "in_progress", blog_id=blog_id)
+
     _PLAYWRIGHT_ERRORS = ("Connection closed", "BrokenPipe", "Broken pipe",
                           "Target closed", "browser has been closed",
                           "WebSocket", "playwright")
-    for attempt in range(1, 3):  # 최대 2회 시도
-        try:
-            ok, saved_title = run_posting_pipeline(blog_id, kw)
-            if ok:
-                # 모든 블로그 임시저장 → draft_saved (Claude Code가 검수 후 발행)
-                _db_set(kw, "draft_saved", blog_id=blog_id, title=saved_title)
-                # 자동 발행 비활성화 — 임시저장까지만 (triplog/baremi542 포함 전체)
-                pass
-                return True
-            else:
-                _db_set(kw, "failed", blog_id=blog_id)
+
+    # 키워드 단위 최대 3회 시도 (글 생성 실패 시 다음 키워드로 이어서)
+    for kw_attempt in range(1, 4):
+        if kw_attempt > 1:
+            log(f"[{blog_id}] 이전 키워드 실패 — 다음 키워드로 재시도 ({kw_attempt}/3)")
+            next_kw = fetch_next_pending(blog_id)
+            if not next_kw:
+                log(f"[{blog_id}] 대기 키워드 소진 — 중단")
                 return False
-        except Exception as e:
-            err_str = str(e)
-            is_playwright_crash = any(p.lower() in err_str.lower() for p in _PLAYWRIGHT_ERRORS)
-            if is_playwright_crash and attempt == 1:
-                log(f"[{blog_id}] Playwright 오류 — 60초 후 재시도 ({err_str[:80]})")
-                _db_set(kw, "pending", blog_id=blog_id)  # 재시도 가능하도록 pending 복원
-                time.sleep(60)
+            if not is_keyword_suitable(blog_id, next_kw) or not _naver_competition_check(next_kw, on_log=log):
+                log(f"[{blog_id}] ⚠ 테마 부적합 '{next_kw}' → 스킵")
+                _db_set(next_kw, "failed", blog_id=blog_id)
                 continue
-            log(f"[{blog_id}] 오류: {e}")
-            _db_set(kw, "failed", blog_id=blog_id)
-            return False
+            kw = next_kw
+
+        log(f"[{blog_id}] 키워드: {kw}")
+        _db_set(kw, "in_progress", blog_id=blog_id)
+
+        for attempt in range(1, 3):  # Playwright 크래시 대비 최대 2회
+            try:
+                ok, saved_title = run_posting_pipeline(blog_id, kw)
+                if ok:
+                    _db_set(kw, "draft_saved", blog_id=blog_id, title=saved_title)
+                    return True
+                else:
+                    _db_set(kw, "failed", blog_id=blog_id)
+                    break  # 다음 키워드 시도
+            except Exception as e:
+                err_str = str(e)
+                is_playwright_crash = any(p.lower() in err_str.lower() for p in _PLAYWRIGHT_ERRORS)
+                if is_playwright_crash and attempt == 1:
+                    log(f"[{blog_id}] Playwright 오류 — 60초 후 재시도 ({err_str[:80]})")
+                    _db_set(kw, "pending", blog_id=blog_id)
+                    time.sleep(60)
+                    continue
+                log(f"[{blog_id}] 오류: {e}")
+                _db_set(kw, "failed", blog_id=blog_id)
+                break  # 다음 키워드 시도
+
+    return False
 
 
 def run_one_round(round_num):

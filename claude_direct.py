@@ -315,24 +315,25 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         log("[Direct] 프롬프트 없음 — 스킵")
         return ""
 
-    # ── 1단계: 초안 생성 ──
+    # ── 1단계: 초안 생성 (최대 3회, 메타 텍스트 감지 시 재시도) ──
     log("[Direct] 1단계: 초안 생성 중...")
     raw = ""
     for attempt in range(1, 4):
         if attempt > 1:
             log(f"[Direct] 1단계 재시도 {attempt - 1}/2")
         raw = _run_claude(full_prompt, on_log=on_log)
-        if raw and len(raw) >= 500:
-            log(f"[Direct] 1단계 완료 ({len(raw)}자)")
-            break
-        log(f"[Direct] 1단계 응답 짧음 ({len(raw)}자) — 재시도")
+        if not raw or len(raw) < 500:
+            log(f"[Direct] 1단계 응답 짧음 ({len(raw)}자) — 재시도")
+            continue
+        if not _is_valid_blog_content(raw):
+            log(f"[Direct] ⛔ 블로그 형식 아님 (메타 텍스트 감지) — 재시도 ({attempt}/3)")
+            raw = ""
+            continue
+        log(f"[Direct] 1단계 완료 ({len(raw)}자)")
+        break
 
-    if not raw or len(raw) < 500:
-        log("[Direct] 1단계 3회 실패")
-        return ""
-
-    if not _is_valid_blog_content(raw):
-        log("[Direct] ⛔ 블로그 형식 아님 (Claude 분석 텍스트로 판단) — 폐기")
+    if not raw:
+        log("[Direct] 1단계 3회 모두 실패 (짧음 또는 메타 텍스트) — failed 처리")
         return ""
 
     # ── 2단계: AI 패턴 제거 + 도입부 개선 ──
