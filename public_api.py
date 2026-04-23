@@ -332,25 +332,35 @@ def fetch_gov_service_context(keyword: str, on_log=None) -> str:
         log("[PublicAPI] API 키 없음 — 공공서비스 데이터 스킵")
         return ""
 
-    # 키워드에서 검색어 추출 (앞 2단어)
-    words = keyword.replace(",", " ").split()
+    # 키워드에서 검색어 추출 — SEO 부사구 제거 후 핵심 2단어
+    _strip = re.compile(
+        r"(서류\s*준비\s*없이|빠르게|쉽게|간단하게|신청하는\s*법|"
+        r"신청\s*방법|조건\s*금액|신청\s*자격|총정리|완벽정리|한눈에|"
+        r"\d{4}년?\s*최신|2026\s*년?\s*기준|최신\s*정보)",
+        re.IGNORECASE,
+    )
+    cleaned = _strip.sub("", keyword).strip()
+    words = cleaned.replace(",", " ").split()
     search_kw = " ".join(words[:2]) if words else keyword[:10]
 
-    params = {
-        "page": "1",
-        "perPage": "5",
-        "cond[서비스명::LIKE]": search_kw,
-    }
-    log(f"[PublicAPI] 공공서비스 검색: '{search_kw}'")
+    def _search(q: str) -> list:
+        params = {"page": "1", "perPage": "5", "cond[서비스명::LIKE]": q}
+        log(f"[PublicAPI] 공공서비스 검색: '{q}'")
+        d = _get(_GOV_SERVICE_URL, params)
+        if "error" in d:
+            log(f"[PublicAPI] 공공서비스 API 오류: {d['error']}")
+            return []
+        return d.get("data", [])
 
-    data = _get(_GOV_SERVICE_URL, params)
-
-    if "error" in data:
-        log(f"[PublicAPI] 공공서비스 API 오류: {data['error']}")
-        return ""
+    items = _search(search_kw)
+    # 결과 없으면 마지막 단어(명사)만으로 재시도
+    if not items and len(words) > 1:
+        fallback_kw = words[-1]
+        items = _search(fallback_kw)
+        if items:
+            search_kw = fallback_kw
 
     try:
-        items = data.get("data", [])
         if not items:
             log("[PublicAPI] 공공서비스 검색 결과 없음")
             return ""

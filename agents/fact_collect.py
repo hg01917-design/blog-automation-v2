@@ -263,6 +263,49 @@ def _search_and_get_official_url(page, query: str, blog_id: str, on_log=None) ->
     return ""
 
 
+_SEO_STRIP = re.compile(
+    r"(서류\s*준비\s*없이|빠르게|쉽게|간단하게|한번에|"
+    r"신청하는\s*법|신청\s*방법|조건\s*금액|신청\s*자격|"
+    r"총정리|완벽정리|한눈에|꼼꼼히|알아보기|"
+    r"\d{4}년?\s*최신|2026\s*년?\s*기준|최신\s*정보)",
+    re.IGNORECASE,
+)
+
+
+def _core_keyword(keyword: str) -> str:
+    """SEO 부사구 제거 후 핵심 3단어 이내로 압축."""
+    cleaned = _SEO_STRIP.sub("", keyword).strip()
+    words = cleaned.split()
+    # 의미 있는 앞 3단어만 사용
+    return " ".join(words[:3]) if words else keyword[:20]
+
+
+def _fallback_public_api(keyword: str, blog_id: str, on_log=None) -> dict:
+    """웹 스크래핑 실패 시 공공데이터포털 API로 팩트 수집."""
+    def log(msg):
+        if on_log:
+            on_log(msg)
+    try:
+        try:
+            from public_api import fetch_context_for_blog
+        except ImportError:
+            import sys
+            sys.path.insert(0, str(Path(__file__).parent.parent))
+            from public_api import fetch_context_for_blog
+        # 핵심 키워드로 압축 후 API 호출
+        core = _core_keyword(keyword)
+        if core != keyword:
+            log(f"[팩트수집] 핵심 키워드 추출: '{keyword}' → '{core}'")
+        ctx = fetch_context_for_blog(blog_id, core, on_log=on_log)
+        if ctx and len(ctx) > 50:
+            log(f"[팩트수집] ✓ 공공API 폴백 성공 ({len(ctx)}자)")
+            return {"context": ctx, "success": True}
+        log("[팩트수집] 공공API 폴백도 데이터 없음 — 건너뜀")
+    except Exception as e:
+        log(f"[팩트수집] 공공API 폴백 실패: {e}")
+    return {"context": "", "success": False}
+
+
 def collect(keyword: str, blog_id: str, on_log=None) -> dict:
     """글 생성 전 키워드 관련 팩트를 공식 페이지에서 수집.
 
@@ -289,8 +332,8 @@ def collect(keyword: str, blog_id: str, on_log=None) -> dict:
     try:
         pw, browser = connect_cdp(on_log)
     except Exception as e:
-        log(f"[팩트수집] CDP 연결 실패: {e} — 건너뜀")
-        return {"context": "", "success": False}
+        log(f"[팩트수집] CDP 연결 실패: {e} — 공공API 폴백 시도")
+        return _fallback_public_api(keyword, blog_id, on_log)
 
     try:
         context = browser.contexts[0] if browser.contexts else browser.new_context()
@@ -300,8 +343,8 @@ def collect(keyword: str, blog_id: str, on_log=None) -> dict:
             official_url = _search_and_get_official_url(page, fact_query, blog_id, on_log)
 
             if not official_url:
-                log("[팩트수집] 공식 페이지 URL 없음 — 건너뜀")
-                return {"context": "", "success": False}
+                log("[팩트수집] 공식 페이지 URL 없음 — 공공API 폴백 시도")
+                return _fallback_public_api(keyword, blog_id, on_log)
 
             # 2. 공식 페이지 직접 방문 → 내용 추출
             log(f"[팩트수집] 공식 페이지 방문: {official_url[:80]}")
@@ -322,8 +365,8 @@ def collect(keyword: str, blog_id: str, on_log=None) -> dict:
             pass
 
     if not facts or not _has_useful_data(facts):
-        log("[팩트수집] 유효한 수치 데이터 없음 — 건너뜀")
-        return {"context": "", "success": False}
+        log("[팩트수집] 유효한 수치 데이터 없음 — 공공API 폴백 시도")
+        return _fallback_public_api(keyword, blog_id, on_log)
 
     context_text = (
         f"## '{keyword}' 관련 공식 출처 데이터\n"
