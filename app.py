@@ -787,17 +787,18 @@ class KeywordAnalysisDialog(QDialog):
         top.addWidget(self._level_label)
         layout.addLayout(top)
 
-        # ── 연관 키워드 테이블 ──
-        layout.addWidget(QLabel("📊 연관 키워드 경쟁도 (발행량 오름차순 — 블로그 수준 적합 키워드 위에 표시)"))
-        self._kw_table = QTableWidget(0, 3)
-        self._kw_table.setHorizontalHeaderLabels(["키워드", "발행량", "난이도"])
-        self._kw_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self._kw_table.setColumnWidth(1, 90)
-        self._kw_table.setColumnWidth(2, 110)
-        self._kw_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._kw_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._kw_table.itemSelectionChanged.connect(self._on_kw_selected)
-        layout.addWidget(self._kw_table)
+        # ── 연관 키워드 탭 (네이버 / 다음) ──
+        layout.addWidget(QLabel("📊 연관 키워드 경쟁도 (발행량 오름차순 — 초록색 = 블로그 수준 적합)"))
+        self._kw_tabs = QTabWidget()
+        self._kw_tabs.setStyleSheet(
+            "QTabBar::tab{background:#1a1d2e;color:#9ca3af;padding:4px 12px;font-size:11px;border:none;}"
+            "QTabBar::tab:selected{background:#4f8ef7;color:#fff;border-radius:3px;}"
+            "QTabWidget::pane{border:1px solid #2a2d3e;background:#0d0f18;}")
+        self._naver_table = self._make_kw_table()
+        self._daum_table  = self._make_kw_table()
+        self._kw_tabs.addTab(self._naver_table, "🔵 네이버")
+        self._kw_tabs.addTab(self._daum_table,  "🟡 다음")
+        layout.addWidget(self._kw_tabs)
 
         # ── SEO 제목 후보 ──
         layout.addWidget(QLabel("✍ SEO 제목 후보 (클릭해서 선택)"))
@@ -843,35 +844,44 @@ class KeywordAnalysisDialog(QDialog):
         self._worker.titles_signal.connect(self._on_titles)
         self._worker.start()
 
+    def _make_kw_table(self) -> QTableWidget:
+        t = QTableWidget(0, 3)
+        t.setHorizontalHeaderLabels(["키워드", "발행량", "난이도"])
+        t.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        t.setColumnWidth(1, 90)
+        t.setColumnWidth(2, 110)
+        t.setSelectionBehavior(QAbstractItemView.SelectRows)
+        t.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        t.itemSelectionChanged.connect(self._on_kw_selected)
+        return t
+
     def _append_log(self, msg: str):
         self._log.append(msg)
 
+    def _fill_table(self, table: QTableWidget, rows: list, filtered_kws: set):
+        table.setRowCount(len(rows))
+        for i, item in enumerate(rows):
+            kw_item    = QTableWidgetItem(item["keyword"])
+            total_item = QTableWidgetItem(f"{item['total']:,}" if item['total'] >= 0 else "-")
+            level_item = QTableWidgetItem(item["level"])
+            total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            if item["keyword"] in filtered_kws:
+                for it in (kw_item, total_item, level_item):
+                    it.setForeground(QColor("#22c55e"))
+            table.setItem(i, 0, kw_item)
+            table.setItem(i, 1, total_item)
+            table.setItem(i, 2, level_item)
+
     def _on_result(self, result: dict):
-        # 메인 경쟁도
         total = result["total"]
         level = result["level"]
         color = "#22c55e" if "낮음" in level else ("#f5a623" if "보통" in level else "#ef4444")
         self._level_label.setText(f"발행량: {total:,}개 | {level}")
         self._level_label.setStyleSheet(f"font-size:12px; color:{color};")
 
-        # 연관 키워드 테이블 — 블로그 수준 적합 먼저, 나머지 뒤에
         filtered_kws = {r["keyword"] for r in result.get("filtered", [])}
-        all_related = result.get("related", [])
-
-        self._kw_table.setRowCount(len(all_related))
-        for i, item in enumerate(all_related):
-            kw_item = QTableWidgetItem(item["keyword"])
-            total_item = QTableWidgetItem(f"{item['total']:,}" if item['total'] >= 0 else "-")
-            level_item = QTableWidgetItem(item["level"])
-            total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-
-            # 블로그 수준 적합 키워드 강조
-            if item["keyword"] in filtered_kws:
-                for it in (kw_item, total_item, level_item):
-                    it.setForeground(QColor("#22c55e"))
-            self._kw_table.setItem(i, 0, kw_item)
-            self._kw_table.setItem(i, 1, total_item)
-            self._kw_table.setItem(i, 2, level_item)
+        self._fill_table(self._naver_table, result.get("naver_related", result.get("related", [])), filtered_kws)
+        self._fill_table(self._daum_table,  result.get("daum_related", []), filtered_kws)
 
     def _on_titles(self, titles: list):
         self._title_list.clear()
@@ -879,7 +889,9 @@ class KeywordAnalysisDialog(QDialog):
             self._title_list.addItem(t)
 
     def _on_kw_selected(self):
-        rows = self._kw_table.selectedItems()
+        # 현재 활성 탭의 테이블에서 선택 읽기
+        active = self._naver_table if self._kw_tabs.currentIndex() == 0 else self._daum_table
+        rows = active.selectedItems()
         if rows:
             self._sel_edit.setText(rows[0].text())
 

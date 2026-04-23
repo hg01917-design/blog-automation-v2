@@ -64,7 +64,29 @@ def get_autocomplete(keyword: str) -> list[str]:
             for item in group:
                 if isinstance(item, list) and item:
                     results.append(item[0])
-        return list(dict.fromkeys(results))[:15]  # 중복 제거, 최대 15개
+        return list(dict.fromkeys(results))[:15]
+    except Exception:
+        return []
+
+
+def get_daum_autocomplete(keyword: str) -> list[str]:
+    """다음 자동완성으로 연관 키워드 수집 (API 키 불필요)."""
+    try:
+        url = (
+            f"https://suggest-bar.daum.net/suggest"
+            f"?mod=json&col=wed&q={urllib.parse.quote(keyword)}"
+        )
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = json.loads(r.read())
+        results = []
+        for item in data.get("items", []):
+            # items 는 [["단어", ...], ...] 형태
+            if isinstance(item, list) and item:
+                results.append(item[0])
+            elif isinstance(item, str):
+                results.append(item)
+        return list(dict.fromkeys(results))[:15]
     except Exception:
         return []
 
@@ -121,26 +143,37 @@ def analyze_keyword(keyword: str, on_log=None) -> dict:
     main_total = get_blog_count(keyword)
     log(f"[분석] 발행량: {main_total:,}개 → {difficulty_label(main_total)}")
 
-    log(f"[분석] 연관 키워드 수집 중...")
-    related_kws = get_autocomplete(keyword)
-    if not related_kws:
-        log(f"[분석] 자동완성 결과 없음 → 블로그 검색 결과로 대체 수집 중...")
-        related_kws = get_related_from_search(keyword)
-    log(f"[분석] 연관 키워드 {len(related_kws)}개 발견")
+    log(f"[분석] 네이버 연관 키워드 수집 중...")
+    naver_kws = get_autocomplete(keyword)
+    if not naver_kws:
+        log(f"[분석] 네이버 자동완성 없음 → 블로그 검색으로 대체...")
+        naver_kws = get_related_from_search(keyword)
+    log(f"[분석] 네이버 {len(naver_kws)}개")
 
-    related = []
+    log(f"[분석] 다음 연관 키워드 수집 중...")
+    daum_kws = get_daum_autocomplete(keyword)
+    log(f"[분석] 다음 {len(daum_kws)}개")
+
+    # 중복 제거 후 경쟁도 체크 (naver 우선, daum 추가)
+    related_kws = list(dict.fromkeys(naver_kws + daum_kws))
+    log(f"[분석] 전체 연관 키워드 {len(related_kws)}개 경쟁도 체크 중...")
+
+    kw_data: dict[str, dict] = {}
     for kw in related_kws:
         if kw == keyword:
             continue
         total = get_blog_count(kw)
-        related.append({
-            "keyword": kw,
-            "total": total,
-            "level": difficulty_label(total),
-        })
-        time.sleep(0.1)  # API 부하 방지
+        kw_data[kw] = {"keyword": kw, "total": total, "level": difficulty_label(total)}
+        time.sleep(0.1)
 
-    # 발행량 오름차순 정렬 (경쟁 낮은 게 위로)
+    def _make_list(kws):
+        out = [kw_data[k] for k in kws if k != keyword and k in kw_data]
+        out.sort(key=lambda x: x["total"] if x["total"] >= 0 else 999999)
+        return out
+
+    naver_related = _make_list(naver_kws)
+    daum_related  = _make_list(daum_kws)
+    related = list({r["keyword"]: r for r in naver_related + daum_related}.values())
     related.sort(key=lambda x: x["total"] if x["total"] >= 0 else 999999)
 
     return {
@@ -148,6 +181,8 @@ def analyze_keyword(keyword: str, on_log=None) -> dict:
         "total": main_total,
         "level": difficulty_label(main_total),
         "related": related,
+        "naver_related": naver_related,
+        "daum_related": daum_related,
     }
 
 
