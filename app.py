@@ -1374,9 +1374,14 @@ class BlogAutomationApp(QMainWindow):
 
         ml.addWidget(self._tabs, 1)
 
-        # 5. 하단 버튼 3개
+        # 5. 하단 버튼
         btn_row = QHBoxLayout()
         btn_row.setSpacing(6)
+        self.run_all_btn = QPushButton("▶▶  전체 실행")
+        self.run_all_btn.setStyleSheet(
+            "background:#27ae60;color:#fff;border:none;border-radius:6px;"
+            "font-size:12px;font-weight:bold;min-height:32px;")
+        self.run_all_btn.clicked.connect(self._run_all)
         self.run_btn = QPushButton("▶  실행")
         self.run_btn.setStyleSheet(
             "background:#4f8ef7;color:#fff;border:none;border-radius:6px;"
@@ -1393,6 +1398,7 @@ class BlogAutomationApp(QMainWindow):
             "background:#1a1d2e;color:#e0e0e0;border:1px solid #1e2233;"
             "border-radius:6px;font-size:12px;min-height:32px;")
         reset_btn.clicked.connect(self._reset)
+        btn_row.addWidget(self.run_all_btn, 2)
         btn_row.addWidget(self.run_btn, 2)
         btn_row.addWidget(self.pause_btn, 1)
         btn_row.addWidget(reset_btn, 1)
@@ -1527,6 +1533,32 @@ class BlogAutomationApp(QMainWindow):
         self.log_box.append(f"[AI] {provider.upper()} 선택됨")
 
     # ── 실행 버튼 ──
+    def _run_all(self):
+        if self._single_worker and self._single_worker.isRunning():
+            self.log_box.append("[전체실행] 이미 실행 중입니다.")
+            return
+        import subprocess
+        from pathlib import Path
+        script = Path(__file__).parent / "overnight_run.py"
+        self.log_box.append("[전체실행] overnight_run.py 시작...")
+        self.run_all_btn.setEnabled(False)
+        self.pause_btn.setEnabled(True)
+        self._all_proc = subprocess.Popen(
+            [sys.executable, str(script)],
+            cwd=str(Path(__file__).parent),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1
+        )
+        import threading
+        def _stream():
+            for line in self._all_proc.stdout:
+                self._append_log(line.rstrip())
+            self._all_proc.wait()
+            self.run_all_btn.setEnabled(True)
+            self.pause_btn.setEnabled(False)
+            self._append_log("[전체실행] 완료")
+        threading.Thread(target=_stream, daemon=True).start()
+
     def _run_selected(self):
         if self._single_worker and self._single_worker.isRunning():
             self.log_box.append("[실행] 이미 실행 중입니다.")
@@ -1551,6 +1583,9 @@ class BlogAutomationApp(QMainWindow):
             self.sched_worker.stop()
         if self._single_worker and self._single_worker.isRunning():
             self._single_worker.terminate()
+        if hasattr(self, '_all_proc') and self._all_proc and self._all_proc.poll() is None:
+            self._all_proc.terminate()
+            self.run_all_btn.setEnabled(True)
         self.pause_btn.setEnabled(False)
         self.run_btn.setEnabled(True)
 
