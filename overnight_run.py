@@ -2110,12 +2110,12 @@ def run_one_round(round_num):
     except Exception as e:
         log(f"[리프레시] 스킵: {e}")
 
-    # MRT 파트너 블로그 딜 모니터링 (triplog용 프로모션 글 자동 생성)
-    try:
-        from mrt_deals import run_deal_check
-        run_deal_check()
-    except Exception as e:
-        log(f"[딜모니터] 스킵: {e}")
+    # MRT 파트너 블로그 딜 모니터링 — 비활성화 (Chrome 포커스 탈취 방지)
+    # try:
+    #     from mrt_deals import run_deal_check
+    #     run_deal_check()
+    # except Exception as e:
+    #     log(f"[딜모니터] 스킵: {e}")
 
     # ── 자동 발행 비활성화 (임시저장까지만) ──────────────────────────
     # publish_drafts.py 자동 실행 OFF — 수동 발행 시 별도 실행
