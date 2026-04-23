@@ -2121,21 +2121,9 @@ def run_one_round(round_num):
     except Exception as e:
         log(f"[딜모니터] 스킵: {e}")
 
-    # ── draft_saved 글 자동 발행 (Tistory/Naver) ──────────────────────────
-    import subprocess as _sp
-    _pub_log = open(str(LOG_DIR / "publish_drafts_auto.log"), "a")
-    try:
-        _py = sys.executable  # overnight_run과 동일한 python 인터프리터 사용
-        _pub = _sp.Popen(
-            [_py, str(Path(__file__).parent / "publish_drafts.py")],
-            stdout=_pub_log, stderr=_sp.STDOUT,
-            cwd=str(Path(__file__).parent),
-        )
-        log(f"[자동발행] publish_drafts.py PID {_pub.pid} 백그라운드 실행")
-    except Exception as _e:
-        log(f"[자동발행] publish_drafts.py 실행 실패: {_e}")
-    finally:
-        _pub_log.close()
+    # ── 자동 발행 비활성화 (임시저장까지만) ──────────────────────────
+    # publish_drafts.py 자동 실행 OFF — 수동 발행 시 별도 실행
+    pass
 
 
 # ─── 메인 실행 ───
