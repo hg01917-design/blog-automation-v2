@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tmux capture-pane *)",
+      "Bash(tmux list-windows *)",
+      "Bash(tmux list-sessions)",
+      "Bash(tmux list-panes *)",
+      "Bash(tmux ls)",
+      "Bash(tmux display-message *)",
+      "Bash(tmux show-options *)",
+      "Bash(curl -s http://localhost:9222/json *)",
+      "Bash(curl -s http://localhost:9222/json)",
+      "Bash(curl -s http://localhost:9222/json/version *)",
+      "mcp__claude_ai_Notion__notion-fetch"
+    ]
+  }
+}

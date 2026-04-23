@@ -1,0 +1,1502 @@
+[09:21:09] ============================================================
+[09:21:09] 자동 실행 시작 (2026-04-19 09:21)
+[09:21:09] ============================================================
+[09:21:09] [시작] stale in_progress 27개 → pending 초기화: ['춘천 소양강 닭갈비 당일치기 여행', '인천 영종도 을왕리해수욕장 드라이브', '제주 우도 페리 자전거 렌트 당일치기', '통영 당일치기 케이블카 루지 여행', '베테랑2 결말 해석 총정리', '청년전용창업자금', '부산 해운대 시장 먹거리 교통 주차', '가평 남이섬 쁘띠프랑스 당일치기 코스', '춘천 소양강 닭갈비 당일치기 여행', '남해 독일마을 다랭이마을 주차 숙박', '구글 포토 무료 용량 초과 해결 방법', '가평 쁘띠프랑스 주차 입장료 근처 맛집', '포항에어컨청소', '윈도우 11 느릴 때 빠르게 하는 설정', '아기방인테리어', '서울 창덕궁 후원 예약 입장료 시간', '실업자국비지원', '서울 근교 드라이브 코스 당일치기 추천', '담양 죽녹원 입장료 맛집 교통 꿀팁', '산재휴업급여신청', '울릉도 독도 배편 예약 여행 준비물', '평창 대관령 스키장 숙박 교통 패키지', '직장인국비지원', '종합소득세기한후환급', '강화도 광성보 석모도 당일치기', '요양급여신청서', '유튜브 쇼츠 수익화 조건 방법 2026']
+[09:21:09] [크롤링] 오늘 이미 완료 — 스킵
+[09:21:09] [실행] 전체 블로그 1라운드
+[09:21:09] 
+============================================================
+[09:21:09] [라운드 1] 시작 (09:21)
+[09:21:09] ============================================================
+[09:21:09] [triplog] 키워드: 통영 당일치기 케이블카 루지 여행
+Python-dotenv could not parse statement starting at line 1
+[09:21:10] [파이프라인] triplog / '통영 당일치기 케이블카 루지 여행' — 유사문서 체크
+[09:21:10] [유사문서] 핵심 단어: ['통영', '당일치기', '케이블카', '루지']
+[09:21:10] [유사문서] WP 검색 완료 — 0개 중 중복 없음
+[09:21:10] [유사문서] 중복 없음 — 진행 가능
+[09:21:10] [파이프라인] triplog — MRT 제휴 링크 조회 중: '통영 당일치기 케이블카 루지 여행'
+[09:21:10] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:91107) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[09:21:17] [MRT] '통영 당일치기 케이블카 루지 여행' 검색 중...
+[09:21:22] [MRT] 상품 2개 발견
+[09:21:22]   - 즉시 확정 [통영투어패스] 통영투어패스 24시간+스카이라인 루지 3회 이용권 5.0(1)  → https://www.myrealtrip.com/offers/177738
+[09:21:22]   - 즉시 확정 [부산/통영] 스카이라인 루지 연간회원권 95,000원 부산 𐤟 액티비티 → https://www.myrealtrip.com/offers/173800
+[09:21:22] 
+[MRT] 링크 생성: 즉시 확정 [통영투어패스] 통영투어패스 24시간+스카이라인 루지 3회 이
+[09:21:23] [MRT API] ✅ 제휴 링크 생성: https://www.myrealtrip.com/offers/177738 → https://myrealt.rip/YHOtd2
+[09:21:23] 
+[MRT] 링크 생성: 즉시 확정 [부산/통영] 스카이라인 루지 연간회원권 95,000원 부산 
+[09:21:23] [MRT API] ✅ 제휴 링크 생성: https://www.myrealtrip.com/offers/173800 → https://myrealt.rip/YHOu16
+[09:21:23] 
+[MRT] 완료: 2/2개 링크 생성
+[09:21:23] [파이프라인] MRT 2개 관련 제휴 링크 주입 완료
+[09:21:23] [PublicAPI] 축제 검색: 전국, 20260419~20260728
+[09:21:23] [PublicAPI] 축제 데이터 10건 수집 완료
+[09:21:23] [파이프라인] triplog / '통영 당일치기 케이블카 루지 여행' — Claude.ai 글 생성 시작
+[09:21:23] [Direct] blog=triplog, keyword='통영 당일치기 케이블카 루지 여행
+
+[마이리얼트립 제휴 상품 — 링크 2회 필수 삽입]
+글 최상단(첫 문단 전)에 반드시 이 한 줄을 삽입해:
+「이 글에는 마이리얼트립 파트너스 프로그램을 통해 소정의 수수료를 받을 수 있는 제휴 링크가 포함되어 있습니다.」
+
+아래 제휴 상품 링크를 본문에 2회 삽입해 (CTR 최적화):
+  1회차: 첫 번째 소제목(##) 바로 아래 — 후킹 문구 1줄 + 링크
+         후킹 예시: '이 투어는 성수기에 금방 마감돼요 — 날짜 먼저 잡아두세요'
+  2회차: 맺음말 직전 — '지금 예약 확인해보세요' CTA + 링크
+링크 형식: <a href="URL" target="_blank" style="color:#1a73e8;font-weight:bold;">상품명 예약하기</a>
+
+아래 상품 중 글 내용과 가장 관련된 것 1~2개 선택해서 삽입:
+1. 상품명: 즉시 확정 [통영투어패스] 통영투어패스 24시간+스카이라인 루지 3회 이용권 5.0(1) 38,900원 통영
+   URL: https://myrealt.rip/YHOtd2
+2. 상품명: 즉시 확정 [부산/통영] 스카이라인 루지 연간회원권 95,000원 부산 𐤟 액티비티
+   URL: https://myrealt.rip/YHOu16
+', 프롬프트=7220자
+[09:21:23] [Direct] Claude Code subprocess 직접 호출...
+[09:26:23] [Direct] 타임아웃 (5분) — 재시도
+[09:26:23] [Direct] === 재시도 1/2 ===
+[09:31:23] [Direct] 타임아웃 (5분) — 재시도
+[09:31:23] [Direct] === 재시도 2/2 ===
+[09:36:24] [Direct] 타임아웃 (5분) — 재시도
+[09:36:24] [Direct] 3회 모두 실패
+[09:36:24] [파이프라인] 글 생성 실패
+[09:37:26] [nolja100] 키워드: 춘천 소양강 닭갈비 당일치기 여행
+[09:37:26] [파이프라인] nolja100 / '춘천 소양강 닭갈비 당일치기 여행' — 유사문서 체크
+[09:37:26] [유사문서] 핵심 단어: ['춘천', '소양강', '닭갈비', '당일치기']
+[09:37:26] [유사문서] Tistory RSS 10개 제목 수집
+[09:37:26] [유사문서] Tistory RSS 확인 완료 — 중복 없음 (최근 20개)
+[09:37:27] [유사문서] Tistory 검색 확인 완료 — 중복 없음
+[09:37:27] [유사문서] 중복 없음 — 진행 가능
+[09:37:27] [PublicAPI] 축제 검색: 전국, 20260419~20260728
+[09:37:27] [PublicAPI] 축제 데이터 10건 수집 완료
+[09:37:27] [파이프라인] nolja100 / '춘천 소양강 닭갈비 당일치기 여행' — Claude.ai 글 생성 시작
+[09:37:27] [Direct] blog=nolja100, keyword='춘천 소양강 닭갈비 당일치기 여행', 프롬프트=7407자
+[09:37:27] [Direct] Claude Code subprocess 직접 호출...
+[09:40:15] [Direct] ✅ 응답 5077자
+[09:40:15] [파싱] 이미지 섹션 발견 (길이=1522자), 내용: '[이미지1]\n- Gemini프롬프트: A scenic view of Chuncheon train station exterior on a clear spring morning, surrounded by cherry blossoms, soft natural light, travel photography style\n- 파일명: chuncheon-itx-cheongchun-station-spring.jpg\n- alt: 춘천역 봄 풍경, ITX-청춘 당일치기 출발지\n\n[이미지2]\n- Gemini프롬프트: Soyang River glass s'
+[09:40:15] [파싱] 제목: "춘천 소양강 닭갈비 당일치기 여행 코스 2026 시간표" (30자)
+[09:40:15] [파싱] 본문: 2388자
+[09:40:15] [파싱] 태그: ['춘천당일치기', '소양강스카이워크', '춘천닭갈비', '유포리닭갈비', '춘천명동닭갈비', '소양강여행', '강원도당일치기', 'ITX청춘', '춘천여행코스', '춘천맛집', '뚜벅이당일치기', '소양강댐', '춘천봄여행', '서울근교당일치기', '닭갈비맛집'] (15개)
+[09:40:15] [파싱] 이미지: 6개
+[09:40:15] [파싱] 메타: "춘천 소양강 스카이워크부터 명동 닭갈비 골목 유포리닭갈비까지, 2026년 ITX-청춘 교통비·웨이팅 정보와 " (76자)
+[09:40:15] [파싱] 본문 미리보기: 💡 핵심 요약
+
+- 서울역 ITX-청춘 타면 춘천역까지 약 1시간 10분, 당일치기 충분히 가능해요
+- 소양강 스카이워크 입장료 무료, 오전 9...
+[09:40:15] [검수] ⚠ 본문 짧음 (2388자 < 3000자) — 재생성 1회 시도
+[09:40:15] [Direct] blog=nolja100, keyword='춘천 소양강 닭갈비 당일치기 여행', 프롬프트=6844자
+[09:40:15] [Direct] Claude Code subprocess 직접 호출...
+[09:44:34] [Direct] ✅ 응답 7972자
+[09:44:34] [검수] 재생성 결과 더 길어짐: 2388자 → 4608자 — 교체
+[09:44:34] [검수] 재생성 이미지 목록 업데이트: 6개 → 5개
+[09:44:34] [검수] 글 품질 기록 — 본문 4608자, 태그 15개 → 임시저장 진행
+[09:44:34] [버퍼] nolja100 텍스트 저장 완료 ('춘천 소양강 닭갈비 당일치기 명동골목 웨이팅·주차 2026')
+[09:44:34] [파이프라인] H2 소제목 0개 → 본문 이미지 1개 목표
+[09:44:34] [파이프라인] 이미지 생성 시작 (blog=nolja100, skip_webp=False)
+[09:44:34] [Router] Bing Image Creator 시도: 5장
+(node:93619) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[09:44:40] [Bing] [1] 생성 중: A scenic ITX Cheongchun train running through lush green mou
+[09:44:44] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[09:44:48] [Bing] 생성 버튼 클릭
+[09:44:48] [Bing] 프롬프트 전송: A scenic ITX Cheongchun train running through lush
+[09:44:48] [Router] Bing 오류: Page.wait_for_timeout: Target page, context or browser has been closed
+[09:44:48] [Router] Bing 전체 실패 → Pollinations 폴백
+[09:44:49] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[09:44:50] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[09:44:50] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[09:44:51] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[09:44:52] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[09:44:52] [파이프라인] 본문 이미지 0개 생성 완료
+[09:44:52] [파이프라인] ⚠ 이미지 0개 < 최소 1개 — Pollinations 폴백 보충
+[09:44:52] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[09:44:52] [파이프라인] 이미지 보충 후 총 0개
+[09:44:52] [검수] ⚠ 이미지 부족 (0개 < 1개) — 임시저장 후 클로드코드 보완 예정
+[09:44:52] [파이프라인] 썸네일 생성 중...
+(node:93639) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[09:45:04] [Bing] 4장 모드: 1회 요청으로 1장 생성
+[09:45:20] [Bing] 기존 OIG 63개, 이전세션 ID 500개 exclude
+[09:45:27] [Bing] 프롬프트 전송 (4장 모드): 춘천 소양강 닭갈비 당일치기 여행 representative thumbnail image,
+[09:45:33] [Bing] 로딩 감지됨, 4장 대기 중...
+[09:46:07] [썸네일] Bing 실패: Page.query_selector_all: Execution context was destroyed, most likely because of a navigation
+[09:46:08] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[09:46:08] [썸네일] 생성 실패
+[09:46:08] [파이프라인] 포스팅 시작: nolja100
+[09:46:08] 
+==================================================
+[09:46:08] [순환] nolja100 (tistory) 시작
+[09:46:08] ==================================================
+[09:46:08] [순환] nolja100 로그인...
+[09:46:08] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:93729) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[09:46:14] [1/5] 티스토리 로그인 페이지 이동 중...
+[09:46:18] [1/5] 로그인 리다이렉트됨 (https://www.tistory.com/) — nolja100 manage 진입 시도...
+[09:46:22] [완료] nolja100 manage 진입 완료! (https://nolja100.tistory.com/manage)
+[09:46:25] [순환] nolja100 글 작성 시작...
+[09:46:25] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:93771) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[09:46:29] [포스팅] 에디터 이동: https://nolja100.tistory.com/manage/newpost
+[09:46:37] [포스팅] 에디터 로드 완료 (셀렉터: #post-title-inp)
+[09:46:37] [포스팅] 제목 입력: 춘천 소양강 닭갈비 당일치기 명동골목 웨이팅·주차 20...
+[09:46:41] [포스팅] 본문 입력 중...
+[09:46:55] [포스팅] 서식 메뉴 열림
+[09:46:56] [포스팅] 서식 애드센스 삽입 완료 ('애드센스광고코드')
+[09:47:07] [포스팅] 서식 메뉴 열림
+[09:47:08] [포스팅] 서식 애드센스 삽입 완료 ('애드센스광고코드')
+[09:47:33] [포스팅] 서식 메뉴 열림
+[09:47:34] [포스팅] 서식 애드센스 삽입 완료 ('애드센스광고코드')
+[09:47:47] [포스팅] 본문 입력 완료 (글자크기 size19 적용)
+[09:47:47] [포스팅] 태그 입력: ['춘천 닭갈비', '춘천 당일치기', '소양강 스카이워크', '명동 닭갈비 골목', '춘천 여행', 'ITX 청춘', '춘천 맛집', '닭갈비 웨이팅', '소양강 입장료', '춘천 교통', '당일치기 코스', '춘천 관광지', '닭갈비 가격', '소양강 운영시간', '춘천 주차']
+[09:47:59] [포스팅] 태그 10개 입력 완료
+[09:47:59] [포스팅] 카테고리 선택 (nolja100): 여행
+[09:48:00] [포스팅] 카테고리 선택 완료: 카테고리:여행
+[09:48:00] [내부링크] nolja100: 3개 삽입 완료
+[09:48:00] [포스팅] 임시저장 중...
+[09:48:03] [포스팅] 임시저장 완료: 춘천 소양강 닭갈비 당일치기 명동골목 웨이팅·주차 20...
+[09:48:05] [순환] nolja100 로그아웃 스킵 (결과 확인 후 수동 로그아웃)
+[09:48:06] [순환] nolja100 완료 (성공)
+[09:48:06] [파이프라인] nolja100 / '춘천 소양강 닭갈비 당일치기 여행' 임시저장완료 ✅
+[09:50:03] [goodisak] ⚠ 테마 부적합 또는 경쟁 높음 '다이소전선정리' → 스킵
+[09:50:03] [goodisak] ⚠ 테마 부적합 또는 경쟁 높음 'TOEICSPEAKING' → 스킵
+[09:50:03] [goodisak] 키워드: 블루투스이어폰추천
+[09:50:03] [파이프라인] goodisak / '블루투스이어폰추천' — 유사문서 체크
+[09:50:03] [유사문서] 핵심 단어: ['블루투스이어폰추천']
+[09:50:04] [유사문서] Tistory RSS 10개 제목 수집
+[09:50:04] [유사문서] Tistory RSS 확인 완료 — 중복 없음 (최근 20개)
+[09:50:04] [유사문서] Tistory 검색 확인 완료 — 중복 없음
+[09:50:04] [유사문서] 중복 없음 — 진행 가능
+[09:50:04] [파이프라인] goodisak / '블루투스이어폰추천' — Claude.ai 글 생성 시작
+[09:50:04] [Direct] blog=goodisak, keyword='블루투스이어폰추천', 프롬프트=4685자
+[09:50:04] [Direct] Claude Code subprocess 직접 호출...
+[09:52:03] [Direct] ✅ 응답 5066자
+[09:52:03] [파싱] 이미지 섹션 발견 (길이=880자), 내용: '[이미지1]\n- Gemini프롬프트: Flat lay of three different wireless bluetooth earbuds arranged by price tier on a white background with clean minimalist product photography lighting, showing budget mid-range and premium models\n- 파일명: bluetooth-earbuds-price-tier-comparison.jpg\n- alt: 가격대별 블루투스이어폰 스펙 비교 2026\n\n'
+[09:52:03] [파싱] 제목: "블루투스이어폰추천 2026 예산별 선택 방법과 놓치기 쉬운 핵심 스펙" (38자)
+[09:52:03] [파싱] 본문: 2689자
+[09:52:03] [파싱] 태그: ['블루투스이어폰추천', '무선이어폰추천', '블루투스이어폰2026', '이어폰코덱', 'LDAC이어폰', 'ANC이어폰', '노이즈캔슬링이어폰', '운동용이어폰', '재택근무이어폰', '이어폰방수등급', '멀티포인트이어폰', '이어팁교체', '블루투스5.3', 'aptX이어폰', '무선이어폰가격대'] (15개)
+[09:52:03] [파싱] 이미지: 3개
+[09:52:03] [파싱] 메타: "블루투스이어폰추천 2026 기준으로 가격대별 코덱·ANC 차이, 운동·재택·통근 용도별 선택 포인트, 구매 " (80자)
+[09:52:03] [파싱] 본문 미리보기: [H2]가격대별 스펙 기준 — 3만원과 20만원의 실질 차이[/H2]
+
+{{이미지1}}
+
+블루투스이어폰을 처음 찾는 분들이 가장 먼저 막히는 지...
+[09:52:03] [검수] ⚠ 본문 짧음 (2689자 < 3000자) — 재생성 1회 시도
+[09:52:03] [Direct] blog=goodisak, keyword='블루투스이어폰추천', 프롬프트=4685자
+[09:52:03] [Direct] Claude Code subprocess 직접 호출...
+[09:54:35] [Direct] ✅ 응답 4801자
+[09:54:35] [검수] 재생성 결과 더 짧음 — 원본 유지
+[09:54:35] [검수] ⚠ 본문 권고치 미달 (2689자 < 3000자) — 임시저장 진행 (목표: 3000자)
+[09:54:35] [검수] 글 품질 기록 — 본문 2689자, 태그 15개 → 임시저장 진행
+[09:54:35] [버퍼] goodisak 텍스트 저장 완료 ('블루투스이어폰추천 2026 예산별 선택 방법과 놓치기 쉬운 핵심 스펙')
+[09:54:35] [파이프라인] H2 소제목 0개 → 본문 이미지 1개 목표
+[09:54:35] [파이프라인] 이미지 생성 시작 (blog=goodisak, skip_webp=False)
+[09:54:35] [Router] Bing Image Creator 시도: 3장
+(node:94358) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[09:54:41] [Bing] 4장 모드: 1회 요청으로 3장 생성
+[09:54:57] [Bing] 기존 OIG 63개, 이전세션 ID 500개 exclude
+[09:55:00] [Bing] 프롬프트 전송 (4장 모드): Flat lay of three different wireless bluetooth ear
+[09:55:00] [Router] Bing 오류: Page.wait_for_timeout: Target page, context or browser has been closed
+[09:55:00] [Router] Bing 전체 실패 → Pollinations 폴백
+[09:55:01] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[09:56:01] [Pollinations] 실패: The read operation timed out
+[09:56:02] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[09:56:02] [파이프라인] 본문 이미지 0개 생성 완료
+[09:56:02] [파이프라인] ⚠ 이미지 0개 < 최소 1개 — Pollinations 폴백 보충
+[09:56:02] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[09:56:02] [파이프라인] 이미지 보충 후 총 0개
+[09:56:02] [검수] ⚠ 이미지 부족 (0개 < 1개) — 임시저장 후 클로드코드 보완 예정
+[09:56:02] [파이프라인] 썸네일 생성 중...
+(node:94412) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[09:56:09] [Bing] 4장 모드: 1회 요청으로 1장 생성
+[09:56:23] [Bing] 기존 OIG 63개, 이전세션 ID 500개 exclude
+[09:56:28] [Bing] 프롬프트 전송 (4장 모드): 블루투스이어폰추천 representative thumbnail image, wide est
+[09:56:28] [썸네일] Bing 실패: Page.wait_for_timeout: Target page, context or browser has been closed
+[09:56:29] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[09:56:29] [썸네일] 생성 실패
+[09:56:29] [파이프라인] 포스팅 시작: goodisak
+[09:56:29] 
+==================================================
+[09:56:29] [순환] goodisak (tistory) 시작
+[09:56:29] ==================================================
+[09:56:29] [순환] goodisak 로그인...
+[09:56:29] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:94435) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[09:56:33] [1/5] 티스토리 로그인 페이지 이동 중...
+[09:56:36] [1/5] 로그인 리다이렉트됨 (https://www.tistory.com/) — goodisak manage 진입 시도...
+[09:56:40] [1/5] manage 접근 불가 (https://goodisak.tistory.com/) — Tistory 세션 초기화 후 재로그인
+[09:56:43] [1/5] Tistory 로그아웃 완료 (https://www.tistory.com/)
+[09:56:46] [1/5] auth/login 재이동: https://www.tistory.com/auth/login
+[09:56:46] [1/5] 현재 URL: https://www.tistory.com/auth/login
+[09:56:46] [2/5] '카카오계정으로 로그인' 버튼 클릭...
+[09:56:51] [2/5] 카카오 페이지 이동됨 (https://accounts.kakao.com/login/simple/?continue=https%3A%2F%2Fkauth.kakao.com%2Foauth%2Fauthorize%3Fclient_id%3D3e6ddd834b023f24221217e370daed18%26prompt%3Dselect_account%26redirect_uri%3Dhttps%253A%252F%252Fwww.tistory.com%252Fauth%252Fkakao%252Fredirect%26response_type%3Dcode%26auth_tran_id%3Dpx1qj6nx6t3e6ddd834b023f24221217e370daed18mo522sdg%26ka%3Dsdk%252F1.43.6%2520os%252Fjavascript%2520sdk_type%252Fjavascript%2520lang%252Fko-KR%2520device%252FMacIntel%2520origin%252Fhttps%25253A%25252F%25252Fwww.tistory.com%26is_popup%3Dfalse%26through_account%3Dtrue&talk_login=#simpleLogin)
+[09:56:51] [3/5] 카카오 계정 선택 중: isag27511...
+[09:56:51] [3/5] 계정 발견 — 클릭: isag27511
+[09:56:56] [4/5] 티스토리 리다이렉트 대기 중...
+[09:56:56] [4/5] 티스토리 로그인 성공!
+[09:56:56] [5/5] goodisak 블로그로 이동 중...
+[09:57:01] [완료] goodisak 블로그 진입 완료! (https://goodisak.tistory.com/manage)
+[09:57:05] [순환] goodisak 글 작성 시작...
+[09:57:05] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:94482) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[09:57:08] [포스팅] 에디터 이동: https://goodisak.tistory.com/manage/newpost
+[09:57:17] [포스팅] 에디터 로드 완료 (셀렉터: #post-title-inp)
+[09:57:17] [포스팅] 제목 입력: 블루투스이어폰추천 2026 예산별 선택 방법과 놓치기 ...
+[09:57:21] [포스팅] 본문 입력 중...
+[09:57:23] [포스팅] 이미지 1 파일 없음 — 스킵
+[09:57:27] [포스팅] 표 삽입 완료
+[09:57:30] [포스팅] 서식 메뉴 열림
+[09:57:31] [포스팅] 서식 애드센스 삽입 완료 ('애드센스코드')
+[09:57:32] [포스팅] 이미지 2 파일 없음 — 스킵
+[09:57:40] [포스팅] 서식 메뉴 열림
+[09:57:41] [포스팅] 서식 애드센스 삽입 완료 ('애드센스코드')
+[09:57:42] [포스팅] 이미지 3 파일 없음 — 스킵
+[09:57:51] [포스팅] 본문 입력 완료 (글자크기 size19 적용)
+[09:57:51] [포스팅] 태그 입력: ['블루투스이어폰추천', '무선이어폰추천', '블루투스이어폰2026', '이어폰코덱', 'LDAC이어폰', 'ANC이어폰', '노이즈캔슬링이어폰', '운동용이어폰', '재택근무이어폰', '이어폰방수등급', '멀티포인트이어폰', '이어팁교체', '블루투스5.3', 'aptX이어폰', '무선이어폰가격대']
+[09:58:01] [포스팅] 태그 10개 입력 완료
+[09:58:01] [포스팅] 카테고리 없음 — 스킵 (goodisak)
+[09:58:02] [내부링크] goodisak: 3개 삽입 완료
+[09:58:02] [포스팅] 임시저장 중...
+[09:58:04] [포스팅] 임시저장 완료: 블루투스이어폰추천 2026 예산별 선택 방법과 놓치기 ...
+[09:58:07] [순환] goodisak 로그아웃 스킵 (결과 확인 후 수동 로그아웃)
+[09:58:09] [순환] goodisak 완료 (성공)
+[09:58:09] [파이프라인] goodisak / '블루투스이어폰추천' 임시저장완료 ✅
+Python-dotenv could not parse statement starting at line 1
+[10:00:38] [노션] 상품 발견: 프리티케어 물걸레 먼지비움 로봇청소기 LDS 센서 지도 그리기 기능 포함 | 상품: https://www.coupang.com/vp/products/9210 | 제휴: https://link.coupang.com/a/eqppoQ
+[10:00:38] [노션] 상품 발견: 펩시 제로슈거 라임향 제로카페인 무라벨, 300ml, 20개 | 상품: https://www.coupang.com/vp/products/8700 | 제휴: https://link.coupang.com/a/ek0VHY
+[10:00:38] [노션] 상품 발견: 연화삼월 모기장 | 상품: https://www.coupang.com/vp/products/9452 | 제휴: https://link.coupang.com/a/ek01RF
+[10:00:38] [노션] 상품 발견: 퍼실 파워젤 딥클린 라벤더 코튼 프레쉬 일반용 리필 2.1L, 1개 | 상품: https://www.coupang.com/vp/products/8374 | 제휴: https://link.coupang.com/a/eqpleP
+[10:00:38] [노션] 상품 발견: 애슐리 주먹밥 맛보기세트 10개입 (김치콘치즈100g x 2개+버터와규1 | 상품: https://www.coupang.com/vp/products/8760 | 제휴: https://link.coupang.com/a/eqpmzf
+[10:00:38] [노션] 상품 발견: 하이뮨 프로틴 밸런스 드링크믹스 RTD, 190ml, 24개 | 상품: https://www.coupang.com/vp/products/9057 | 제휴: https://link.coupang.com/a/emNgAn
+[10:00:38] [노션] 상품 발견: 홈플래닛 스팀다리미 MW-801 | 상품: https://www.coupang.com/vp/products/3100 | 제휴: https://link.coupang.com/a/eqo55w
+[10:00:38] [노션] 상품 발견: 비타할로 무선 구강세정기 F5025 | 상품: https://www.coupang.com/vp/products/4702 | 제휴: https://link.coupang.com/a/eqo7Qi
+[10:00:38] [노션] 상품 발견: 오아 클린이워터B 구강세정기 | 상품: https://www.coupang.com/vp/products/2111 | 제휴: https://link.coupang.com/a/eqo8uy
+[10:00:38] [노션] 상품 발견: 블루밍 방수비데 IPX500A PLUS | 상품: https://www.coupang.com/vp/products/5455 | 제휴: https://link.coupang.com/a/eqpfg0
+[10:00:38] [노션] 상품 발견: 크리썸 칫솔 살균기 CRE-A001 | 상품: https://www.coupang.com/vp/products/6746 | 제휴: https://link.coupang.com/a/eqpfMM
+[10:00:38] [노션] 상품 발견: 오랄비 전동칫솔 D100 | 상품: https://www.coupang.com/vp/products/8549 | 제휴: https://link.coupang.com/a/eqpges
+[10:00:38] [노션] 상품 발견: 필립스 스팀다리미 STH1010 | 상품: https://www.coupang.com/vp/products/6528 | 제휴: https://link.coupang.com/a/eqpgzm
+[10:00:38] [노션] 상품 발견: 헤이슨 워터 구강세정기 | 상품: https://www.coupang.com/vp/products/8017 | 제휴: https://link.coupang.com/a/eqpgYH
+[10:00:38] [노션] 상품 발견: 한경희 보풀제거기 HAAN-FS3000 | 상품: https://www.coupang.com/vp/products/8502 | 제휴: https://link.coupang.com/a/eqphsG
+[10:00:38] [노션] 상품 발견: 오늘비데 방수비데 WSB-210 | 상품: https://www.coupang.com/vp/products/7650 | 제휴: https://link.coupang.com/a/eqphKR
+[10:00:38] [me1091] 카테고리 다양성 선택: 오랄비 전동칫솔 D100 (카테고리: 오랄비 전동)
+[10:00:38] [me1091] 카테고리 다양성 선택: 오랄비 전동칫솔 D100 (카테고리: 오랄비 전동)
+[10:00:38] [me1091] 처리: 오랄비 전동칫솔 D100 | 각도: 바쁜직장인
+[10:00:38] [me1091] 처리: 오랄비 전동칫솔 D100 | 각도: 바쁜직장인
+[10:00:39] [쿠팡] HTTP 파싱 오류: HTTP Error 403: Forbidden
+[10:00:39] [쿠팡] HTTP 파싱 오류: HTTP Error 403: Forbidden
+[10:00:39] [쿠팡] Playwright CDP 접속: https://www.coupang.com/vp/products/8549496709
+[10:00:39] [쿠팡] Playwright CDP 접속: https://www.coupang.com/vp/products/8549496709
+(node:94716) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:00:52] [쿠팡] 상품 이미지 URL: 20개
+[10:00:52] [쿠팡] 상품 이미지 URL: 20개
+[10:00:54] [쿠팡] 상품평 탭 클릭 완료
+[10:00:54] [쿠팡] 상품평 탭 클릭 완료
+[10:00:56] [쿠팡] 리뷰 이미지 URL: 99개
+[10:00:56] [쿠팡] 리뷰 이미지 URL: 99개
+[10:00:56] [쿠팡] 리뷰 텍스트: 9개
+[10:00:56] [쿠팡] 리뷰 텍스트: 9개
+[10:00:57] [쿠팡] 수집 완료 — 상품이미지:5장, 리뷰이미지:10장, 리뷰:9개
+[10:00:57] [쿠팡] 수집 완료 — 상품이미지:5장, 리뷰이미지:10장, 리뷰:9개
+[10:00:57] [이미지] 쿠팡 참고 이미지 3장 → Claude 분석 → Gemini 재생성
+[10:00:57] [Claude] 이미지 분석 → Gemini 프롬프트 요청: review_1.jpg
+[10:00:57] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:94731) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:01:11] [Claude] 이미지 첨부 완료: review_1.jpg
+[10:01:13] [Claude] 이미지+질문 전송, 응답 대기...
+[10:01:29] [Claude] 응답 완료 (1005자, 5초 안정)
+[10:01:29] [Claude] 응답 추출: 1005자 | A photorealistic lifestyle photograph of an Oral-B D100 electric toothbrush plac...
+[10:01:29] [Claude] 생성된 Gemini 프롬프트: A photorealistic lifestyle photograph of an Oral-B D100 electric toothbrush placed on a textured gre...
+[10:01:29] [이미지] [1] 참고: review_1.jpg | 프롬프트: A photorealistic lifestyle photograph of an Oral-B D100 elec...
+[10:01:29] [Claude] 이미지 분석 → Gemini 프롬프트 요청: review_5.jpg
+[10:01:29] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:94765) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:01:45] [Claude] 이미지 첨부 실패 (텍스트만 전송): Timeout 8000ms exceeded while waiting for event "filechooser"
+=========================== logs ===========================
+waiting for event "filechooser"
+============================================================
+[10:01:47] [Claude] 이미지+질문 전송, 응답 대기...
+[10:02:03] [Claude] 대기 중... 15초 (1369자)
+[10:02:05] [Claude] 응답 완료 (1369자, 5초 안정)
+[10:02:05] [Claude] 응답 추출: 1369자 | A photorealistic lifestyle photograph of an Oral-B D100 electric toothbrush casu...
+[10:02:05] [Claude] 생성된 Gemini 프롬프트: A photorealistic lifestyle photograph of an Oral-B D100 electric toothbrush casually placed on the e...
+[10:02:05] [이미지] [2] 참고: review_5.jpg | 프롬프트: A photorealistic lifestyle photograph of an Oral-B D100 elec...
+[10:02:05] [Claude] 이미지 분석 → Gemini 프롬프트 요청: product_1.jpg
+[10:02:05] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:94818) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:02:16] [Claude] 이미지 첨부 완료: product_1.jpg
+[10:02:18] [Claude] 이미지+질문 전송, 응답 대기...
+[10:02:34] [Claude] 응답 완료 (1091자, 5초 안정)
+[10:02:34] [Claude] 응답 추출: 1091자 | A photorealistic lifestyle photograph of an Oral-B D100 electric toothbrush rest...
+[10:02:34] [Claude] 생성된 Gemini 프롬프트: A photorealistic lifestyle photograph of an Oral-B D100 electric toothbrush resting on a clean white...
+[10:02:34] [이미지] [3] 참고: product_1.jpg | 프롬프트: A photorealistic lifestyle photograph of an Oral-B D100 elec...
+[10:02:34] [Router] Naver: Gemini 시도 (1/3)
+[10:02:34] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:94837) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:02:37] [이미지 1] 생성 시작: A photorealistic lifestyle photograph of an Oral-B...
+[10:02:43] [이미지] Gemini 새 세션 로드 완료
+[10:02:43] [이미지] 참고 이미지 첨부: review_1.jpg
+[10:02:46] [이미지] 참고 이미지 첨부 완료
+[10:02:46] [이미지] '이미지 만들기' 버튼 클릭
+[10:02:49] [이미지] 프롬프트 전송, 네트워크 캡처 대기...
+[10:03:06] [이미지] 15초 대기 중... (캡처: 0건)
+[10:03:21] [이미지] 30초 대기 중... (캡처: 0건)
+[10:03:23] [이미지] 스크린샷 캡처 (40KB, 320×408)
+[10:03:24] [이미지] 생성 완료 (32초, 네트워크 1건 캡처)
+[10:03:24] [이미지] 다운로드 버튼 방식 시도...
+[10:03:24] [이미지] 네트워크 캡처 폴백: 321x408, 40KB
+[10:03:24] [이미지] JPG 저장 완료(네트워크): me1091-a-photorealistic-lifestyle-pho-1.jpg
+[10:03:24] [이미지 1] 저장 완료: /Users/hana/Downloads/blog-automation-v2/images/me1091/me1091-a-photorealistic-lifestyle-pho-1.jpg
+[10:03:24] [이미지 2] 생성 시작: A photorealistic lifestyle photograph of an Oral-B...
+[10:03:26] [이미지] 참고 이미지 첨부: review_5.jpg
+[10:03:29] [이미지] 참고 이미지 첨부 완료
+[10:03:44] [이미지] '이미지 만들기' 버튼 클릭 실패 (무시): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("button[aria-label*=\"이미지 만들기, 버튼\"]").first to be visible
+
+[10:03:45] [이미지] 프롬프트 전송, 네트워크 캡처 대기...
+[10:04:02] [이미지] 15초 대기 중... (캡처: 0건)
+[10:04:18] [이미지] 30초 대기 중... (캡처: 0건)
+[10:04:19] [이미지] 스크린샷 캡처 (69KB, 456×581)
+[10:04:20] [이미지] 생성 완료 (32초, 네트워크 1건 캡처)
+[10:04:20] [이미지] 다운로드 버튼 방식 시도...
+[10:04:35] [이미지] 다운로드 방식 저장 완료: me1091-a-photorealistic-lifestyle-pho-2.jpg (1824x2326)
+[10:04:35] [이미지 2] 저장 완료: /Users/hana/Downloads/blog-automation-v2/images/me1091/me1091-a-photorealistic-lifestyle-pho-2.jpg
+[10:04:35] [이미지 3] 생성 시작: A photorealistic lifestyle photograph of an Oral-B...
+[10:04:37] [이미지] 참고 이미지 첨부: product_1.jpg
+[10:04:40] [이미지] 참고 이미지 첨부 완료
+[10:04:55] [이미지] '이미지 만들기' 버튼 클릭 실패 (무시): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("button[aria-label*=\"이미지 만들기, 버튼\"]").first to be visible
+
+[10:04:57] [이미지] 프롬프트 전송, 네트워크 캡처 대기...
+[10:05:13] [이미지] 15초 대기 중... (캡처: 0건)
+[10:05:29] [이미지] 30초 대기 중... (캡처: 0건)
+[10:05:31] [이미지] 스크린샷 캡처 (48KB, 456×655)
+[10:05:32] [이미지] 생성 완료 (32초, 네트워크 1건 캡처)
+[10:05:32] [이미지] 다운로드 버튼 방식 시도...
+[10:05:44] [이미지] 다운로드 방식 저장 완료: me1091-a-photorealistic-lifestyle-pho-3.jpg (1824x2326)
+[10:05:44] [이미지 3] 저장 완료: /Users/hana/Downloads/blog-automation-v2/images/me1091/me1091-a-photorealistic-lifestyle-pho-3.jpg
+[10:05:44] [Router] Gemini 성공: 3장
+[10:05:44] [이미지] Gemini 재생성 완료: 3장
+[10:05:44] [Claude] me1091 글 생성 시작: 오랄비 전동칫솔 D100 (각도: 바쁜직장인)
+[10:05:44] [Direct] blog=me1091, keyword='오랄비 전동칫솔 D100', 프롬프트=15192자
+[10:05:44] [Direct] Claude Code subprocess 직접 호출...
+[10:08:46] [Direct] ✅ 응답 3296자
+[10:08:46] [Claude] 제목: 맞벌이 직장인 아침 루틴 3분 줄이는 방법 2026
+[10:08:46] [Claude] 본문: 2056자, 태그: 14개
+[10:08:46] 
+==================================================
+[10:08:46] 
+==================================================
+[10:08:46] [순환] me1091 (naver) 시작
+[10:08:46] [순환] me1091 (naver) 시작
+[10:08:46] ==================================================
+[10:08:46] ==================================================
+[10:08:46] [순환] me1091 로그인...
+[10:08:46] [순환] me1091 로그인...
+[10:08:46] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+[10:08:46] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:95136) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:08:52] [1/4] 네이버 로그인 페이지 접속 중...
+[10:08:52] [1/4] 네이버 로그인 페이지 접속 중...
+[10:08:55] [1/4] 로그인 페이지 로드됨 (https://nid.naver.com/nidlogin.login)
+[10:08:55] [1/4] 로그인 페이지 로드됨 (https://nid.naver.com/nidlogin.login)
+[10:08:55] [2/4] 자동완성 계정 확인 중...
+[10:08:55] [2/4] 자동완성 계정 확인 중...
+[10:08:57] [2/4] 자동완성된 계정: me1091
+[10:08:57] [2/4] 자동완성된 계정: me1091
+[10:08:57] [3/5] 비밀번호 자동완성 트리거... (시도 1/2)
+[10:08:57] [3/5] 비밀번호 자동완성 트리거... (시도 1/2)
+[10:08:58] [3/5] 로그인 버튼 클릭... (시도 1/2)
+[10:08:58] [3/5] 로그인 버튼 클릭... (시도 1/2)
+[10:09:02] [4/4] 로그인 완료 대기 중...
+[10:09:02] [4/4] 로그인 완료 대기 중...
+[10:09:02] [완료] 네이버 로그인 성공! (https://www.naver.com/)
+[10:09:02] [완료] 네이버 로그인 성공! (https://www.naver.com/)
+[10:09:06] [순환] me1091 글 작성 시작...
+[10:09:06] [순환] me1091 글 작성 시작...
+[10:09:06] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+[10:09:06] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:95154) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:09:09] [포스팅] 네이버 에디터 이동: https://blog.naver.com/me1091/postwrite
+[10:09:09] [포스팅] 네이버 에디터 이동: https://blog.naver.com/me1091/postwrite
+[10:09:18] [포스팅] 제목 입력 중: "맞벌이 직장인 아침 루틴 3분 줄이는 방법 2026" (28자)
+[10:09:18] [포스팅] 제목 입력 중: "맞벌이 직장인 아침 루틴 3분 줄이는 방법 2026" (28자)
+[10:09:19] [포스팅] 제목 필드에 기존 텍스트 있음: "제목" — 지우고 다시 입력
+[10:09:19] [포스팅] 제목 필드에 기존 텍스트 있음: "제목" — 지우고 다시 입력
+[10:09:20] [포스팅] 제목 입력 확인: "맞벌이 직장인 아침 루틴 3분 줄이는 방법 2026"
+[10:09:20] [포스팅] 제목 입력 확인: "맞벌이 직장인 아침 루틴 3분 줄이는 방법 2026"
+[10:09:21] [포스팅] 본문 영역 클릭...
+[10:09:21] [포스팅] 본문 영역 클릭...
+[10:09:23] [포스팅] 기존 본문 컴포넌트 2개 감지 — 전체 삭제 후 새로 작성
+[10:09:23] [포스팅] 기존 본문 컴포넌트 2개 감지 — 전체 삭제 후 새로 작성
+[10:09:28] [포스팅] 이미지 1 업로드: me1091-a-photorealistic-lifestyle-pho-1.jpg
+[10:09:28] [포스팅] 이미지 1 업로드: me1091-a-photorealistic-lifestyle-pho-1.jpg
+[10:09:36] [포스팅] 이미지 alt 설정: 오랄비 전동칫솔 D100 실제 사용 모습 1 (img 수: 1)
+[10:09:36] [포스팅] 이미지 alt 설정: 오랄비 전동칫솔 D100 실제 사용 모습 1 (img 수: 1)
+[10:09:37] [포스팅] 이미지 1 완료
+[10:09:37] [포스팅] 이미지 1 완료
+[10:09:38] [포스팅] 이미지 2 업로드: me1091-a-photorealistic-lifestyle-pho-2.jpg
+[10:09:38] [포스팅] 이미지 2 업로드: me1091-a-photorealistic-lifestyle-pho-2.jpg
+[10:09:50] [포스팅] 이미지 alt 설정: 오랄비 전동칫솔 D100 실제 사용 모습 2 (img 수: 2)
+[10:09:50] [포스팅] 이미지 alt 설정: 오랄비 전동칫솔 D100 실제 사용 모습 2 (img 수: 2)
+[10:09:50] [포스팅] 이미지 2 완료
+[10:09:50] [포스팅] 이미지 2 완료
+[10:09:52] [포스팅] 이미지 3 업로드: me1091-a-photorealistic-lifestyle-pho-3.jpg
+[10:09:52] [포스팅] 이미지 3 업로드: me1091-a-photorealistic-lifestyle-pho-3.jpg
+[10:10:07] [포스팅] 이미지 alt 설정: 오랄비 전동칫솔 D100 실제 사용 모습 3 (img 수: 3)
+[10:10:07] [포스팅] 이미지 alt 설정: 오랄비 전동칫솔 D100 실제 사용 모습 3 (img 수: 3)
+[10:10:07] [포스팅] 이미지 3 완료
+[10:10:07] [포스팅] 이미지 3 완료
+[10:10:17] [포스팅] 에디터 실제 입력 글자수: 1957자
+[10:10:17] [포스팅] 에디터 실제 입력 글자수: 1957자
+[10:10:17] [포스팅] 본문 입력 완료
+[10:10:17] [포스팅] 본문 입력 완료
+[10:10:17] [포스팅] 발행 버튼 클릭...
+[10:10:17] [포스팅] 발행 버튼 클릭...
+[10:10:20] [포스팅] 태그 입력 중: ['맞벌이아침루틴', '직장인아침루틴', '아침루틴효율화', '맞벌이생활', '직장인생활', '아침시간절약', '전동칫솔', '전동칫솔추천', '구강건강', '내돈내산', '맞벌이부부', '아침준비', '퇴근후살림', '생활효율화']
+[10:10:20] [포스팅] 태그 입력 중: ['맞벌이아침루틴', '직장인아침루틴', '아침루틴효율화', '맞벌이생활', '직장인생활', '아침시간절약', '전동칫솔', '전동칫솔추천', '구강건강', '내돈내산', '맞벌이부부', '아침준비', '퇴근후살림', '생활효율화']
+[10:10:37] [포스팅] 네이버 대표이미지 설정 완료 ([class*="thumbnail"] img)
+[10:10:37] [포스팅] 네이버 대표이미지 설정 완료 ([class*="thumbnail"] img)
+[10:10:37] [포스팅] 발행 팝업에서 발행 버튼 클릭...
+[10:10:37] [포스팅] 발행 팝업에서 발행 버튼 클릭...
+[10:10:40] [포스팅] 네이버 발행 완료: 맞벌이 직장인 아침 루틴 3분 줄이는 방법 2026... (버튼: 확인)
+[10:10:40] [포스팅] 네이버 발행 완료: 맞벌이 직장인 아침 루틴 3분 줄이는 방법 2026... (버튼: 확인)
+[10:10:43] [순환] me1091 로그아웃 스킵 (결과 확인 후 수동 로그아웃)
+[10:10:43] [순환] me1091 로그아웃 스킵 (결과 확인 후 수동 로그아웃)
+[10:10:44] [순환] me1091 완료 (성공)
+[10:10:44] [순환] me1091 완료 (성공)
+[10:10:44] [me1091] ✅ 임시저장 완료: 맞벌이 직장인 아침 루틴 3분 줄이는 방법 2026 (각도: 바쁜직장인)
+[10:10:44] [me1091] ✅ 임시저장 완료: 맞벌이 직장인 아침 루틴 3분 줄이는 방법 2026 (각도: 바쁜직장인)
+[10:12:41] [phn0502] 키워드: 베테랑2 결말 해석 총정리
+[10:12:41] [파이프라인] phn0502 / '베테랑2 결말 해석 총정리' — 유사문서 체크
+[10:12:41] [유사문서] 핵심 단어: ['베테랑2', '결말', '해석']
+[10:12:42] [유사문서] Tistory RSS 51개 제목 수집
+[10:12:42] [유사문서] Tistory RSS 확인 완료 — 중복 없음 (최근 20개)
+[10:12:42] [유사문서] Tistory 검색 확인 완료 — 중복 없음
+[10:12:42] [유사문서] 중복 없음 — 진행 가능
+[10:12:42] [파이프라인] phn0502 / '베테랑2 결말 해석 총정리' — Claude.ai 글 생성 시작
+[10:12:42] [Direct] blog=phn0502, keyword='베테랑2 결말 해석 총정리', 프롬프트=3239자
+[10:12:42] [Direct] Claude Code subprocess 직접 호출...
+[10:17:42] [Direct] 타임아웃 (5분) — 재시도
+[10:17:42] [Direct] === 재시도 1/2 ===
+[10:18:58] [Direct] ✅ 응답 3229자
+[10:18:58] [파싱] 이미지 섹션 발견 (길이=866자), 내용: '[이미지1]\n- Gemini프롬프트: A cinematic noir-style scene of a Korean detective in a dark urban alleyway at night, rain-soaked streets reflecting neon lights, tense atmosphere, film poster aesthetic, no real actors\n- 파일명: veteran2-ending-analysis-detective.jpg\n- alt: 베테랑2 결말 해석 - 비 내리는 밤 도심 추격 장면 분위기\n\n[이미지2'
+[10:18:58] [파싱] 제목: "베테랑2 결말 해석 - 박선우의 선택과 열린 결말이 남긴 것" (33자)
+[10:18:58] [파싱] 본문: 1504자
+[10:18:58] [파싱] 태그: ['베테랑2', '베테랑2결말', '베테랑2해석', '박선우결말', '정해인베테랑2', '황정민베테랑2', '류승완감독', '한국영화2024', '열린결말영화', '베테랑속편', '범죄영화추천', '한국범죄영화', '영화결말분석', 'OTT추천영화', '넷플릭스한국영화'] (15개)
+[10:18:58] [파싱] 이미지: 3개
+[10:18:58] [파싱] 메타: "베테랑2 결말에서 박선우의 마지막 선택은 도주인가 자기 귀결인가. 열린 결말의 의도와 서도철이 끝내 이기지 " (72자)
+[10:18:58] [파싱] 본문 미리보기: 영화가 끝나고 나서도 뭔가 씁쓸한 느낌이 가시지 않는다면, 그건 결말이 허술해서가 아니다. 베테랑2는 관객에게 불편한 질문을 던지고 의도적으로 ...
+[10:18:58] [검수] ⚠ 본문 짧음 (1504자 < 3000자) — 재생성 1회 시도
+[10:18:58] [Direct] blog=phn0502, keyword='베테랑2 결말 해석 총정리', 프롬프트=3239자
+[10:18:58] [Direct] Claude Code subprocess 직접 호출...
+[10:20:19] [Direct] ✅ 응답 3113자
+[10:20:19] [검수] 재생성 결과 더 짧음 — 원본 유지
+[10:20:19] [검수] ⚠ 본문 짧음 (1504자 < 2000자) — 임시저장 후 클로드코드 보완 예정
+[10:20:19] [검수] 글 품질 기록 — 본문 1504자, 태그 15개 → 임시저장 진행
+[10:20:19] [버퍼] phn0502 텍스트 저장 완료 ('베테랑2 결말 해석 - 박선우의 선택과 열린 결말이 남긴 것')
+[10:20:19] [파이프라인] H2 소제목 0개 → 본문 이미지 1개 목표
+[10:20:19] [파이프라인] 이미지 생성 시작 (blog=phn0502, skip_webp=False)
+[10:20:19] [Router] Bing Image Creator 시도: 3장
+(node:95680) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:20:33] [Bing] 4장 모드: 1회 요청으로 3장 생성
+[10:20:48] [Bing] 기존 OIG 63개, 이전세션 ID 500개 exclude
+[10:20:53] [Bing] 프롬프트 전송 (4장 모드): A cinematic noir-style scene of a Korean detective
+[10:20:54] [Router] Bing 오류: Page.wait_for_timeout: Target page, context or browser has been closed
+[10:20:54] [Router] Bing 전체 실패 → Pollinations 폴백
+[10:20:54] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[10:21:54] [Pollinations] 실패: The read operation timed out
+[10:21:55] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[10:21:55] [파이프라인] 본문 이미지 0개 생성 완료
+[10:21:55] [파이프라인] ⚠ 이미지 0개 < 최소 1개 — Pollinations 폴백 보충
+[10:21:56] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[10:21:56] [파이프라인] 이미지 보충 후 총 0개
+[10:21:56] [검수] ⚠ 이미지 부족 (0개 < 1개) — 임시저장 후 클로드코드 보완 예정
+[10:21:56] [파이프라인] 썸네일 생성 중...
+(node:95751) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:22:07] [Bing] 4장 모드: 1회 요청으로 1장 생성
+[10:22:22] [Bing] 기존 OIG 63개, 이전세션 ID 500개 exclude
+[10:22:28] [Bing] 프롬프트 전송 (4장 모드): 베테랑2 결말 해석 총정리 representative thumbnail image, wid
+[10:22:34] [Bing] 로딩 감지됨, 4장 대기 중...
+[10:23:55] [Bing] 이미지 컨테이너 감지 실패
+[10:23:55] [Bing] [1] 이미지 부족 — 추가 생성
+[10:23:59] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[10:24:05] [Bing] 생성 버튼 클릭
+[10:24:05] [Bing] 프롬프트 전송: 베테랑2 결말 해석 총정리 representative thumbnail image, wid
+[10:24:11] [Bing] 로딩 감지됨, 생성 대기 중...
+[10:25:12] [Bing] 로딩 60초 초과
+[10:25:37] [Bing] 이미지 컨테이너 감지 실패
+[10:25:38] [Pollinations] 저장 완료: thumb-베테랑2-결말-해석-총정리-61716.jpg (39KB)
+[10:25:38] [썸네일] Pollinations 생성 완료
+[10:25:39] [썸네일] phn0502 오버레이 완료: thumb-베테랑2-결말-해석-총정리-61716.jpg
+[10:25:39] [썸네일] 오버레이 적용 완료: thumb-베테랑2-결말-해석-총정리-61716.jpg
+[10:25:39] [파이프라인] 썸네일 준비 완료: /Users/hana/Downloads/blog-automation-v2/images/phn0502/thumb-베테랑2-결말-해석-총정리-61716.jpg
+[10:25:39] [파이프라인] 포스팅 시작: phn0502
+[10:25:39] 
+==================================================
+[10:25:39] [순환] phn0502 (tistory) 시작
+[10:25:39] ==================================================
+[10:25:39] [순환] phn0502 로그인...
+[10:25:39] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:95965) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:25:43] [1/5] 티스토리 로그인 페이지 이동 중...
+[10:25:48] [1/5] 로그인 리다이렉트됨 (https://www.tistory.com/) — phn0502 manage 진입 시도...
+[10:25:52] [1/5] manage 접근 불가 (https://phn0502.tistory.com/) — Tistory 세션 초기화 후 재로그인
+[10:25:56] [1/5] Tistory 로그아웃 완료 (https://www.tistory.com/)
+[10:26:00] [1/5] auth/login 재이동: https://www.tistory.com/auth/login
+[10:26:00] [1/5] 현재 URL: https://www.tistory.com/auth/login
+[10:26:00] [2/5] '카카오계정으로 로그인' 버튼 클릭...
+[10:26:04] [2/5] 카카오 페이지 이동됨 (https://accounts.kakao.com/login/simple/?continue=https%3A%2F%2Fkauth.kakao.com%2Foauth%2Fauthorize%3Fclient_id%3D3e6ddd834b023f24221217e370daed18%26prompt%3Dselect_account%26redirect_uri%3Dhttps%253A%252F%252Fwww.tistory.com%252Fauth%252Fkakao%252Fredirect%26response_type%3Dcode%26auth_tran_id%3D8dkahb1as643e6ddd834b023f24221217e370daed18mo534dud%26ka%3Dsdk%252F1.43.6%2520os%252Fjavascript%2520sdk_type%252Fjavascript%2520lang%252Fko-KR%2520device%252FMacIntel%2520origin%252Fhttps%25253A%25252F%25252Fwww.tistory.com%26is_popup%3Dfalse%26through_account%3Dtrue&talk_login=#simpleLogin)
+[10:26:04] [3/5] 카카오 계정 선택 중: baremi542...
+[10:26:04] [3/5] 계정 발견 — 클릭: baremi542
+[10:26:08] [4/5] 티스토리 리다이렉트 대기 중...
+[10:26:08] [4/5] 티스토리 로그인 성공!
+[10:26:08] [5/5] phn0502 블로그로 이동 중...
+[10:26:12] [완료] phn0502 블로그 진입 완료! (https://phn0502.tistory.com/manage)
+[10:26:17] [순환] phn0502 글 작성 시작...
+[10:26:17] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:96004) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:26:21] [포스팅] 에디터 이동: https://phn0502.tistory.com/manage/newpost
+[10:26:29] [포스팅] 에디터 로드 완료 (셀렉터: #post-title-inp)
+[10:26:29] [포스팅] 제목 입력: 베테랑2 결말 해석 - 박선우의 선택과 열린 결말이 남...
+[10:26:34] [포스팅] 본문 입력 중...
+[10:26:35] [포스팅] 썸네일 업로드 중...
+[10:26:39] [이미지업로드] 업로드 완료 (시도 1)
+[10:26:39] [이미지업로드] 로컬 파일 삭제: /Users/hana/Downloads/blog-automation-v2/images/phn0502/thumb-베테랑2-결말-해석-총정리-61716.jpg
+[10:26:42] [포스팅] 썸네일 설정 완료 (본문에서 제거)
+[10:26:43] [포스팅] 이미지 1 파일 없음 — 스킵
+[10:26:44] [포스팅] 이미지 2 파일 없음 — 스킵
+[10:26:46] [포스팅] 이미지 3 파일 없음 — 스킵
+[10:26:52] [포스팅] 서식 메뉴 열림
+[10:26:53] [포스팅] 서식 애드센스 삽입 완료 ('애드센스')
+[10:27:00] [포스팅] 본문 입력 완료 (글자크기 size19 적용)
+[10:27:00] [포스팅] 태그 입력: ['베테랑2', '베테랑2결말', '베테랑2해석', '박선우결말', '정해인베테랑2', '황정민베테랑2', '류승완감독', '한국영화2024', '열린결말영화', '베테랑속편', '범죄영화추천', '한국범죄영화', '영화결말분석', 'OTT추천영화', '넷플릭스한국영화']
+[10:27:10] [포스팅] 태그 10개 입력 완료
+[10:27:10] [포스팅] 카테고리 선택 (phn0502): 영화
+[10:27:11] [포스팅] 카테고리 선택 완료: 카테고리:영화
+[10:27:12] [내부링크] phn0502: 3개 삽입 완료
+[10:27:12] [포스팅] 임시저장 중...
+[10:27:14] [포스팅] 임시저장 완료: 베테랑2 결말 해석 - 박선우의 선택과 열린 결말이 남...
+[10:27:16] [순환] phn0502 로그아웃 스킵 (결과 확인 후 수동 로그아웃)
+[10:27:18] [순환] phn0502 완료 (성공)
+[10:27:18] [파이프라인] phn0502 / '베테랑2 결말 해석 총정리' 임시저장완료 ✅
+[10:29:02] [blogspot_travel] 키워드: 가평 쁘띠프랑스 주차 입장료 근처 맛집
+[10:29:02] [blogspot_travel] 글 생성 시작: '가평 쁘띠프랑스 주차 입장료 근처 맛집'
+[10:29:02] [Direct] blog=blogspot_travel, keyword='가평 쁘띠프랑스 주차 입장료 근처 맛집', 프롬프트=4864자
+[10:29:02] [Direct] Claude Code subprocess 직접 호출...
+[10:31:50] [Direct] ✅ 응답 4172자
+[10:31:50] [blogspot_travel] 이미지 4개 생성 시작
+[10:31:50] [Router] Bing Image Creator 시도: 4장
+(node:96364) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:32:02] [Bing] 4장 모드: 1회 요청으로 4장 생성
+[10:32:18] [Bing] 기존 OIG 63개, 이전세션 ID 500개 exclude
+[10:32:23] [Bing] 프롬프트 전송 (4장 모드): A scenic drive along a river road in Gapyeong, Sou
+[10:32:29] [Bing] 로딩 감지됨, 4장 대기 중...
+[10:33:43] [Bing] 이미지 컨테이너 감지 실패
+[10:33:43] [Bing] [1] 이미지 부족 — 추가 생성
+[10:33:47] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[10:33:53] [Bing] 생성 버튼 클릭
+[10:33:53] [Bing] 프롬프트 전송: A scenic drive along a river road in Gapyeong, Sou
+[10:33:59] [Bing] 로딩 감지됨, 생성 대기 중...
+[10:34:31] [Bing] 로딩 완료
+[10:34:57] [Bing] 이미지 컨테이너 감지 실패
+[10:34:57] [Bing] [2] 이미지 부족 — 추가 생성
+[10:35:01] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[10:35:10] [Bing] 생성 버튼 클릭
+[10:35:10] [Bing] 프롬프트 전송: Entrance of a French-themed village park in Korea,
+[10:35:16] [Bing] 로딩 감지됨, 생성 대기 중...
+[10:35:39] [Bing] 로딩 완료
+[10:36:08] [Bing] 이미지 컨테이너 감지 실패
+[10:36:08] [Bing] [3] 이미지 부족 — 추가 생성
+[10:36:12] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[10:36:17] [Bing] 생성 버튼 클릭
+[10:36:17] [Bing] 프롬프트 전송: A cozy Korean riverside restaurant near Cheongpyeo
+[10:36:23] [Bing] 로딩 감지됨, 생성 대기 중...
+[10:36:54] [Bing] 로딩 완료
+[10:37:20] [Bing] 이미지 컨테이너 감지 실패
+[10:37:20] [Bing] [4] 이미지 부족 — 추가 생성
+[10:37:24] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[10:37:29] [Bing] 생성 버튼 클릭
+[10:37:29] [Bing] 프롬프트 전송: A scenic overlook viewpoint at a French village th
+[10:37:35] [Bing] 로딩 감지됨, 생성 대기 중...
+[10:38:02] [Bing] 로딩 완료
+[10:38:27] [Bing] 이미지 컨테이너 감지 실패
+[10:38:27] [Router] Bing 전체 실패 → Pollinations 폴백
+[10:38:29] [Pollinations] 저장 완료: blogspot_travel-가평-쁘띠프랑스-가는-길-북한강-드라이브-코스-1.webp (71KB)
+[10:38:29] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[10:38:30] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[10:38:31] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[10:38:31] [blogspot_travel] 이미지 1개 생성 완료
+[10:38:31] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[10:38:32] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[10:38:32] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[10:38:32] [blogspot_travel] Blogger API 발행 중: '가평 쁘띠프랑스 2025년 주차·입장료·근처 맛집 실전 정보'
+[10:38:34] [blogspot_travel] Blogger 발행 실패: HTTP 400: {
+  "error": {
+    "code": 400,
+    "message": "Request contains an invalid argument.",
+    "errors": [
+      {
+        "message": "Request contains an invalid argument.",
+        "domain": "global",
+
+[10:41:22] [woll100] 키워드: 김포공항 지하철 시간표 첫차 막차
+[10:41:22] [파이프라인] woll100 / '김포공항 지하철 시간표 첫차 막차' — 유사문서 체크
+[10:41:22] [유사문서] 핵심 단어: ['김포공항', '지하철', '시간표', '첫차', '막차']
+[10:41:24] [유사문서] Tistory RSS 50개 제목 수집
+[10:41:24] [유사문서] Tistory RSS 확인 완료 — 중복 없음 (최근 20개)
+[10:41:25] [유사문서] Tistory 검색 확인 완료 — 중복 없음
+[10:41:25] [유사문서] 중복 없음 — 진행 가능
+[10:41:25] [파이프라인] woll100 / '김포공항 지하철 시간표 첫차 막차' — Claude.ai 글 생성 시작
+[10:41:25] [Direct] blog=woll100, keyword='김포공항 지하철 시간표 첫차 막차', 프롬프트=3048자
+[10:41:25] [Direct] Claude Code subprocess 직접 호출...
+[10:44:42] [Direct] ✅ 응답 6987자
+[10:44:42] [파싱] 이미지 섹션 발견 (길이=1345자), 내용: '[이미지1]\n- Gemini프롬프트: Gimpo Airport underground subway station entrance with four colorful subway line signs visible, clean modern Korean airport interior, passengers with luggage, bright lighting\n- 파일명: gimpo-airport-subway-lines-overview.jpg\n- alt: 김포공항역 지하철 4개 노선 안내 표지판\n\n[이미지2]\n- Gemini프롬프트: Korea'
+[10:44:42] [파싱] 제목: "김포공항역 지하철 시간표 2026 첫차 막차 노선별 상세 안내" (34자)
+[10:44:42] [파싱] 본문: 4035자
+[10:44:42] [파싱] 태그: ['김포공항 지하철', '김포공항역 시간표', '김포공항 첫차', '김포공항 막차', '김포공항 9호선', '김포공항 5호선', '공항철도 시간표', '김포공항 AREX', '김포골드라인', '김포공항 서울역', '김포공항 여의도', '김포공항 지하철 요금', '공항 지하철 이용방법', '김포공항역 환승', '김포공항 교통카드'] (15개)
+[10:44:42] [파싱] 이미지: 5개
+[10:44:42] [파싱] 메타: "김포공항역 지하철 4개 노선(5호선·9호선·공항철도·골드라인)의 2026년 첫차·막차 시간표와 요금·소요시간" (68자)
+[10:44:42] [파싱] 본문 미리보기: 김포공항역에서 지하철을 이용하려면 4개 노선이 교차하는 복합 환승역이라 처음 방문하는 분들은 헷갈리기 쉽습니다. 5호선, 9호선, 공항철도(AR...
+[10:44:42] [검수] 글 품질 기록 — 본문 4035자, 태그 15개 → 임시저장 진행
+[10:44:42] [버퍼] woll100 텍스트 저장 완료 ('김포공항역 지하철 시간표 2026 첫차 막차 노선별 상세 안내')
+[10:44:42] [파이프라인] H2 소제목 0개 → 본문 이미지 1개 목표
+[10:44:42] [파이프라인] 이미지 생성 시작 (blog=woll100, skip_webp=False)
+[10:44:42] [Router] Bing Image Creator 시도: 5장
+(node:97038) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:44:56] [Bing] [1] 생성 중: Gimpo Airport underground subway station entrance with four 
+[10:45:00] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[10:45:06] [Bing] 생성 버튼 클릭
+[10:45:06] [Bing] 프롬프트 전송: Gimpo Airport underground subway station entrance 
+[10:45:12] [Bing] 로딩 감지됨, 생성 대기 중...
+[10:46:12] [Bing] 로딩 60초 초과
+[10:46:38] [Bing] 이미지 컨테이너 감지 실패
+[10:46:38] [Bing] [1] 생성 실패
+[10:46:40] [Bing] [2] 생성 중: Korean subway digital departure board at Gimpo Airport showi
+[10:46:44] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[10:46:49] [Bing] 생성 버튼 클릭
+[10:46:49] [Bing] 프롬프트 전송: Korean subway digital departure board at Gimpo Air
+[10:46:55] [Bing] 로딩 감지됨, 생성 대기 중...
+[10:47:55] [Bing] 로딩 60초 초과
+[10:48:20] [Bing] 이미지 컨테이너 감지 실패
+[10:48:20] [Bing] [2] 생성 실패
+[10:48:22] [Bing] [3] 생성 중: Underground subway platform at Gimpo Airport Korea, clear fl
+[10:48:27] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[10:48:32] [Bing] 생성 버튼 클릭
+[10:48:32] [Bing] 프롬프트 전송: Underground subway platform at Gimpo Airport Korea
+[10:48:38] [Bing] 로딩 감지됨, 생성 대기 중...
+[10:49:38] [Bing] 로딩 60초 초과
+[10:50:04] [Bing] 이미지 컨테이너 감지 실패
+[10:50:04] [Bing] [3] 생성 실패
+[10:50:06] [Bing] [4] 생성 중: T-money transportation card and Seoul subway ticket vending 
+[10:50:10] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[10:50:15] [Bing] 생성 버튼 클릭
+[10:50:15] [Bing] 프롬프트 전송: T-money transportation card and Seoul subway ticke
+[10:50:21] [Bing] 로딩 감지됨, 생성 대기 중...
+[10:51:22] [Bing] 로딩 60초 초과
+[10:51:47] [Bing] 이미지 컨테이너 감지 실패
+[10:51:47] [Bing] [4] 생성 실패
+[10:51:49] [Bing] [5] 생성 중: Seoul metropolitan subway network map highlighting Gimpo Air
+[10:51:54] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[10:51:59] [Bing] 생성 버튼 클릭
+[10:51:59] [Bing] 프롬프트 전송: Seoul metropolitan subway network map highlighting
+[10:52:05] [Bing] 로딩 감지됨, 생성 대기 중...
+[10:53:06] [Bing] 로딩 60초 초과
+[10:53:31] [Bing] 이미지 컨테이너 감지 실패
+[10:53:31] [Bing] [5] 생성 실패
+[10:53:33] [Router] Bing 전체 실패 → Pollinations 폴백
+[10:53:34] [Pollinations] 저장 완료: woll100-김포공항역-지하철-4개-노선-안내-표지판-1.webp (87KB)
+[10:54:34] [Pollinations] 실패: The read operation timed out
+[10:54:35] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[10:54:36] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[10:54:37] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[10:54:37] [파이프라인] 본문 이미지 1개 생성 완료
+[10:54:37] [검수] ✅ 본문 이미지 1개 확인
+[10:54:37] [파이프라인] 썸네일 생성 중...
+(node:97572) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:54:48] [Bing] 4장 모드: 1회 요청으로 1장 생성
+[10:55:03] [Bing] 기존 OIG 63개, 이전세션 ID 500개 exclude
+[10:55:09] [Bing] 프롬프트 전송 (4장 모드): 김포공항 지하철 시간표 첫차 막차 representative thumbnail image,
+[10:55:16] [Bing] 로딩 감지됨, 4장 대기 중...
+[10:55:42] [썸네일] Bing 실패: Page.query_selector_all: Execution context was destroyed, most likely because of a navigation
+[10:56:34] [Pollinations] 저장 완료: thumb-김포공항-지하철-시간표-첫차-막차-63677.jpg (57KB)
+[10:56:34] [썸네일] Pollinations 생성 완료
+[10:56:34] [썸네일] woll100 오버레이 완료: thumb-김포공항-지하철-시간표-첫차-막차-63677.jpg
+[10:56:34] [썸네일] 오버레이 적용 완료: thumb-김포공항-지하철-시간표-첫차-막차-63677.jpg
+[10:56:34] [파이프라인] 썸네일 준비 완료: /Users/hana/Downloads/blog-automation-v2/images/woll100/thumb-김포공항-지하철-시간표-첫차-막차-63677.jpg
+[10:56:34] [파이프라인] 포스팅 시작: woll100
+[10:56:34] 
+==================================================
+[10:56:34] [순환] woll100 (tistory) 시작
+[10:56:34] ==================================================
+[10:56:34] [순환] woll100 로그인...
+[10:56:34] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:97662) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:56:38] [1/5] 티스토리 로그인 페이지 이동 중...
+[10:56:42] [1/5] 로그인 리다이렉트됨 (https://www.tistory.com/) — woll100 manage 진입 시도...
+[10:56:46] [1/5] manage 접근 불가 (https://woll100.tistory.com/) — Tistory 세션 초기화 후 재로그인
+[10:56:48] [1/5] Tistory 로그아웃 완료 (https://www.tistory.com/)
+[10:56:51] [1/5] auth/login 재이동: https://www.tistory.com/auth/login
+[10:56:51] [1/5] 현재 URL: https://www.tistory.com/auth/login
+[10:56:51] [2/5] '카카오계정으로 로그인' 버튼 클릭...
+[10:56:56] [2/5] 카카오 페이지 이동됨 (https://accounts.kakao.com/login/simple/?continue=https%3A%2F%2Fkauth.kakao.com%2Foauth%2Fauthorize%3Fclient_id%3D3e6ddd834b023f24221217e370daed18%26prompt%3Dselect_account%26redirect_uri%3Dhttps%253A%252F%252Fwww.tistory.com%252Fauth%252Fkakao%252Fredirect%26response_type%3Dcode%26auth_tran_id%3Dhixw8c73g473e6ddd834b023f24221217e370daed18mo54827k%26ka%3Dsdk%252F1.43.6%2520os%252Fjavascript%2520sdk_type%252Fjavascript%2520lang%252Fko-KR%2520device%252FMacIntel%2520origin%252Fhttps%25253A%25252F%25252Fwww.tistory.com%26is_popup%3Dfalse%26through_account%3Dtrue&talk_login=#simpleLogin)
+[10:56:56] [3/5] 카카오 계정 선택 중: wolbaeg100...
+[10:56:56] [3/5] 계정 발견 — 클릭: wolbaeg100
+[10:57:00] [4/5] 티스토리 리다이렉트 대기 중...
+[10:57:00] [4/5] 티스토리 로그인 성공!
+[10:57:00] [5/5] woll100 블로그로 이동 중...
+[10:57:04] [완료] woll100 블로그 진입 완료! (https://woll100.tistory.com/manage)
+[10:57:09] [순환] woll100 글 작성 시작...
+[10:57:09] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:97690) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[10:57:12] [포스팅] 에디터 이동: https://woll100.tistory.com/manage/newpost
+[10:57:21] [포스팅] 에디터 로드 완료 (셀렉터: #post-title-inp)
+[10:57:21] [포스팅] 제목 입력: 김포공항역 지하철 시간표 2026 첫차 막차 노선별 상...
+[10:57:26] [포스팅] 본문 입력 중...
+[10:57:27] [포스팅] 썸네일 업로드 중...
+[10:57:31] [이미지업로드] 업로드 완료 (시도 1)
+[10:57:31] [이미지업로드] 로컬 파일 삭제: /Users/hana/Downloads/blog-automation-v2/images/woll100/thumb-김포공항-지하철-시간표-첫차-막차-63677.jpg
+[10:57:34] [포스팅] 썸네일 설정 완료 (본문에서 제거)
+[10:57:39] [포스팅] 이미지 1 파일 업로드: woll100-김포공항역-지하철-4개-노선-안내-표지판-1.webp
+[10:57:44] [이미지업로드] 업로드 완료 (시도 1)
+[10:57:44] [이미지업로드] 로컬 파일 삭제: /Users/hana/Downloads/blog-automation-v2/images/woll100/woll100-김포공항역-지하철-4개-노선-안내-표지판-1.webp
+[10:57:44] [포스팅] 이미지 1 업로드 완료
+[10:57:53] [포스팅] 서식 메뉴 열림
+[10:57:54] [포스팅] 서식 애드센스 삽입 완료 ('애드센스 광고코드')
+[10:57:56] [포스팅] 이미지 2 파일 없음 — 스킵
+[10:58:23] [포스팅] 이미지 3 파일 없음 — 스킵
+[10:58:35] [포스팅] 이미지 4 파일 없음 — 스킵
+[10:58:49] [포스팅] 이미지 5 파일 없음 — 스킵
+[10:59:06] [포스팅] 본문 입력 완료 (글자크기 size19 적용)
+[10:59:06] [포스팅] 태그 입력: ['김포공항 지하철', '김포공항역 시간표', '김포공항 첫차', '김포공항 막차', '김포공항 9호선', '김포공항 5호선', '공항철도 시간표', '김포공항 AREX', '김포골드라인', '김포공항 서울역', '김포공항 여의도', '김포공항 지하철 요금', '공항 지하철 이용방법', '김포공항역 환승', '김포공항 교통카드']
+[10:59:18] [포스팅] 태그 10개 입력 완료
+[10:59:18] [포스팅] 카테고리 선택 (woll100): 교통정보
+[10:59:19] [포스팅] 카테고리 선택 완료: 카테고리:교통정보
+[10:59:20] [내부링크] woll100: 3개 삽입 완료
+[10:59:20] [포스팅] 임시저장 중...
+[10:59:22] [포스팅] 임시저장 완료: 김포공항역 지하철 시간표 2026 첫차 막차 노선별 상...
+[10:59:25] [순환] woll100 로그아웃 스킵 (결과 확인 후 수동 로그아웃)
+[10:59:27] [순환] woll100 완료 (성공)
+[10:59:27] [파이프라인] woll100 / '김포공항 지하철 시간표 첫차 막차' 임시저장완료 ✅
+[11:01:23] [salim1su] 키워드: 포항에어컨청소
+[11:01:23] [파이프라인] salim1su / '포항에어컨청소' — 유사문서 체크
+[11:01:23] [유사문서] 핵심 단어: ['포항에어컨청소']
+[11:01:23] [유사문서] Naver 검색 결과 1개
+[11:01:23] [유사문서] Naver 검색 완료 — 중복 없음
+[11:01:23] [유사문서] 중복 없음 — 진행 가능
+[11:01:23] [파이프라인] salim1su / '포항에어컨청소' — Claude.ai 글 생성 시작
+[11:01:23] [Direct] blog=salim1su, keyword='포항에어컨청소', 프롬프트=6706자
+[11:01:23] [Direct] Claude Code subprocess 직접 호출...
+[11:02:50] [Direct] ✅ 응답 3570자
+[11:02:50] [파싱] 이미지 섹션 발견 (길이=884자), 내용: '[이미지1]\n- Gemini프롬프트: A professional air conditioner cleaning technician in a Korean apartment, inspecting a wall-mounted air conditioner unit, wearing work clothes and carrying cleaning equipment, natural indoor lighting, realistic photo style\n- 파일명: pohang-aircon-cleaning-technician.jpg\n- alt: 포항 에'
+[11:02:50] [파싱] 제목: "포항에어컨청소 업체 부르기 전 확인해야 할 것 2026" (30자)
+[11:02:50] [파싱] 본문: 1703자
+[11:02:50] [파싱] 태그: ['포항에어컨청소', '에어컨청소비용', '에어컨분해청소', '포항청소업체', '벽걸이에어컨청소', '스탠드에어컨청소', '에어컨청소가격', '여름준비살림', '에어컨셀프청소', '에어컨냄새원인', '에어컨청소시기', '포항가사서비스', '에어컨전기세절약', '에어컨청소업체추천', '포항생활정보'] (15개)
+[11:02:50] [파싱] 이미지: 3개
+[11:02:50] [파싱] 메타: "포항에어컨청소 업체 비용과 분해청소 차이, 2026년 성수기 전 예약 방법까지 실제 경험 기준으로 정리합니다" (61자)
+[11:02:50] [파싱] 본문 미리보기: 에어컨 틀었더니 퀴퀴한 냄새가 훅 올라오더라고요.
+
+포항은 여름이 생각보다 빨리 오는 편이잖아요.
+4월 중순인데 벌써 낮에 에어컨 켜고 싶다는 ...
+[11:02:50] [검수] ⚠ 본문 짧음 (1703자 < 3000자) — 재생성 1회 시도
+[11:02:50] [Direct] blog=salim1su, keyword='포항에어컨청소', 프롬프트=6706자
+[11:02:50] [Direct] Claude Code subprocess 직접 호출...
+[11:07:07] [Direct] ✅ 응답 4609자
+[11:07:07] [검수] 재생성 결과 더 길어짐: 1703자 → 2335자 — 교체
+[11:07:07] [검수] 재생성 이미지 목록 업데이트: 3개 → 3개
+[11:07:07] [검수] ⚠ 본문 권고치 미달 (2335자 < 3000자) — 임시저장 진행 (목표: 3000자)
+[11:07:07] [검수] 글 품질 기록 — 본문 2335자, 태그 15개 → 임시저장 진행
+[11:07:07] [버퍼] salim1su 텍스트 저장 완료 ('포항에어컨청소 2026년 시즌 전에 알아둬야 할 비용과 업체 선택 기준')
+[11:07:07] [파이프라인] H2 소제목 0개 → 본문 이미지 1개 목표
+[11:07:07] [파이프라인] 이미지 생성 시작 (blog=salim1su, skip_webp=True)
+[11:07:07] [Router] Naver: Gemini 시도 (1/3)
+[11:07:07] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:98242) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[11:07:11] [이미지 1] 생성 시작: A Korean housewife in her mid-30s looking at a dus...
+[11:07:18] [이미지] Gemini 새 세션 로드 완료
+[11:07:18] [이미지] '이미지 만들기' 버튼 클릭
+[11:07:21] [이미지] 프롬프트 전송, 네트워크 캡처 대기...
+[11:07:37] [이미지] 15초 대기 중... (캡처: 0건)
+[11:07:52] [이미지] 네트워크 캡처 (99KB): https://lh3.googleusercontent.com/rd-gg-dl/AFfU-fI1_6McYdacsXDpPHxr-x1
+[11:07:52] [이미지] 네트워크 캡처 (99KB): https://lh3.googleusercontent.com/rd-gg-dl/AFfU-fLDLQykzm9R1a1y1JoSJar
+[11:07:52] [이미지] 네트워크 캡처 (99KB): https://lh3.googleusercontent.com/gg-dl/AFfU-fKlVXVsTAVo3tQv1oL5TzRPKV
+[11:07:52] [이미지] 네트워크 캡처 (99KB): https://lh3.googleusercontent.com/gg-dl/AFfU-fKlVXVsTAVo3tQv1oL5TzRPKV
+[11:07:52] [이미지] 네트워크 캡처 (99KB): https://lh3.googleusercontent.com/gg-dl/AFfU-fKlVXVsTAVo3tQv1oL5TzRPKV
+[11:07:52] [이미지] 네트워크 캡처 (99KB): https://lh3.googleusercontent.com/rd-gg-dl/AFfU-fIwZTJbrR3QgWeiH07cRzH
+[11:07:52] [이미지] 네트워크 캡처 (99KB): https://lh3.googleusercontent.com/rd-gg-dl/AFfU-fJVx_rXR1-uwTk7gT34Tgx
+[11:07:52] [이미지] 네트워크 캡처 (99KB): https://lh3.googleusercontent.com/rd-gg-dl/AFfU-fIo77eFJUrL57e-Vnwg1h_
+[11:07:52] [이미지] 네트워크 캡처 (99KB): https://lh3.googleusercontent.com/rd-gg-dl/AFfU-fI1KeE1Hg4ti2Ifgr43RDk
+[11:07:52] [이미지] 네트워크 캡처 (99KB): blob:https://gemini.google.com/bcb26ff9-332b-4086-8352-02695373e509
+[11:07:52] [이미지] 생성 완료 (29초, 네트워크 10건 캡처)
+[11:07:52] [이미지] 다운로드 버튼 방식 시도...
+[11:08:23] [이미지] 다운로드 버튼 방식 실패: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("button[aria-label*=\"다운로드\"], button[aria-label*=\"Download\"], button[aria-label*=\"download\"], [data-tooltip*=\"다운로드\"], [data-tooltip*=\"Download\"]").first
+    - locator resolved to <button mat-button="" mattooltip="원본 크기 다운로드" aria-label="원본 크기 이미지 다운로드" cdk-describedby-host="ng-1" _ngcontent-ng-c1753309025="" mat-ripple-loader-uninitialized="" data-test-id="download-generated-image-button" aria-describedby="cdk-describedby-message-ng-1-55" mat-ripple-loader-class-name="mat-mdc-button-ripple" jslog="185865;track:generic_click;BardVeMetadataKey:[["r_f789f8796cb0eedd","c_3fa688b63167b40c",null,"rc_8d53b95609c4222c"]];mutable:true" class="mdc-button mat-mdc-button-base mat-mdc-tool…>…</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <button id="its-image-search-btn">…</button> from <div id="its-image-search-container">…</div> subtree intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <button id="its-image-search-btn">…</button> from <div id="its-image-search-container">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 100ms
+    57 × waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <button id="its-image-search-btn">…</button> from <div id="its-image-search-container">…</div> subtree intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+
+[11:08:23] [이미지] 네트워크 캡처 폴백: 1024x559, 99KB
+[11:08:23] [이미지] JPG 저장 완료(네트워크): salim1su-포항-아파트-거실-벽걸이-에어컨을-바라보는-주부-1.jpg
+[11:08:23] [이미지 1] 저장 완료: /Users/hana/Downloads/blog-automation-v2/images/salim1su/salim1su-포항-아파트-거실-벽걸이-에어컨을-바라보는-주부-1.jpg
+[11:08:23] [이미지 2] 생성 시작: Close-up of a dirty air conditioner interior with ...
+[11:08:40] [이미지] '이미지 만들기' 버튼 클릭 실패 (무시): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("button[aria-label*=\"이미지 만들기, 버튼\"]").first to be visible
+
+[11:08:42] [이미지] 프롬프트 전송, 네트워크 캡처 대기...
+[11:08:58] [이미지] 15초 대기 중... (캡처: 0건)
+[11:09:11] [이미지] 네트워크 캡처 (88KB): https://lh3.googleusercontent.com/rd-gg-dl/AFfU-fIb3uhrOW-0JWsevDmxBTB
+[11:09:11] [이미지] 네트워크 캡처 (88KB): https://lh3.googleusercontent.com/rd-gg-dl/AFfU-fLABCNVvfzaewhLzAo2ro5
+[11:09:11] [이미지] 네트워크 캡처 (88KB): https://lh3.googleusercontent.com/rd-gg-dl/AFfU-fIv1yo_BGoTHxg1Z0w_Ole
+[11:09:11] [이미지] 네트워크 캡처 (88KB): blob:https://gemini.google.com/7cedcf23-9fa9-427a-a9be-bc8ddc1b8978
+[11:09:11] [이미지] 생성 완료 (28초, 네트워크 4건 캡처)
+[11:09:11] [이미지] 다운로드 버튼 방식 시도...
+[11:09:23] [이미지] 다운로드 방식 저장 완료: salim1su-포항-아파트-거실-벽걸이-에어컨을-바라보는-주부-2.jpg (2816x1536)
+[11:09:23] [이미지 2] 저장 완료: /Users/hana/Downloads/blog-automation-v2/images/salim1su/salim1su-포항-아파트-거실-벽걸이-에어컨을-바라보는-주부-2.jpg
+[11:09:23] [이미지 3] 생성 시작: A professional air conditioner cleaning technician...
+[11:09:40] [이미지] '이미지 만들기' 버튼 클릭 실패 (무시): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("button[aria-label*=\"이미지 만들기, 버튼\"]").first to be visible
+
+[11:09:42] [이미지] 프롬프트 전송, 네트워크 캡처 대기...
+[11:09:58] [이미지] 15초 대기 중... (캡처: 0건)
+[11:10:10] [이미지] 네트워크 캡처 (94KB): https://lh3.googleusercontent.com/rd-gg-dl/AFfU-fKhc4LvS8rX7RpNIfpnsJR
+[11:10:10] [이미지] 네트워크 캡처 (94KB): https://lh3.googleusercontent.com/rd-gg-dl/AFfU-fLxC-pX-B1mw_ZmpNkbyul
+[11:10:10] [이미지] 네트워크 캡처 (94KB): https://lh3.googleusercontent.com/rd-gg-dl/AFfU-fJeLvUdQAmqL2hIg6XTYJX
+[11:10:10] [이미지] 네트워크 캡처 (94KB): blob:https://gemini.google.com/3ef40815-1ee2-4fc7-827d-68fe621ec8e5
+[11:10:11] [이미지] 생성 완료 (27초, 네트워크 4건 캡처)
+[11:10:11] [이미지] 다운로드 버튼 방식 시도...
+[11:10:11] [이미지] 네트워크 캡처 폴백: 1024x559, 94KB
+[11:10:11] [이미지] JPG 저장 완료(네트워크): salim1su-포항-아파트-거실-벽걸이-에어컨을-바라보는-주부-3.jpg
+[11:10:11] [이미지 3] 저장 완료: /Users/hana/Downloads/blog-automation-v2/images/salim1su/salim1su-포항-아파트-거실-벽걸이-에어컨을-바라보는-주부-3.jpg
+[11:10:11] [Router] Gemini 성공: 3장
+[11:10:11] [파이프라인] 본문 이미지 3개 생성 완료
+[11:10:11] [검수] ✅ 본문 이미지 3개 확인
+[11:10:11] [파이프라인] 썸네일 생성 중...
+[11:10:11] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:98363) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[11:10:15] [이미지 1] 생성 시작: 포항에어컨청소 representative thumbnail image, wide estab...
+[11:10:21] [이미지] Gemini 새 세션 로드 완료
+[11:10:21] [이미지] '이미지 만들기' 버튼 클릭
+[11:10:24] [이미지] 프롬프트 전송, 네트워크 캡처 대기...
+[11:10:40] [이미지] 15초 대기 중... (캡처: 0건)
+[11:10:51] [이미지] 네트워크 캡처 (45KB): https://lh3.googleusercontent.com/rd-gg-dl/AFfU-fJEXIBt7xonbj1fLpHoHmZ
+[11:10:51] [이미지] 네트워크 캡처 (45KB): https://lh3.googleusercontent.com/rd-gg-dl/AFfU-fL5xzc4JUQh54f4dAX_oC4
+[11:10:51] [이미지] 네트워크 캡처 (45KB): https://lh3.googleusercontent.com/rd-gg-dl/AFfU-fJjjh1dGu78hdRa7xy9lgX
+[11:10:51] [이미지] 네트워크 캡처 (45KB): blob:https://gemini.google.com/8511b0d3-0534-43e2-ad02-b7337a277bf0
+[11:10:51] [이미지] 생성 완료 (26초, 네트워크 4건 캡처)
+[11:10:51] [이미지] 다운로드 버튼 방식 시도...
+[11:11:22] [이미지] 다운로드 버튼 방식 실패: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("button[aria-label*=\"다운로드\"], button[aria-label*=\"Download\"], button[aria-label*=\"download\"], [data-tooltip*=\"다운로드\"], [data-tooltip*=\"Download\"]").first
+    - locator resolved to <button mat-button="" mattooltip="원본 크기 다운로드" aria-label="원본 크기 이미지 다운로드" cdk-describedby-host="ng-1" _ngcontent-ng-c1753309025="" mat-ripple-loader-uninitialized="" data-test-id="download-generated-image-button" aria-describedby="cdk-describedby-message-ng-1-55" mat-ripple-loader-class-name="mat-mdc-button-ripple" jslog="185865;track:generic_click;BardVeMetadataKey:[["r_a389ecc4885a2803","c_30c44012a019fe02",null,"rc_d7dd76436ee186a3"]];mutable:true" class="mdc-button mat-mdc-button-base mat-mdc-tool…>…</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <button id="its-image-search-btn">…</button> from <div id="its-image-search-container">…</div> subtree intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <button id="its-image-search-btn">…</button> from <div id="its-image-search-container">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 100ms
+    57 × waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <button id="its-image-search-btn">…</button> from <div id="its-image-search-container">…</div> subtree intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+
+[11:11:22] [이미지] 네트워크 캡처 폴백: 1024x572, 45KB
+[11:11:22] [이미지] JPG 저장 완료(네트워크): thumb-포항에어컨청소-64611.jpg
+[11:11:22] [이미지 1] 저장 완료: /Users/hana/Downloads/blog-automation-v2/images/salim1su/thumb-포항에어컨청소-64611.jpg
+[11:11:22] [썸네일] Gemini 생성 완료
+[11:11:23] [썸네일] salim1su 오버레이 완료: thumb-포항에어컨청소-64611.jpg
+[11:11:23] [썸네일] 오버레이 적용 완료: thumb-포항에어컨청소-64611.jpg
+[11:11:23] [파이프라인] 썸네일 준비 완료: /Users/hana/Downloads/blog-automation-v2/images/salim1su/thumb-포항에어컨청소-64611.jpg
+[11:11:23] [SEO] 제목/본문 초반에 키워드 '포항에어컨청소' 확인됨
+[11:11:23] [파이프라인] 포스팅 시작: salim1su
+[11:11:23] 
+==================================================
+[11:11:23] [순환] salim1su (naver) 시작
+[11:11:23] ==================================================
+[11:11:23] [순환] salim1su 로그인...
+[11:11:23] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:98413) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[11:11:29] [1/4] 네이버 로그인 페이지 접속 중...
+[11:11:31] [1/4] 로그인 페이지 로드됨 (https://nid.naver.com/nidlogin.login)
+[11:11:31] [2/4] 자동완성 계정 확인 중...
+[11:11:33] [2/4] 자동완성된 계정: me1091
+[11:11:33] [2/4] ⚠ 계정 불일치: 자동완성=me1091, 필요=daonna525 — 계정 목록에서 선택 시도
+[11:11:35] [2/4] 계정 목록에서 'daonna525' 찾지 못함 — 로그아웃 후 재시도
+[11:11:42] [2/4] 로그아웃 후에도 드롭다운에서 'daonna525' 못 찾음 — ID/PW 직접 입력
+[11:11:44] [2/4] ID/PW 직접 입력 완료 (NAVER_DAONNA525_PW)
+[11:11:44] [3/5] 비밀번호 자동완성 트리거... (시도 1/2)
+[11:11:45] [3/5] 로그인 버튼 클릭... (시도 1/2)
+[11:11:49] [4/4] 로그인 완료 대기 중...
+[11:11:49] [완료] 네이버 로그인 성공! (https://www.naver.com/)
+[11:11:52] [순환] salim1su 글 작성 시작...
+[11:11:52] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:98440) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[11:11:55] [포스팅] 네이버 에디터 이동: https://blog.naver.com/salim1su/postwrite
+[11:12:05] [포스팅] 제목 입력 중: "포항에어컨청소 2026년 시즌 전에 알아둬야 할 비용과 업체 선택 기준" (39자)
+[11:12:06] [포스팅] 제목 필드에 기존 텍스트 있음: "제목" — 지우고 다시 입력
+[11:12:07] [포스팅] 제목 입력 확인: "포항에어컨청소 2026년 시즌 전에 알아둬야 할 비용과 업체 선택 기준"
+[11:12:08] [포스팅] 본문 영역 클릭...
+[11:12:10] [포스팅] 기존 본문 컴포넌트 2개 감지 — 전체 삭제 후 새로 작성
+[11:12:17] [포스팅] 이미지 1 업로드: salim1su-포항-아파트-거실-벽걸이-에어컨을-바라보는-주부-1.jpg
+[11:12:25] [포스팅] 이미지 alt 설정: 포항 아파트 거실 벽걸이 에어컨을 바라보는 주부 (img 수: 1)
+[11:12:26] [포스팅] 이미지 1 완료
+[11:12:27] [포스팅] 이미지 2 업로드: salim1su-포항-아파트-거실-벽걸이-에어컨을-바라보는-주부-2.jpg
+[11:12:38] [포스팅] 이미지 alt 설정: 에어컨 내부 팬과 열교환기에 쌓인 곰팡이와 먼지 (img 수: 2)
+[11:12:39] [포스팅] 이미지 2 완료
+[11:12:45] [포스팅] 이미지 3 업로드: salim1su-포항-아파트-거실-벽걸이-에어컨을-바라보는-주부-3.jpg
+[11:13:00] [포스팅] 이미지 alt 설정: 에어컨 분해청소 작업 중인 전문 기사 (img 수: 3)
+[11:13:00] [포스팅] 이미지 3 완료
+[11:13:37] [포스팅] 에디터 실제 입력 글자수: 2970자
+[11:13:37] [포스팅] 본문 입력 완료
+[11:13:37] [포스팅] 발행 버튼 클릭...
+[11:13:40] [포스팅] 태그 입력 중: ['포항에어컨청소', '에어컨청소비용', '에어컨분해청소', '포항청소업체', '에어컨곰팡이', '시즌전에어컨', '에어컨청소시기', '벽걸이에어컨청소', '스탠드에어컨청소', '에어컨냄새제거', '포항생활정보', '에어컨필터청소', '에어컨청소주기', '에어컨업체선택', '가정에어컨관리']
+[11:13:59] [포스팅] 발행 팝업에서 발행 버튼 클릭...
+[11:14:02] [포스팅] 네이버 발행 완료: 포항에어컨청소 2026년 시즌 전에 알아둬야 할 비용과... (버튼: 확인)
+[11:14:04] [순환] salim1su 로그아웃 스킵 (결과 확인 후 수동 로그아웃)
+[11:14:05] [순환] salim1su 완료 (성공)
+[11:14:05] [파이프라인] salim1su / '포항에어컨청소' 임시저장완료 ✅
+[11:15:48] [blogspot_daily] 키워드: DMZ tour from Seoul how to book guide
+[11:15:48] [blogspot_daily] 글 생성 시작: 'DMZ tour from Seoul how to book guide'
+[11:15:48] [Direct] blog=blogspot_daily, keyword='DMZ tour from Seoul how to book guide', 프롬프트=3812자
+[11:15:48] [Direct] Claude Code subprocess 직접 호출...
+[11:20:49] [Direct] 타임아웃 (5분) — 재시도
+[11:20:49] [Direct] === 재시도 1/2 ===
+[11:25:49] [Direct] 타임아웃 (5분) — 재시도
+[11:25:49] [Direct] === 재시도 2/2 ===
+[11:29:10] [Direct] ✅ 응답 9669자
+[11:29:10] [blogspot_daily] 이미지 7개 생성 시작
+[11:29:10] [Router] Bing Image Creator 시도: 7장
+(node:99262) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[11:29:16] [Bing] [1] 생성 중: DMZ tour from Seoul how to book guide travel Korea photo 1, 
+[11:29:24] [Bing] 제출 전 페이지 OIG 수: 0, 세션 생성됨: 0
+[11:29:54] [Router] Bing 오류: ElementHandle.click: Timeout 30000ms exceeded.
+Call log:
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is not visible
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is not visible
+    - retrying click action
+      - waiting 100ms
+    57 × waiting for element to be visible, enabled and stable
+       - element is not visible
+     - retrying click action
+       - waiting 500ms
+
+[11:29:54] [Router] Bing 전체 실패 → Pollinations 폴백
+[11:30:54] [Pollinations] 실패: The read operation timed out
+[11:30:55] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:30:56] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:30:56] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:30:57] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:30:57] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:30:58] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:30:58] [blogspot_daily] 이미지 0개 생성 완료
+[11:30:59] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:31:00] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:31:01] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:31:01] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:31:02] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:31:02] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:31:03] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:31:03] [blogspot_daily] Blogger API 발행 중: 'DMZ tour from Seoul how to book guide'
+[11:31:05] [blogspot_daily] ✅ 발행 완료: https://daily.baremi542.com/2026/04/dmz-tour-from-seoul-how-to-book-guide.html
+[11:33:22] [blogspot_it] 키워드: 유튜브 쇼츠 수익화 조건 방법 2026
+[11:33:22] [blogspot_it] 글 생성 시작: '유튜브 쇼츠 수익화 조건 방법 2026'
+[11:33:22] [Direct] blog=blogspot_it, keyword='유튜브 쇼츠 수익화 조건 방법 2026', 프롬프트=3255자
+[11:33:22] [Direct] Claude Code subprocess 직접 호출...
+[11:36:11] [Direct] ✅ 응답 5494자
+[11:36:11] [blogspot_it] 이미지 4개 생성 시작
+[11:36:11] [Router] Bing Image Creator 시도: 4장
+(node:99563) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[11:36:23] [Bing] 4장 모드: 1회 요청으로 4장 생성
+[11:36:38] [Bing] 기존 OIG 63개, 이전세션 ID 500개 exclude
+[11:36:43] [Bing] 프롬프트 전송 (4장 모드): A clean infographic showing YouTube Shorts monetiz
+[11:36:49] [Bing] 로딩 감지됨, 4장 대기 중...
+[11:38:09] [Bing] 이미지 컨테이너 감지 실패
+[11:38:09] [Bing] [1] 이미지 부족 — 추가 생성
+[11:38:13] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[11:38:19] [Bing] 생성 버튼 클릭
+[11:38:19] [Bing] 프롬프트 전송: A clean infographic showing YouTube Shorts monetiz
+[11:38:25] [Bing] 로딩 감지됨, 생성 대기 중...
+[11:39:25] [Bing] 로딩 60초 초과
+[11:39:51] [Bing] 이미지 컨테이너 감지 실패
+[11:39:51] [Bing] [2] 이미지 부족 — 추가 생성
+[11:39:55] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[11:40:00] [Bing] 생성 버튼 클릭
+[11:40:00] [Bing] 프롬프트 전송: Step-by-step visual guide showing how to apply for
+[11:40:06] [Bing] 로딩 감지됨, 생성 대기 중...
+[11:41:06] [Bing] 로딩 60초 초과
+[11:41:33] [Bing] 이미지 컨테이너 감지 실패
+[11:41:33] [Bing] [3] 이미지 부족 — 추가 생성
+[11:41:36] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[11:41:41] [Bing] 생성 버튼 클릭
+[11:41:41] [Bing] 프롬프트 전송: A Korean content creator recording a vertical shor
+[11:41:47] [Bing] 로딩 감지됨, 생성 대기 중...
+[11:42:47] [Bing] 로딩 60초 초과
+[11:43:13] [Bing] 이미지 컨테이너 감지 실패
+[11:43:13] [Bing] [4] 이미지 부족 — 추가 생성
+[11:43:17] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[11:43:21] [Bing] 생성 버튼 클릭
+[11:43:21] [Bing] 프롬프트 전송: A friendly FAQ concept illustration with speech bu
+[11:43:27] [Bing] 로딩 감지됨, 생성 대기 중...
+[11:44:28] [Bing] 로딩 60초 초과
+[11:44:53] [Bing] 이미지 컨테이너 감지 실패
+[11:44:53] [Router] Bing 전체 실패 → Pollinations 폴백
+[11:44:55] [Pollinations] 저장 완료: blogspot_it-2026년-유튜브-쇼츠-수익화-자격-조건-인포그래픽-1.webp (52KB)
+[11:45:55] [Pollinations] 실패: The read operation timed out
+[11:45:56] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:45:57] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:45:57] [blogspot_it] 이미지 1개 생성 완료
+[11:45:57] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:45:58] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:45:59] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[11:45:59] [blogspot_it] Blogger API 발행 중: '유튜브 쇼츠 수익화 조건과 방법 2026년 최신 가이드'
+[11:46:00] [blogspot_it] Blogger 발행 실패: HTTP 400: {
+  "error": {
+    "code": 400,
+    "message": "Request contains an invalid argument.",
+    "errors": [
+      {
+        "message": "Request contains an invalid argument.",
+        "domain": "global",
+
+[11:48:35] [baremi542] 키워드: 직장인국비지원
+[11:48:35] [파이프라인] baremi542 / '직장인국비지원' — 유사문서 체크
+[11:48:35] [유사문서] 핵심 단어: ['직장인국비지원']
+[11:48:35] [유사문서] WP 검색 완료 — 0개 중 중복 없음
+[11:48:35] [유사문서] 중복 없음 — 진행 가능
+[11:48:35] [PublicAPI] 공공서비스 검색: '직장인국비지원'
+[11:48:35] [PublicAPI] 공공서비스 검색 결과 없음
+[11:48:35] [파이프라인] baremi542 / '직장인국비지원' — Claude.ai 글 생성 시작
+[11:48:35] [Direct] blog=baremi542, keyword='직장인국비지원', 프롬프트=3854자
+[11:48:35] [Direct] Claude Code subprocess 직접 호출...
+[11:50:38] [Direct] ✅ 응답 4218자
+[11:50:38] [파싱] 이미지 섹션 발견 (길이=822자), 내용: '[이미지1]\n- Gemini프롬프트: A Korean worker sitting at a desk looking at a laptop screen showing a government training support website, warm office lighting, realistic photo style, clean and professional\n- 파일명: jikjangin-gukbi-jiwon-naeil-baeum-card.jpg\n- alt: 직장인 국비지원 재직자 내일배움카드 기본 조건 안내\n\n[이미지2]\n- Gemini프'
+[11:50:38] [파싱] 제목: "직장인 국비지원 재직자 내일배움카드 신청방법 2026 실제 후기" (35자)
+[11:50:38] [파싱] 본문: 2079자
+[11:50:38] [파싱] 태그: ['직장인국비지원', '재직자내일배움카드', '국비지원신청방법', 'HRD넷신청', '직장인교육비지원', '내일배움카드재직자', '고용보험직업훈련', '국비지원교육', '직장인자격증국비', '2026내일배움카드', '재직자훈련지원', '국비교육신청', '직장인자기개발지원', '고용노동부국비지원', '직업훈련비환급'] (15개)
+[11:50:38] [파싱] 이미지: 3개
+[11:50:38] [파싱] 메타: "직장인 국비지원 재직자 내일배움카드 신청방법과 실제 환급 후기를 정리했습니다. 지원 한도·본인부담금·주의사항" (69자)
+[11:50:38] [파싱] 본문 미리보기: 회사 다니면서 자격증 공부할 때 돈이 꽤 들었는데, 알고 보니 직장인도 국비지원을 받을 수 있더라고요. 솔직히 저도 처음엔 "국비지원은 실업자들...
+[11:50:38] [검수] ⚠ 본문 짧음 (2079자 < 3000자) — 재생성 1회 시도
+[11:50:38] [Direct] blog=baremi542, keyword='직장인국비지원', 프롬프트=3854자
+[11:50:38] [Direct] Claude Code subprocess 직접 호출...
+[11:55:38] [Direct] 타임아웃 (5분) — 재시도
+[11:55:38] [Direct] === 재시도 1/2 ===
+[11:58:03] [Direct] 응답 너무 짧음 (177자) — 재시도
+[11:58:03] [Direct] === 재시도 2/2 ===
+[12:00:28] [Direct] 응답 너무 짧음 (175자) — 재시도
+[12:00:28] [Direct] 3회 모두 실패
+[12:00:28] [검수] ⚠ 본문 권고치 미달 (2079자 < 3000자) — 임시저장 진행 (목표: 3000자)
+[12:00:28] [검수] 글 품질 기록 — 본문 2079자, 태그 15개 → 임시저장 진행
+[12:00:28] [버퍼] baremi542 텍스트 저장 완료 ('직장인 국비지원 재직자 내일배움카드 신청방법 2026 실제 후기')
+[12:00:28] [파이프라인] H2 소제목 3개 → 본문 이미지 3개 목표
+[12:00:28] [파이프라인] 이미지 생성 시작 (blog=baremi542, skip_webp=False)
+[12:00:28] [Router] Bing Image Creator 시도: 3장
+(node:1199) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[12:00:41] [Bing] 4장 모드: 1회 요청으로 3장 생성
+[12:00:56] [Bing] 기존 OIG 63개, 이전세션 ID 500개 exclude
+[12:01:02] [Bing] 프롬프트 전송 (4장 모드): A Korean worker sitting at a desk looking at a lap
+[12:01:08] [Bing] 로딩 감지됨, 4장 대기 중...
+[12:02:29] [Bing] 이미지 컨테이너 감지 실패
+[12:02:29] [Bing] [1] 이미지 부족 — 추가 생성
+[12:02:33] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[12:02:39] [Bing] 생성 버튼 클릭
+[12:02:39] [Bing] 프롬프트 전송: A Korean worker sitting at a desk looking at a lap
+[12:02:45] [Bing] 로딩 감지됨, 생성 대기 중...
+[12:03:45] [Bing] 로딩 60초 초과
+[12:04:11] [Bing] 이미지 컨테이너 감지 실패
+[12:04:11] [Bing] [2] 이미지 부족 — 추가 생성
+[12:04:16] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[12:04:21] [Bing] 생성 버튼 클릭
+[12:04:21] [Bing] 프롬프트 전송: A person filling out an online government support 
+[12:04:27] [Bing] 로딩 감지됨, 생성 대기 중...
+[12:05:28] [Bing] 로딩 60초 초과
+[12:05:54] [Bing] 이미지 컨테이너 감지 실패
+[12:05:54] [Bing] [3] 이미지 부족 — 추가 생성
+[12:05:58] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[12:06:03] [Bing] 생성 버튼 클릭
+[12:06:03] [Bing] 프롬프트 전송: A checklist or notepad with Korean text about impo
+[12:06:09] [Bing] 로딩 감지됨, 생성 대기 중...
+[12:07:10] [Bing] 로딩 60초 초과
+[12:07:35] [Bing] 이미지 컨테이너 감지 실패
+[12:07:35] [Router] Bing 전체 실패 → Pollinations 폴백
+[12:07:37] [Pollinations] 저장 완료: baremi542-직장인-국비지원-재직자-내일배움카드-기본-조건-안내-1.webp (53KB)
+[12:08:37] [Pollinations] 실패: The read operation timed out
+[12:08:38] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:08:38] [파이프라인] 본문 이미지 1개 생성 완료
+[12:08:38] [파이프라인] ⚠ 이미지 1개 < 최소 3개 — Pollinations 폴백 보충
+[12:08:39] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:08:40] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:08:40] [파이프라인] 이미지 보충 후 총 1개
+[12:08:40] [검수] ⚠ 이미지 부족 (1개 < 3개) — 임시저장 후 클로드코드 보완 예정
+[12:08:40] [파이프라인] 썸네일 생성 중...
+(node:1555) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[12:08:51] [Bing] 4장 모드: 1회 요청으로 1장 생성
+[12:09:06] [Bing] 기존 OIG 63개, 이전세션 ID 500개 exclude
+[12:09:10] [Bing] 프롬프트 전송 (4장 모드): 직장인국비지원 representative thumbnail image, wide estab
+[12:09:16] [Bing] 로딩 감지됨, 4장 대기 중...
+[12:10:38] [Bing] 이미지 컨테이너 감지 실패
+[12:10:38] [Bing] [1] 이미지 부족 — 추가 생성
+[12:10:42] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[12:10:47] [Bing] 생성 버튼 클릭
+[12:10:47] [Bing] 프롬프트 전송: 직장인국비지원 representative thumbnail image, wide estab
+[12:10:53] [Bing] 로딩 감지됨, 생성 대기 중...
+[12:11:54] [Bing] 로딩 60초 초과
+[12:12:19] [Bing] 이미지 컨테이너 감지 실패
+[12:12:21] [Pollinations] 저장 완료: thumb-직장인국비지원-68120.jpg (45KB)
+[12:12:21] [썸네일] Pollinations 생성 완료
+[12:12:21] [썸네일] baremi542 오버레이 완료: thumb-직장인국비지원-68120.jpg
+[12:12:21] [썸네일] 오버레이 적용 완료: thumb-직장인국비지원-68120.jpg
+[12:12:21] [파이프라인] 썸네일 준비 완료: /Users/hana/Downloads/blog-automation-v2/images/baremi542/thumb-직장인국비지원-68120.jpg
+[12:12:22] [내부링크] baremi542: 3개 삽입
+[12:12:22] [파이프라인] 포스팅 시작: baremi542
+[12:12:22] 
+==================================================
+[12:12:22] [순환] baremi542 (wordpress) 시작
+[12:12:22] ==================================================
+[12:12:22] [순환] baremi542 WordPress REST API 발행...
+[12:12:23] [WordPress] 이미지 업로드 완료: thumb-직장인국비지원-68120.jpg → https://baremi542.com/wp-content/uploads/2026/04/thumb-68120.jpg
+[12:12:23] [WordPress] 썸네일 업로드 완료: media_id=422
+[12:12:23] [WordPress] 이미지 업로드 완료: baremi542-직장인-국비지원-재직자-내일배움카드-기본-조건-안내-1.webp → https://baremi542.com/wp-content/uploads/2026/04/baremi542-1-5.jpg
+[12:12:23] [WordPress] {이미지2} — 파일 없음, 플레이스홀더 제거
+[12:12:23] [WordPress] {이미지3} — 파일 없음, 플레이스홀더 제거
+[12:12:25] [WordPress] 카테고리 '정부지원금' ID: 19
+[12:12:25] [WordPress] 특성 이미지 설정: media_id=422
+[12:12:25] [WordPress] REST API 발행 시작: "직장인 국비지원 재직자 내일배움카드 신청방법 2026 실제 후기"
+[12:12:25] [WordPress] Focus Keyword:  / SEO Title:  핵심 정리 | 직장인 국비지원 재직자 내일배움카드 신청방법 2026 실제 후기 쉽게 확인
+[12:12:26] [WordPress] ✓ 임시저장 완료: https://baremi542.com/?p=424
+[12:12:26] [순환] baremi542 완료 (성공)
+[12:12:26] [파이프라인] baremi542 / '직장인국비지원' 임시저장완료 ✅
+[12:12:30] [baremi542 즉시발행] ✅ 발행 완료: https://baremi542.com/%ec%a7%81%ec%9e%a5%ec%9d%b8-%ea%b5%ad%eb%b9%84%ec%a7%80%ec%9b%90-%ec%9e%ac%ec%a7%81%ec%9e%90-%eb%82%b4%ec%9d%bc%eb%b0%b0%ec%9b%80%ec%b9%b4%eb%93%9c-%ec%8b%a0%ec%b2%ad%eb%b0%a9%eb%b2%95-2026-%ec%8b%a4/
+[12:13:39] [라운드 1] 완료: triplog:⚠ / nolja100:✅ / goodisak:✅ / me1091:✅ / phn0502:✅ / blogspot_travel:⚠ / woll100:✅ / salim1su:✅ / blogspot_daily:✅ / blogspot_it:⚠ / baremi542:✅
+[12:13:39] 로그 저장: /Users/hana/Downloads/blog-automation-v2/logs/overnight_result.txt
+[12:13:39] [라운드 1] 실패 블로그 재시도: ['triplog', 'blogspot_travel', 'blogspot_it']
+[12:15:35] [triplog] 키워드: 춘천 소양강 닭갈비 당일치기 여행
+[12:15:35] [파이프라인] triplog / '춘천 소양강 닭갈비 당일치기 여행' — 유사문서 체크
+[12:15:35] [유사문서] 핵심 단어: ['춘천', '소양강', '닭갈비', '당일치기']
+[12:15:37] [유사문서] WP 검색 완료 — 0개 중 중복 없음
+[12:15:37] [유사문서] 중복 없음 — 진행 가능
+[12:15:37] [파이프라인] triplog — MRT 제휴 링크 조회 중: '춘천 소양강 닭갈비 당일치기 여행'
+[12:15:37] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:1812) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[12:15:41] [MRT] '춘천 소양강 닭갈비 당일치기 여행' 검색 중...
+[12:15:54] [MRT] 상품 0개 발견
+[12:15:54] [MRT] ⚠️ 검색 결과 없음
+[12:15:54] [파이프라인] MRT 관련 상품 없음 — 제휴 섹션 생략
+[12:15:54] [PublicAPI] 축제 검색: 전국, 20260419~20260728
+[12:15:55] [PublicAPI] 축제 데이터 10건 수집 완료
+[12:15:55] [파이프라인] triplog / '춘천 소양강 닭갈비 당일치기 여행' — Claude.ai 글 생성 시작
+[12:15:55] [Direct] blog=triplog, keyword='춘천 소양강 닭갈비 당일치기 여행', 프롬프트=6603자
+[12:15:55] [Direct] Claude Code subprocess 직접 호출...
+[12:20:55] [Direct] 타임아웃 (5분) — 재시도
+[12:20:55] [Direct] === 재시도 1/2 ===
+[12:24:13] [Direct] ✅ 응답 6260자
+[12:24:13] [파싱] 이미지 섹션 발견 (길이=1862자), 내용: '[이미지1]\n- Gemini프롬프트: A scenic photo of Chuncheon ITX-Cheongchun express train arriving at Chuncheon Station platform on a clear sunny morning, passengers with travel bags waiting, warm golden light, travel blog photography style\n- 파일명: chuncheon-itx-train-station-2026.jpg\n- alt: 춘천역 ITX-청춘 기차 도착 모습 '
+[12:24:13] [파싱] 제목: "춘천 닭갈비 명동거리 당일치기 교통 주차 소요시간 2026" (32자)
+[12:24:13] [파싱] 본문: 2427자
+[12:24:13] [파싱] 태그: ['춘천 당일치기', '춘천 닭갈비', '춘천 명동 닭갈비 거리', '춘천 소양강', '소양강스카이워크', '춘천 여행', '춘천 기차 여행', 'ITX 청춘 춘천', '춘천 당일치기 코스', '춘천 맛집', '강원도 당일치기', '서울 근교 당일치기', '춘천 주차', '춘천 여행 비용', '닭갈비 막국수 춘천', '춘천 여행 코스 2026'] (16개)
+[12:24:13] [파싱] 이미지: 5개
+[12:24:13] [파싱] 메타: "춘천 닭갈비 명동거리 당일치기 교통·웨이팅·주차·소요시간·비용을 한 번에 정리했습니다. ITX 기준 서울에서" (69자)
+[12:24:13] [파싱] 본문 미리보기: [마이리얼트립 파트너스 프로그램을 통해 소정의 수수료를 받을 수 있는 제휴 링크가 포함되어 있습니다.]
+
+💡 핵심 요약
+
+- 서울 용산역 → I...
+[12:24:13] [검수] ⚠ 본문 짧음 (2427자 < 3000자) — 재생성 1회 시도
+[12:24:13] [Direct] blog=triplog, keyword='춘천 소양강 닭갈비 당일치기 여행', 프롬프트=6040자
+[12:24:13] [Direct] Claude Code subprocess 직접 호출...
+[12:28:11] [Direct] ✅ 응답 6402자
+[12:28:11] [검수] 재생성 결과 더 길어짐: 2427자 → 2688자 — 교체
+[12:28:11] [검수] 재생성 이미지 목록 업데이트: 5개 → 5개
+[12:28:11] [검수] ⚠ 본문 권고치 미달 (2688자 < 3000자) — 임시저장 진행 (목표: 3000자)
+[12:28:11] [검수] 글 품질 기록 — 본문 2688자, 태그 15개 → 임시저장 진행
+[12:28:11] [버퍼] triplog 텍스트 저장 완료 ('춘천 소양강 닭갈비 당일치기 서울 출발 교통·가격·코스 2026')
+[12:28:11] [파이프라인] H2 소제목 6개 → 본문 이미지 6개 목표
+[12:28:11] [파이프라인] 이미지 생성 시작 (blog=triplog, skip_webp=False)
+[12:28:11] [Router] Bing Image Creator 시도: 5장
+(node:2343) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[12:28:24] [Bing] [1] 생성 중: ITX Cheongchun express train arriving at Chuncheon Station, 
+[12:28:28] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[12:28:31] [Bing] 생성 버튼 클릭
+[12:28:31] [Bing] 프롬프트 전송: ITX Cheongchun express train arriving at Chuncheon
+[12:28:37] [Bing] 로딩 감지됨, 생성 대기 중...
+[12:29:37] [Bing] 로딩 60초 초과
+[12:30:03] [Bing] 이미지 컨테이너 감지 실패
+[12:30:03] [Bing] [1] 생성 실패
+[12:30:05] [Bing] [2] 생성 중: Busy Korean restaurant alley with dakgalbi signs, steaming i
+[12:30:09] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[12:30:12] [Bing] 생성 버튼 클릭
+[12:30:12] [Bing] 프롬프트 전송: Busy Korean restaurant alley with dakgalbi signs, 
+[12:30:18] [Bing] 로딩 감지됨, 생성 대기 중...
+[12:31:18] [Bing] 로딩 60초 초과
+[12:31:44] [Bing] 이미지 컨테이너 감지 실패
+[12:31:44] [Bing] [2] 생성 실패
+[12:31:46] [Bing] [3] 생성 중: Glass-bottomed skywalk bridge over the wide Soyang River in 
+[12:31:50] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[12:31:53] [Bing] 생성 버튼 클릭
+[12:31:53] [Bing] 프롬프트 전송: Glass-bottomed skywalk bridge over the wide Soyang
+[12:31:59] [Bing] 로딩 감지됨, 생성 대기 중...
+[12:32:59] [Bing] 로딩 60초 초과
+[12:33:26] [Bing] 이미지 컨테이너 감지 실패
+[12:33:26] [Bing] [3] 생성 실패
+[12:33:28] [Bing] [4] 생성 중: Korean travel budget flat lay with train ticket, Korean won 
+[12:33:33] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[12:33:36] [Bing] 생성 버튼 클릭
+[12:33:36] [Bing] 프롬프트 전송: Korean travel budget flat lay with train ticket, K
+[12:33:42] [Bing] 로딩 감지됨, 생성 대기 중...
+[12:34:42] [Bing] 로딩 60초 초과
+[12:35:08] [Bing] 이미지 컨테이너 감지 실패
+[12:35:08] [Bing] [4] 생성 실패
+[12:35:10] [Bing] [5] 생성 중: A clean infographic-style illustration of a one-day travel i
+[12:35:15] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[12:35:18] [Bing] 생성 버튼 클릭
+[12:35:18] [Bing] 프롬프트 전송: A clean infographic-style illustration of a one-da
+[12:35:24] [Bing] 로딩 감지됨, 생성 대기 중...
+[12:36:24] [Bing] 로딩 60초 초과
+[12:36:49] [Bing] 이미지 컨테이너 감지 실패
+[12:36:49] [Bing] [5] 생성 실패
+[12:36:52] [Router] Bing 전체 실패 → Pollinations 폴백
+[12:36:53] [Pollinations] 저장 완료: triplog-서울에서-춘천-itx청춘-열차-춘천역-도착-교통편-1.webp (65KB)
+[12:37:53] [Pollinations] 실패: The read operation timed out
+[12:37:55] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:37:55] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:37:57] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:37:57] [파이프라인] 본문 이미지 1개 생성 완료
+[12:37:57] [파이프라인] ⚠ 이미지 1개 < 최소 6개 — Pollinations 폴백 보충
+[12:37:57] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:37:58] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:37:58] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:37:59] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:38:00] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:38:00] [파이프라인] 이미지 보충 후 총 1개
+[12:38:00] [검수] ⚠ 이미지 부족 (1개 < 6개) — 임시저장 후 클로드코드 보완 예정
+[12:38:00] [파이프라인] 썸네일 생성 중...
+(node:2712) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[12:38:11] [Bing] 4장 모드: 1회 요청으로 1장 생성
+[12:38:26] [Bing] 기존 OIG 63개, 이전세션 ID 500개 exclude
+[12:38:34] [Bing] 프롬프트 전송 (4장 모드): 춘천 소양강 닭갈비 당일치기 여행 representative thumbnail image,
+[12:38:40] [Bing] 로딩 감지됨, 4장 대기 중...
+[12:40:00] [Bing] 이미지 컨테이너 감지 실패
+[12:40:00] [Bing] [1] 이미지 부족 — 추가 생성
+[12:40:05] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[12:40:11] [Bing] 생성 버튼 클릭
+[12:40:11] [Bing] 프롬프트 전송: 춘천 소양강 닭갈비 당일치기 여행 representative thumbnail image,
+[12:40:17] [Bing] 로딩 감지됨, 생성 대기 중...
+[12:41:18] [Bing] 로딩 60초 초과
+[12:41:43] [Bing] 이미지 컨테이너 감지 실패
+[12:41:45] [Pollinations] 저장 완료: thumb-춘천-소양강-닭갈비-당일치기-여행-69880.jpg (75KB)
+[12:41:45] [썸네일] Pollinations 생성 완료
+[12:41:45] [썸네일] triplog 오버레이 완료: thumb-춘천-소양강-닭갈비-당일치기-여행-69880.jpg
+[12:41:45] [썸네일] 오버레이 적용 완료: thumb-춘천-소양강-닭갈비-당일치기-여행-69880.jpg
+[12:41:45] [파이프라인] 썸네일 준비 완료: /Users/hana/Downloads/blog-automation-v2/images/triplog/thumb-춘천-소양강-닭갈비-당일치기-여행-69880.jpg
+[12:41:46] [내부링크] triplog: 3개 삽입
+[12:41:46] [파이프라인] 포스팅 시작: triplog
+[12:41:46] 
+==================================================
+[12:41:46] [순환] triplog (wordpress) 시작
+[12:41:46] ==================================================
+[12:41:46] [순환] triplog WordPress REST API 발행...
+[12:41:48] [WordPress] 이미지 업로드 완료: thumb-춘천-소양강-닭갈비-당일치기-여행-69880.jpg → https://app.baremi542.com/wp-content/uploads/2026/04/thumb-69880.jpg
+[12:41:48] [WordPress] 썸네일 업로드 완료: media_id=2989
+[12:41:49] [WordPress] 이미지 업로드 완료: triplog-서울에서-춘천-itx청춘-열차-춘천역-도착-교통편-1.webp → https://app.baremi542.com/wp-content/uploads/2026/04/triplog-itx-1-1.jpg
+[12:41:49] [WordPress] {이미지2} — 파일 없음, 플레이스홀더 제거
+[12:41:49] [WordPress] {이미지3} — 파일 없음, 플레이스홀더 제거
+[12:41:49] [WordPress] {이미지4} — 파일 없음, 플레이스홀더 제거
+[12:41:49] [WordPress] {이미지5} — 파일 없음, 플레이스홀더 제거
+[12:41:56] [WordPress] 카테고리 '여행' ID: 7
+[12:41:56] [WordPress] 특성 이미지 설정: media_id=2989
+[12:41:56] [WordPress] REST API 발행 시작: "춘천 소양강 닭갈비 당일치기 서울 출발 교통·가격·코스 2026"
+[12:41:56] [WordPress] Focus Keyword:  / SEO Title:  핵심 정리 | 춘천 소양강 닭갈비 당일치기 서울 출발 교통·가격·코스 2026 쉽게 확인
+[12:41:57] [WordPress] ✓ 임시저장 완료: https://app.baremi542.com/?p=2991
+[12:41:57] [순환] triplog 완료 (성공)
+[12:41:57] [파이프라인] triplog / '춘천 소양강 닭갈비 당일치기 여행' 임시저장완료 ✅
+[12:42:01] [triplog 즉시발행] ✅ 발행 완료: https://app.baremi542.com/%ec%b6%98%ec%b2%9c-%ec%86%8c%ec%96%91%ea%b0%95-%eb%8b%ad%ea%b0%88%eb%b9%84-%eb%8b%b9%ec%9d%bc%ec%b9%98%ea%b8%b0-%ec%84%9c%ec%9a%b8-%ec%b6%9c%eb%b0%9c-%ea%b5%90%ed%86%b5%c2%b7%ea%b0%80%ea%b2%a9%c2%b7/
+[12:43:14] [blogspot_travel] 키워드: 서울 창덕궁 후원 예약 입장료 시간
+[12:43:14] [blogspot_travel] 글 생성 시작: '서울 창덕궁 후원 예약 입장료 시간'
+[12:43:14] [Direct] blog=blogspot_travel, keyword='서울 창덕궁 후원 예약 입장료 시간', 프롬프트=4862자
+[12:43:14] [Direct] Claude Code subprocess 직접 호출...
+[12:48:14] [Direct] 타임아웃 (5분) — 재시도
+[12:48:14] [Direct] === 재시도 1/2 ===
+[12:51:35] [Direct] ✅ 응답 9143자
+[12:51:35] [blogspot_travel] 이미지 4개 생성 시작
+[12:51:35] [Router] Bing Image Creator 시도: 4장
+(node:3313) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[12:51:42] [Bing] 4장 모드: 1회 요청으로 4장 생성
+[12:51:43] [Router] Bing 오류: Page.goto: Target page, context or browser has been closed
+Call log:
+  - navigating to "https://www.bing.com/images/create", waiting until "domcontentloaded"
+
+[12:51:43] [Router] Bing 전체 실패 → Pollinations 폴백
+[12:51:45] [Pollinations] 저장 완료: blogspot_travel-제주-우도-페리-성산포항-탑승-모습-1.webp (75KB)
+[12:51:45] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:51:46] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:51:47] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:51:47] [blogspot_travel] 이미지 1개 생성 완료
+[12:51:48] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:51:48] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:51:49] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:51:49] [blogspot_travel] Blogger API 발행 중: '제주 우도 페리 자전거 렌트 당일치기 방법 2026 — 요금·시간표 정리'
+[12:51:50] [blogspot_travel] Blogger 발행 실패: HTTP 400: {
+  "error": {
+    "code": 400,
+    "message": "Request contains an invalid argument.",
+    "errors": [
+      {
+        "message": "Request contains an invalid argument.",
+        "domain": "global",
+
+[12:52:27] [blogspot_it] 키워드: 인스타그램 릴스 알고리즘 노출 늘리는 법
+[12:52:27] [blogspot_it] 글 생성 시작: '인스타그램 릴스 알고리즘 노출 늘리는 법'
+[12:52:27] [Direct] blog=blogspot_it, keyword='인스타그램 릴스 알고리즘 노출 늘리는 법', 프롬프트=3256자
+[12:52:27] [Direct] Claude Code subprocess 직접 호출...
+[12:55:33] [Direct] ✅ 응답 6181자
+[12:55:33] [blogspot_it] 이미지 5개 생성 시작
+[12:55:33] [Router] Bing Image Creator 시도: 5장
+(node:3481) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[12:55:39] [Bing] [1] 생성 중: A clean flat-design infographic illustrating Instagram Reels
+[12:55:44] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[12:55:48] [Bing] 생성 버튼 클릭
+[12:55:48] [Bing] 프롬프트 전송: A clean flat-design infographic illustrating Insta
+[12:55:54] [Bing] 로딩 감지됨, 생성 대기 중...
+[12:56:19] [Bing] 로딩 완료
+[12:56:44] [Bing] 이미지 컨테이너 감지 실패
+[12:56:44] [Bing] [1] 생성 실패
+[12:56:46] [Bing] [2] 생성 중: A smartphone mockup displaying Instagram Reels upload screen
+[12:56:50] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[12:56:56] [Bing] 생성 버튼 클릭
+[12:56:56] [Bing] 프롬프트 전송: A smartphone mockup displaying Instagram Reels upl
+[12:57:02] [Bing] 로딩 감지됨, 생성 대기 중...
+[12:57:25] [Bing] 로딩 완료
+[12:57:50] [Bing] 이미지 컨테이너 감지 실패
+[12:57:50] [Bing] [2] 생성 실패
+[12:57:52] [Bing] [3] 생성 중: A data dashboard illustration showing best posting times bar
+[12:57:56] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[12:58:01] [Bing] 생성 버튼 클릭
+[12:58:01] [Bing] 프롬프트 전송: A data dashboard illustration showing best posting
+[12:58:07] [Bing] 로딩 감지됨, 생성 대기 중...
+[12:58:37] [Bing] 로딩 완료
+[12:59:02] [Bing] 이미지 컨테이너 감지 실패
+[12:59:02] [Bing] [3] 생성 실패
+[12:59:04] [Bing] [4] 생성 중: A flat-design warning illustration showing five crossed-out 
+[12:59:09] [Bing] 제출 전 페이지 OIG 수: 63, 세션 생성됨: 0
+[12:59:13] [Bing] 생성 버튼 클릭
+[12:59:13] [Bing] 프롬프트 전송: A flat-design warning illustration showing five cr
+[12:59:19] [Bing] 로딩 감지됨, 생성 대기 중...
+[12:59:39] [Router] Bing 오류: Page.wait_for_timeout: Target page, context or browser has been closed
+[12:59:39] [Router] Bing 전체 실패 → Pollinations 폴백
+[12:59:40] [Pollinations] 저장 완료: blogspot_it-인스타그램-릴스-알고리즘-4단계-작동-원리-인포그래픽-1.webp (41KB)
+[12:59:41] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:59:41] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:59:42] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:59:43] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:59:43] [blogspot_it] 이미지 1개 생성 완료
+[12:59:43] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:59:44] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:59:45] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:59:45] [Pollinations] 실패: HTTP Error 429: Too Many Requests
+[12:59:45] [blogspot_it] Blogger API 발행 중: '인스타그램 릴스 알고리즘 노출 늘리는 방법 2026 핵심 가이드'
+[12:59:47] [blogspot_it] Blogger 발행 실패: HTTP 400: {
+  "error": {
+    "code": 400,
+    "message": "Request contains an invalid argument.",
+    "errors": [
+      {
+        "message": "Request contains an invalid argument.",
+        "domain": "global",
+
+[13:00:50] [라운드 1] 재시도 결과: triplog:✅ / blogspot_travel:⚠ / blogspot_it:⚠
+[13:00:50] 로그 저장: /Users/hana/Downloads/blog-automation-v2/logs/overnight_result.txt
+[리프레시] 갱신 대상 없음
+[13:00:50] [Chrome] CDP 포트 9222 활성 (Profile: Profile 1)
+(node:3679) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[13:00:55] [딜모니터] RSS 스캔: https://rss.blog.naver.com/myrealtrip_mpartner.xml
+[13:00:55] [딜모니터] 게시글 3개 발견
+[13:01:00] [딜모니터] 'https://blog.naver.com/myrealtrip_mpartner/224215328774' → 딜 0개 추출
+[13:01:04] [딜모니터] 'https://blog.naver.com/myrealtrip_mpartner/224182918459' → 딜 1개 추출
+[13:01:07] [딜모니터] 'https://blog.naver.com/myrealtrip_mpartner/223951444584' → 딜 1개 추출
+[13:01:07] [딜모니터] 총 딜 2개 발견
+[13:01:07] [딜] 이미 작성됨: stay_lucky
+[13:01:07] [딜] 이미 작성됨: flight_promo_live_7c_aug_alarm
+[13:01:07] [딜모니터] 새 딜 0개
+[13:01:07] [딜모니터] 완료 — 0개 글 생성
+[13:01:07] [자동발행] publish_drafts.py 실행 실패: name 'sys' is not defined
+[13:01:07] 
+============================================================
+[13:01:07] 완료
+[13:01:07] ============================================================
+[13:01:07] 로그 저장: /Users/hana/Downloads/blog-automation-v2/logs/overnight_result.txt

@@ -19,6 +19,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/indexing",
     "https://www.googleapis.com/auth/webmasters",
     "https://www.googleapis.com/auth/adsense",
+    "https://www.googleapis.com/auth/blogger",
 ]
 
 REDIRECT_PORT = 8765

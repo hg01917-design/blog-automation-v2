@@ -120,8 +120,8 @@ def _get_or_create_tag_id(wp_url: str, auth: str, tag_name: str) -> int | None:
 
 def publish_draft(draft_path: Path, env) -> dict:
     data = json.loads(draft_path.read_text())
-    blog_id = data["blog_id"]
-    if blog_id not in BLOGS:
+    blog_id = data.get("blog") or data.get("blog_id")
+    if not blog_id or blog_id not in BLOGS:
         return {"ok": False, "reason": f"unknown blog_id: {blog_id}"}
 
     cfg = BLOGS[blog_id]
@@ -182,7 +182,7 @@ def main(filter_blog=None):
     pending = [d for d in drafts if json.loads(d.read_text()).get("status") == "pending_publish"]
 
     if filter_blog:
-        pending = [d for d in pending if json.loads(d.read_text()).get("blog_id") == filter_blog]
+        pending = [d for d in pending if (lambda x: x.get("blog") or x.get("blog_id"))(json.loads(d.read_text())) == filter_blog]
 
     print(f"발행 대기 드래프트: {len(pending)}개")
 

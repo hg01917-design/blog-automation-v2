@@ -389,25 +389,36 @@ def collect_power_publisher_titles(power_pubs: dict[str, list[str]], on_log=None
 # ── 5단계: 제목 → seed 키워드 → 롱테일 확장 → DB 저장 ───────────────────────
 
 def _clean_title_to_keyword(title: str) -> str:
-    """제목에서 핵심 검색 키워드 추출. 자동완성에 맞게 15자 이내로 압축."""
+    """제목에서 핵심 검색 키워드 추출. 자동완성 seed용 — 명사구만 남긴다."""
     import html as _html
     title = _html.unescape(title)
     title = re.sub(r"<[^>]+>", "", title)
+    # 앞의 [카테고리] 태그 제거
+    title = re.sub(r"^\[[^\]]+\]\s*", "", title)
+    # 숫자+순위 패턴 제거 (BEST 7, TOP 10 등)
+    title = re.sub(r"\s*(BEST|TOP|No\.?)\s*\d+", "", title, flags=re.IGNORECASE)
     # 꼬리말 제거
     title = re.sub(
-        r"\s*(총정리|완벽정리|알아보기|알아보자|소개합니다|해봤어요|꿀팁|입니다|합니다|해요|정리|후기|리뷰)\s*$",
+        r"\s*(총정리|완벽정리|알아보기|알아보자|소개합니다|해봤어요|꿀팁|입니다|합니다|해요|"
+        r"정리|후기|리뷰|방법|하는법|하세요|이유|이란|뭔가요|인가요|을까요|"
+        r"살펴보기|해드립니다|드립니다|해볼까요|알아볼게요)\s*$",
         "", title, flags=re.IGNORECASE
     )
-    # 구분자 기준 앞부분만
-    title = re.split(r"[|｜ㅣ\-·:：]", title)[0]
+    # 구분자·쉼표 기준 앞부분만
+    title = re.split(r"[|｜ㅣ\-·:：,，]", title)[0]
     title = re.sub(r"\s+", " ", title).strip()
-    if not title or len(title) < 5:
+    if not title or len(title) < 2:
         return ""
-    # 15자 초과 시: 첫 공백 기준 앞 2~3 어절만 추출
+    # 문장형 감지 → 첫 2어절만
+    sentence_markers = r"(시 꼭|하면서|하는 법|있는지|해야|하기 위|알아야|수 있는|때문에|그리고|하지만|또한| 시 | 때 | 을 | 를 | 이 | 가 | 은 | 는 | 과 | 와 )"
+    if re.search(sentence_markers, title):
+        words = title.split()
+        title = " ".join(words[:2])
+    # 15자 초과 시 앞 2어절
     if len(title) > 15:
         words = title.split()
-        title = " ".join(words[:3]) if len(words) >= 3 else " ".join(words[:2])
-    return title if len(title) >= 5 else ""
+        title = " ".join(words[:2])
+    return title if len(title) >= 2 else ""
 
 
 def _naver_autocomplete(keyword: str, max_results: int = 10) -> list[str]:
@@ -578,8 +589,8 @@ def run(category: str = "여행", on_log=None) -> int:
     # 5. 롱테일 확장
     longtails = expand_to_longtail(seeds, category, on_log)
 
-    # seed + longtail 모두 저장
-    all_keywords = list(set(seeds + longtails))
+    # 롱테일만 저장 (seed는 autocomplete용으로만 사용)
+    all_keywords = list(set(longtails))
     saved = save_keywords_to_db(all_keywords, category, on_log)
 
     log(f"\n{'='*55}", on_log)
@@ -592,3 +603,79 @@ if __name__ == "__main__":
     import sys
     category = sys.argv[1] if len(sys.argv) > 1 else "여행"
     run(category)
+
+
+# ── 카테고리 자동 분류 + 파워 운영자 사이트 전체 재수집 ───────────────────────
+
+_CATEGORY_KEYWORDS = {
+    "IT": ["아이폰", "갤럭시", "노트북", "이어폰", "태블릿", "공기청정기", "로봇청소기",
+           "스마트워치", "모니터", "앱", "소프트웨어", "게임", "유튜브",
+           "인터넷", "와이파이", "블루투스", "충전기", "배터리", "카메라"],
+    "금융": ["주식투자", "주식매수", "주식매도", "주식추천", "펀드", "ETF", "코인",
+            "비트코인", "암호화폐", "부동산투자", "청약통장", "주택청약",
+            "대출금리", "주택대출", "신용대출", "카드대출", "금리인상", "금리인하",
+            "적금금리", "예금금리", "연금저축", "퇴직연금", "종신보험", "실손보험",
+            "신용카드", "체크카드", "재테크", "절세", "세금환급", "IRP", "ISA",
+            "퇴직금", "증권사", "배당주", "자산관리", "저축", "채권투자"],
+    "살림": ["청소", "세탁", "냉장고", "요리", "레시피", "정리", "수납", "인테리어",
+            "살림", "가전", "주방", "욕실", "빨래", "설거지", "청결", "위생"],
+    "정부지원금": ["지원금", "보조금", "혜택", "복지", "급여", "수당", "신청", "자격",
+                "기초생활", "실업", "육아휴직", "출산", "청년", "주거급여", "의료급여"],
+    "교통": ["버스", "지하철", "KTX", "공항", "철도", "택시", "주차", "고속도로",
+            "교통카드", "시간표", "환승", "노선", "운임", "요금"],
+    "영화": ["영화", "드라마", "시리즈", "결말", "줄거리", "배우", "감독", "OTT",
+            "왓챠", "디즈니", "애니", "공포", "로맨스", "액션", "SF"],
+    "여행": ["여행", "관광", "호텔", "펜션", "맛집", "카페", "명소", "코스", "일정",
+            "항공", "숙소", "투어", "여행지", "국내", "해외", "제주", "부산"],
+}
+
+def categorize_keyword(keyword: str) -> str:
+    """키워드를 카테고리로 분류. 매칭 없으면 None."""
+    for cat, kws in _CATEGORY_KEYWORDS.items():
+        for kw in kws:
+            if kw in keyword:
+                return cat
+    return None
+
+
+def harvest_power_sites_all_categories(on_log=None) -> dict:
+    """DB의 파워 운영자 사이트 RSS → 카테고리별 키워드 분류 저장."""
+    conn = sqlite3.connect(DB_PATH)
+    # sites 테이블에서 파워 운영자 사이트 가져오기
+    try:
+        rows = conn.execute("SELECT url, pub_code FROM sites WHERE pub_code IS NOT NULL").fetchall()
+    except Exception:
+        conn.close()
+        log("[오류] sites 테이블 없음", on_log)
+        return {}
+
+    # pub코드별 그룹핑 → 4개 이상만
+    groups: dict[str, list[str]] = {}
+    for url, pub in rows:
+        groups.setdefault(pub, []).append(url)
+    power_sites = [url for sites in groups.values() if len(sites) >= MIN_SITES_PER_PUB for url in sites]
+    conn.close()
+
+    log(f"[전카테고리] 파워 운영자 사이트 {len(power_sites)}개 RSS 재수집 시작", on_log)
+
+    # RSS 수집
+    titles = collect_power_publisher_titles({"all": power_sites}, on_log)
+
+    # 카테고리별 분류
+    cat_keywords: dict[str, list[str]] = {}
+    for title in titles:
+        kw = _clean_title_to_keyword(title)
+        if not kw:
+            continue
+        cat = categorize_keyword(kw)
+        if cat:
+            cat_keywords.setdefault(cat, []).append(kw)
+
+    # 저장
+    results = {}
+    for cat, kws in cat_keywords.items():
+        saved = save_keywords_to_db(list(set(kws)), cat, on_log)
+        results[cat] = saved
+        log(f"[전카테고리] {cat}: {saved}개 신규 저장", on_log)
+
+    return results

@@ -1,0 +1,99 @@
+{
+  "executed_stop": [
+    {
+      "idx": 31,
+      "productNo": 11136880626,
+      "name": "맥주 비어 선글라스 파티 장난 재밌는 사진소품 연말 술집",
+      "myPrice": 6360,
+      "market": {
+        "found": true,
+        "minPrice": 800,
+        "avgPrice": 2881,
+        "sellerCount": 127,
+        "sampleCount": 49
+      },
+      "action": "stop",
+      "newPrice": 0,
+      "reason": "시장최저 800원의 8.0배, 경쟁127개",
+      "productId": 11084380049
+    },
+    {
+      "idx": 37,
+      "productNo": 11136880049,
+      "name": "스탬프 볼펜 3종 세트 롤러타입 꽃 하트 물결 점선 무늬",
+      "myPrice": 5060,
+      "market": {
+        "found": true,
+        "minPrice": 800,
+        "avgPrice": 2881,
+        "sellerCount": 127,
+        "sampleCount": 49
+      },
+      "action": "stop",
+      "newPrice": 0,
+      "reason": "시장최저 800원의 6.3배, 경쟁127개",
+      "productId": 11084379473
+    }
+  ],
+  "executed_raise": [
+    {
+      "idx": 62,
+      "productNo": 11136863590,
+      "name": "2타입 프렌치 새틴 스카프",
+      "myPrice": 5380,
+      "market": {
+        "found": true,
+        "minPrice": 5380,
+        "avgPrice": 7220,
+        "sellerCount": 3,
+        "sampleCount": 3
+      },
+      "action": "raise",
+      "newPrice": 7120,
+      "reason": "내가 최저가, 시장평균 7,220원, 경쟁3개",
+      "productId": 11084363054
+    },
+    {
+      "name": "브라도 맨즈 멀티케어 쿨링 선스틱 23g 자외선차단제",
+      "productNo": "11136880226",
+      "myPrice": 0,
+      "newPrice": 19440,
+      "reason": "10원단위 재시도"
+    },
+    {
+      "name": "콤팩트한 2컬러 PU 가죽 휴대용 악세서리 케이스 여행 출장",
+      "productNo": "11136863119",
+      "myPrice": 0,
+      "newPrice": 8580,
+      "reason": "10원단위 재시도"
+    },
+    {
+      "name": "셀프 헤나 도안 판박이 대형 문신 바디 타투 스티커 리어플라워 여름 휴가",
+      "productNo": "11136726487",
+      "myPrice": 0,
+      "newPrice": 6300,
+      "reason": "10원단위 재시도"
+    }
+  ],
+  "failed": [
+    {
+      "name": "브라도 맨즈 멀티케어 쿨링 선스틱 23g 자외선차단제",
+      "action": "raise",
+      "error": "{\"code\":\"BAD_REQUEST\",\"message\":\"입력한 데이터가 유효하지 않습니다.\",\"invalidInputs\":[{\"name\":\"product.salePrice\",\"type\":\"NumberUnit\",\"message\":\"판매가 항목은 10원 단위로 입력해 "
+    },
+    {
+      "name": "콤팩트한 2컬러 PU 가죽 휴대용 악세서리 케이스 여행 출장",
+      "action": "raise",
+      "error": "{\"code\":\"BAD_REQUEST\",\"message\":\"입력한 데이터가 유효하지 않습니다.\",\"invalidInputs\":[{\"name\":\"product.salePrice\",\"type\":\"NumberUnit\",\"message\":\"판매가 항목은 10원 단위로 입력해 "
+    },
+    {
+      "name": "셀프 헤나 도안 판박이 대형 문신 바디 타투 스티커 리어플라워 여름 휴가",
+      "action": "raise",
+      "error": "{\"code\":\"BAD_REQUEST\",\"message\":\"입력한 데이터가 유효하지 않습니다.\",\"invalidInputs\":[{\"name\":\"product.salePrice\",\"type\":\"NumberUnit\",\"message\":\"판매가 항목은 10원 단위로 입력해 "
+    }
+  ],
+  "analysis_summary": {
+    "total": 156,
+    "keep_count": 150
+  }
+}

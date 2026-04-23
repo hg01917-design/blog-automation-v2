@@ -1,0 +1,105 @@
+{
+  "total": 156,
+  "stop": [
+    {
+      "idx": 31,
+      "productNo": 11136880626,
+      "name": "맥주 비어 선글라스 파티 장난 재밌는 사진소품 연말 술집",
+      "myPrice": 6360,
+      "market": {
+        "found": true,
+        "minPrice": 800,
+        "avgPrice": 2881,
+        "sellerCount": 127,
+        "sampleCount": 49
+      },
+      "action": "stop",
+      "newPrice": 0,
+      "reason": "시장최저 800원의 8.0배, 경쟁127개"
+    },
+    {
+      "idx": 37,
+      "productNo": 11136880049,
+      "name": "스탬프 볼펜 3종 세트 롤러타입 꽃 하트 물결 점선 무늬",
+      "myPrice": 5060,
+      "market": {
+        "found": true,
+        "minPrice": 800,
+        "avgPrice": 2881,
+        "sellerCount": 127,
+        "sampleCount": 49
+      },
+      "action": "stop",
+      "newPrice": 0,
+      "reason": "시장최저 800원의 6.3배, 경쟁127개"
+    }
+  ],
+  "lower": [],
+  "raise": [
+    {
+      "idx": 35,
+      "productNo": 11136880226,
+      "name": "브라도 맨즈 멀티케어 쿨링 선스틱 23g 자외선차단제",
+      "myPrice": 13360,
+      "market": {
+        "found": true,
+        "minPrice": 13360,
+        "avgPrice": 19543,
+        "sellerCount": 3,
+        "sampleCount": 3
+      },
+      "action": "raise",
+      "newPrice": 19443,
+      "reason": "내가 최저가, 시장평균 19,543원, 경쟁3개"
+    },
+    {
+      "idx": 62,
+      "productNo": 11136863590,
+      "name": "2타입 프렌치 새틴 스카프",
+      "myPrice": 5380,
+      "market": {
+        "found": true,
+        "minPrice": 5380,
+        "avgPrice": 7220,
+        "sellerCount": 3,
+        "sampleCount": 3
+      },
+      "action": "raise",
+      "newPrice": 7120,
+      "reason": "내가 최저가, 시장평균 7,220원, 경쟁3개"
+    },
+    {
+      "idx": 67,
+      "productNo": 11136863119,
+      "name": "콤팩트한 2컬러 PU 가죽 휴대용 악세서리 케이스 여행 출장",
+      "myPrice": 8040,
+      "market": {
+        "found": true,
+        "minPrice": 8040,
+        "avgPrice": 8675,
+        "sellerCount": 2,
+        "sampleCount": 2
+      },
+      "action": "raise",
+      "newPrice": 8575,
+      "reason": "내가 최저가, 시장평균 8,675원, 경쟁2개"
+    },
+    {
+      "idx": 151,
+      "productNo": 11136726487,
+      "name": "셀프 헤나 도안 판박이 대형 문신 바디 타투 스티커 리어플라워 여름 휴가",
+      "myPrice": 4850,
+      "market": {
+        "found": true,
+        "minPrice": 17560,
+        "avgPrice": 17560,
+        "sellerCount": 1,
+        "sampleCount": 1
+      },
+      "action": "raise",
+      "newPrice": 6305,
+      "reason": "내가 최저가, 시장평균 17,560원, 경쟁1개"
+    }
+  ],
+  "keep_count": 150
+}
