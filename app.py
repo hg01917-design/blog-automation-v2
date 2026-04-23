@@ -107,11 +107,11 @@ class SingleRunWorker(QThread):
     def run(self):
         self._dbg(f"run() 진입: {self.blog_id}")
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "agents"))
-        self._dbg("orchestrator import 시작")
-        from agents import orchestrator
-        self._dbg("orchestrator import 완료")
         self.blog_signal.emit(self.blog_id)
         try:
+            self._dbg("orchestrator import 시작")
+            from agents import orchestrator
+            self._dbg("orchestrator import 완료")
             self._dbg(f"run_single 호출: {self.keyword}")
             result = orchestrator.run_single(
                 self.blog_id,
@@ -126,7 +126,8 @@ class SingleRunWorker(QThread):
             else:
                 self.finished.emit(f"[실패] {self.blog_id}: {result['reason']}")
         except Exception as e:
-            self._dbg(f"run_single 예외: {e}")
+            import traceback as _tb
+            self._dbg(f"예외: {e}\n{_tb.format_exc()}")
             self.finished.emit(f"[오류] {self.blog_id}: {e}")
         finally:
             self._dbg("run() 종료")
@@ -1504,9 +1505,12 @@ class BlogAutomationApp(QMainWindow):
         QThread 안에서 처음 import 시 playwright 등 C 확장이 충돌하는 문제 방지.
         """
         try:
-            agents_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents")
-            if agents_path not in sys.path:
-                sys.path.insert(0, agents_path)
+            # SingleRunWorker.run()과 동일한 경로 설정
+            base = os.path.dirname(os.path.abspath(__file__))
+            agents_path = os.path.join(base, "agents")
+            for p in [base, agents_path]:
+                if p not in sys.path:
+                    sys.path.insert(0, p)
             from agents import orchestrator  # noqa — sys.modules 캐시 목적
             try:
                 with open("/tmp/blogauto_debug.log", "a") as f:
