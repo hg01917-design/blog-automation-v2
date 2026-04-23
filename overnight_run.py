@@ -143,6 +143,47 @@ def _naver_competition_check(keyword: str, on_log=None) -> bool:
     return True
 
 
+def _simplify_search_query(keyword: str) -> str:
+    """검색용 핵심 쿼리 추출 — 위치(1~2단어) + 카테고리.
+
+    예: "양양 낙산사 서핑 여행 숙소추천" → "양양 숙소"
+        "나트랑 빈펄리조트 3박4일 여행" → "나트랑 투어"
+        "엘지 그램 노트북 발열이랑 스펙" → "엘지 그램"
+    """
+    STRIP_WORDS = {
+        '여행', '코스', '추천', '일정', '동선', '정보', '가이드',
+        '완벽', '총정리', '정리', '후기', '2026', '2025', '2024',
+        '당일치기', '뚜벅이', '1박2일', '2박3일', '3박4일', '4박5일',
+        '드라이브', '혼자', '커플', '가족', '아이와', '이랑',
+    }
+    ACCOMMODATION = {'숙소', '호텔', '리조트', '펜션', '게스트하우스', '모텔', '숙박', '민박', '에어비앤비'}
+    TOUR = {'투어', '액티비티', '체험', '스노클링', '서핑', '다이빙', '래프팅', '집라인', '관광', '입장권'}
+
+    words = keyword.split()
+
+    # 카테고리 감지
+    category = ""
+    for w in words:
+        if any(a in w for a in ACCOMMODATION):
+            category = "숙소"
+            break
+        if any(t in w for t in TOUR):
+            category = "투어"
+            break
+
+    # 핵심 단어: stop words·카테고리 단어 제거, 앞 1~2개만
+    loc_words = [w for w in words
+                 if w not in STRIP_WORDS
+                 and w not in ACCOMMODATION
+                 and w not in TOUR
+                 and len(w) >= 2]
+    location = " ".join(loc_words[:2])
+
+    if category:
+        return f"{location} {category}".strip()
+    return location or keyword
+
+
 def _extract_core_words(keyword, blog_id=None):
     """키워드에서 핵심 단어를 추출한다.
 
@@ -772,8 +813,9 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
     if blog_id == "triplog":
         try:
             from mrt_affiliate import get_affiliate_links
-            log(f"[파이프라인] triplog — MRT 제휴 링크 조회 중: '{keyword}'")
-            mrt_links = get_affiliate_links(keyword, top_n=5, on_log=log)
+            mrt_query = _simplify_search_query(keyword)
+            log(f"[파이프라인] triplog — MRT 제휴 링크 조회 중: '{keyword}' → 검색어: '{mrt_query}'")
+            mrt_links = get_affiliate_links(mrt_query, top_n=5, on_log=log)
 
             # 관련성 필터: 키워드의 핵심 지역/도시가 상품 제목에 포함되어야 함
             if mrt_links:
