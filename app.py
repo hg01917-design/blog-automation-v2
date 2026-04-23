@@ -1530,7 +1530,7 @@ class BlogAutomationApp(QMainWindow):
         if hasattr(self, '_all_proc') and self._all_proc and self._all_proc.poll() is None:
             self.log_box.append("[전체실행] 이미 실행 중입니다.")
             return
-        import subprocess, threading
+        import subprocess, threading, shutil
         from pathlib import Path
         script = Path(__file__).parent / "overnight_run.py"
         self.log_box.append("[전체실행] overnight_run.py 시작...")
@@ -1538,8 +1538,10 @@ class BlogAutomationApp(QMainWindow):
         self.run_btn.setEnabled(False)
         self.pause_btn.setEnabled(True)
         self._all_stop = threading.Event()
+        # PyInstaller 환경에서 sys.executable은 앱 자체 → python3 직접 사용
+        python_bin = shutil.which("python3") or shutil.which("python") or "/usr/local/bin/python3"
         self._all_proc = subprocess.Popen(
-            [sys.executable, str(script)],
+            [python_bin, str(script)],
             cwd=str(Path(__file__).parent),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1
