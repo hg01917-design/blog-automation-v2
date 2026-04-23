@@ -105,6 +105,49 @@ def publish_post(title: str, content: str, labels: list = None,
         return {"ok": False, "reason": str(e)}
 
 
+def patch_post_content(post_id: str, content: str, blog_id: str = None) -> bool:
+    """Blogger 드래프트/발행 글 본문 수정 (PATCH)."""
+    env = _load_env()
+    if not blog_id:
+        blog_id = env.get("BLOGGER_BLOG_ID", "")
+    if not blog_id:
+        return False
+    try:
+        token = _get_token()
+        data = json.dumps({"content": content}).encode("utf-8")
+        req = urllib.request.Request(
+            f"https://www.googleapis.com/blogger/v3/blogs/{blog_id}/posts/{post_id}",
+            data=data,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            method="PATCH",
+        )
+        urllib.request.urlopen(req, timeout=30)
+        return True
+    except Exception:
+        return False
+
+
+def find_draft_by_keyword(keyword: str, blog_id: str = None) -> dict | None:
+    """키워드가 제목에 포함된 드래프트 글 조회. 없으면 None."""
+    env = _load_env()
+    if not blog_id:
+        blog_id = env.get("BLOGGER_BLOG_ID", "")
+    if not blog_id:
+        return None
+    try:
+        token = _get_token()
+        params = urllib.parse.urlencode({"status": "draft", "maxResults": 20})
+        url = f"https://www.googleapis.com/blogger/v3/blogs/{blog_id}/posts?{params}"
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+        resp = json.loads(urllib.request.urlopen(req, timeout=15).read())
+        for post in resp.get("items", []):
+            if keyword in post.get("title", ""):
+                return post
+    except Exception:
+        pass
+    return None
+
+
 def list_posts(blog_id: str = None, status: str = "live", max_results: int = 10) -> list:
     """최근 발행된 글 목록 조회"""
     env = _load_env()

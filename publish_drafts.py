@@ -54,6 +54,72 @@ BLOG_DOMAIN = {
     "phn0502":  "film.baremi542.com",
 }
 
+# ─── 링크 피라미드 crosslink 저장/조회 ──────────────────────────
+_CROSSLINK_FILE = Path(__file__).parent / "logs" / "crosslink_urls.json"
+
+def _store_crosslink(keyword: str, url: str, tier: str):
+    try:
+        data = json.loads(_CROSSLINK_FILE.read_text()) if _CROSSLINK_FILE.exists() else {}
+    except Exception:
+        data = {}
+    entry = data.get(keyword, {})
+    entry[tier] = {"url": url, "ts": str(time.time())}
+    data[keyword] = entry
+    _CROSSLINK_FILE.parent.mkdir(exist_ok=True)
+    _CROSSLINK_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    _log(f"[crosslink] {tier} URL 저장: {url} (keyword={keyword})")
+
+def _get_crosslink(keyword: str, tier: str) -> str:
+    try:
+        if not _CROSSLINK_FILE.exists():
+            return ""
+        data = json.loads(_CROSSLINK_FILE.read_text())
+        entry = data.get(keyword, {})
+        # 구 형식 호환
+        if "url" in entry and tier == "triplog":
+            return entry.get("url", "")
+        return entry.get(tier, {}).get("url", "")
+    except Exception:
+        return ""
+
+def _inject_backlink(content: str, url: str, anchor: str = "관련 글 보기") -> str:
+    """본문 중간(50% 지점)에 백링크 버튼 삽입."""
+    btn = (
+        f'\n\n<p style="text-align:center;">'
+        f'<a href="{url}" target="_blank" rel="noopener" '
+        f'style="display:inline-block;padding:10px 20px;background:#4f8ef7;'
+        f'color:#fff;border-radius:6px;text-decoration:none;font-weight:bold;">'
+        f'{anchor}</a></p>\n\n'
+    )
+    mid = len(content) // 2
+    ins = content.find('</p>', mid)
+    if ins > 0:
+        return content[:ins + 4] + btn + content[ins + 4:]
+    return content + btn
+
+
+def _patch_blogspot_draft_with_crosslink(keyword: str, url: str, anchor: str, blog_id: str):
+    """키워드와 일치하는 Blogspot 드래프트를 찾아 백링크를 주입하고 PATCH."""
+    try:
+        from blogger_api import find_draft_by_keyword, patch_post_content
+        draft = find_draft_by_keyword(keyword[:20], blog_id=blog_id)
+        if not draft:
+            _log(f"[crosslink] blogspot 드래프트 없음 (keyword={keyword[:20]})")
+            return
+        post_id = draft.get("id", "")
+        content = draft.get("content", "")
+        if not post_id or not content:
+            return
+        updated = _inject_backlink(content, url, anchor)
+        ok = patch_post_content(post_id, updated, blog_id=blog_id)
+        if ok:
+            _log(f"[crosslink] ✅ blogspot({blog_id}) 드래프트 백링크 주입 완료: {url}")
+        else:
+            _log(f"[crosslink] ⚠ blogspot({blog_id}) PATCH 실패")
+    except Exception as e:
+        _log(f"[crosslink] blogspot 패치 오류: {e}")
+
+
 # ─── DB 상태 업데이트 ──────────────────────────
 def _mark_keyword_published(blog_id: str, title: str):
     """발행 성공 후 keyword_blog_status 테이블을 draft_saved → published 로 업데이트.
@@ -322,9 +388,13 @@ def publish_wp_draft():
     _log(f"[WP] 발행 완료 → status={new_status}, link={new_link}")
     if new_status == "publish":
         _mark_keyword_published("baremi542", title)
-    if new_link:
+    if new_link and new_status == "publish":
         from gsc_indexing import request_indexing
         request_indexing(new_link)
+        _store_crosslink(title, new_link, tier="baremi542")
+        # blogspot_it 드래프트에 baremi542 백링크 자동 주입
+        _patch_blogspot_draft_with_crosslink(title, new_link, "관련 정보 보기",
+                                             blog_id=os.environ.get("BLOGSPOT_IT_BLOG_ID", "5956656339719895415"))
     return new_status == "publish"
 
 
@@ -1407,7 +1477,80 @@ def publish_triplog_draft() -> bool:
     if new_link and new_status == "publish":
         from gsc_indexing import request_indexing
         request_indexing(new_link)
+        # 링크 피라미드: triplog URL 저장 → nolja100/woll100 발행 시 백링크로 사용
+        _store_crosslink(title, new_link, tier="triplog")
+        # blogspot_travel 드래프트에 triplog 백링크 자동 주입
+        _patch_blogspot_draft_with_crosslink(title, new_link, "travel.baremi542.com 관련 글 보기",
+                                             blog_id=os.environ.get("BLOGSPOT_TRAVEL_BLOG_ID", "6036713839195958620"))
     return new_status == "publish"
+
+
+def _get_latest_blogspot_url(blogger_blog_id: str) -> str:
+    """Blogger API로 가장 최근 발행 글 URL 조회."""
+    try:
+        from blogger_api import list_posts
+        posts = list_posts(blog_id=blogger_blog_id, status="live", max_results=1)
+        if posts:
+            return posts[0].get("url", "")
+    except Exception as e:
+        _log(f"[crosslink] blogspot 최근글 조회 실패: {e}")
+    return ""
+
+
+def _tistory_inject_crosslink(page, blog_id: str, title: str):
+    """Tistory 에디터 본문 중간에 상위 계층 crosslink 버튼 주입 (TinyMCE via JS)."""
+    # 링크 피라미드 tier 매핑
+    tier_map = {
+        "nolja100": "triplog",
+        "woll100":  "triplog",
+        "goodisak": "baremi542",
+    }
+    blogspot_id_map = {
+        "nolja100": os.environ.get("BLOGSPOT_TRAVEL_BLOG_ID", "6036713839195958620"),
+        "woll100":  os.environ.get("BLOGSPOT_TRAVEL_BLOG_ID", "6036713839195958620"),
+        "goodisak": os.environ.get("BLOGSPOT_IT_BLOG_ID", "5956656339719895415"),
+    }
+    tier = tier_map.get(blog_id)
+    if not tier:
+        return
+    url = _get_crosslink(title, tier)
+    if not url:
+        # crosslink 파일에 없으면 Blogger API로 최근글 URL 조회
+        blogspot_blog_id = blogspot_id_map.get(blog_id, "")
+        if blogspot_blog_id:
+            url = _get_latest_blogspot_url(blogspot_blog_id)
+    if not url:
+        _log(f"[{blog_id}] crosslink 없음 (tier={tier}, title={title[:30]})")
+        return
+    anchor_map = {"triplog": "여행 관련 글 보기", "baremi542": "관련 정보 보기"}
+    anchor = anchor_map.get(tier, "관련 글 보기")
+    btn_html = (
+        f'<p style="text-align:center;">'
+        f'<a href="{url}" target="_blank" rel="noopener" '
+        f'style="display:inline-block;padding:10px 20px;background:#4f8ef7;'
+        f'color:#fff;border-radius:6px;text-decoration:none;font-weight:bold;">'
+        f'{anchor}</a></p>'
+    )
+    injected = page.evaluate("""(btnHtml) => {
+        try {
+            const iframe = document.querySelector('#content-area iframe, iframe[id*="mce"]');
+            if (!iframe) return false;
+            const doc = iframe.contentDocument || iframe.contentWindow.document;
+            const body = doc.body;
+            if (!body) return false;
+            const paras = body.querySelectorAll('p, div');
+            const mid = Math.floor(paras.length / 2);
+            const ref = paras[mid] || body.firstChild;
+            const div = doc.createElement('div');
+            div.innerHTML = btnHtml;
+            body.insertBefore(div.firstChild, ref);
+            return true;
+        } catch(e) { return false; }
+    }""", btn_html)
+    if injected:
+        _log(f"[{blog_id}] ✅ crosslink 주입 완료: {url}")
+    else:
+        _log(f"[{blog_id}] ⚠ crosslink 주입 실패 (에디터 iframe 없음)")
 
 
 def publish_tistory_draft(blog_id: str) -> bool:
@@ -1611,6 +1754,9 @@ def publish_tistory_draft(blog_id: str) -> bool:
                 return False
             if title_val:
                 _log(f"[goodisak] ✅ IT+금융 주제 확인: {title_val[:40]}")
+
+        # 링크 피라미드: 상위 계층 crosslink를 Tistory 본문에 주입
+        _tistory_inject_crosslink(page, blog_id, _draft_title)
 
         # 공개 발행
         ok = _tistory_publish_private(page, blog_id)
