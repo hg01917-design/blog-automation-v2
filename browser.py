@@ -182,10 +182,10 @@ def get_or_create_page(browser, url_contains=None, navigate_to=None):
     if navigate_to:
         page.goto(navigate_to, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)
-    # Chrome이 앞으로 튀어나오지 않도록 백그라운드로 보냄
+    # Chrome 창이 앞으로 튀어나오지 않도록 최소화
     try:
         subprocess.run(
-            ["osascript", "-e", 'tell application "System Events" to set frontmost of process "Google Chrome" to false'],
+            ["osascript", "-e", 'tell application "Google Chrome" to set miniaturized of every window to true'],
             capture_output=True, timeout=2
         )
     except Exception:
