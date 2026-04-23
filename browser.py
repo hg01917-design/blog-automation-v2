@@ -177,19 +177,33 @@ def get_or_create_page(browser, url_contains=None, navigate_to=None):
             _apply_stealth(page)
             return page
 
+    # 탭 열기 전 현재 포커스 앱 저장
+    _prev_app = None
+    try:
+        r = subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events" to get name of first application process whose frontmost is true'],
+            capture_output=True, text=True, timeout=2
+        )
+        _prev_app = r.stdout.strip()
+    except Exception:
+        pass
+
     page = context.new_page()
     _apply_stealth(page)
     if navigate_to:
         page.goto(navigate_to, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)
-    # Chrome 창이 앞으로 튀어나오지 않도록 최소화
-    try:
-        subprocess.run(
-            ["osascript", "-e", 'tell application "Google Chrome" to set miniaturized of every window to true'],
-            capture_output=True, timeout=2
-        )
-    except Exception:
-        pass
+
+    # Chrome이 포커스 뺏은 경우 원래 앱으로 복귀
+    if _prev_app and _prev_app != "Google Chrome":
+        try:
+            subprocess.run(
+                ["osascript", "-e", f'tell application "{_prev_app}" to activate'],
+                capture_output=True, timeout=2
+            )
+        except Exception:
+            pass
     return page
 
 
