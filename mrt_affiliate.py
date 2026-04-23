@@ -95,7 +95,7 @@ def create_affiliate_link(target_url: str, on_log=None) -> str | None:
 # ── Playwright: 상품 검색 (키워드 → URL 목록) ─────────────────────────────
 
 def _search_products(page, keyword: str, top_n: int = 5) -> list[dict]:
-    """키워드로 상품 검색 → 상위 n개 {title, url} 반환."""
+    """키워드로 상품 검색 → 상위 n개 상품 정보(제목/URL/가격/평점/리뷰수/지역) 반환."""
     q = urllib.parse.quote(keyword)
     page.goto(SEARCH_URL.format(query=q), wait_until="domcontentloaded", timeout=20000)
 
@@ -113,21 +113,102 @@ def _search_products(page, keyword: str, top_n: int = 5) -> list[dict]:
     products = page.evaluate("""(topN) => {
         const seen = new Set();
         const items = [];
-        for (const el of document.querySelectorAll('a[href]')) {
-            const href = el.href || '';
-            if (!/(experiences|offers|products)/.test(href)) continue;
-            if (!/\\/\\d{4,}/.test(href)) continue;
-            if (seen.has(href)) continue;
-            seen.add(href);
-            const title = el.innerText.trim().replace(/\\s+/g, ' ').substring(0, 80);
-            if (title.length < 5) continue;
-            items.push({ title, url: href });
+
+        // 상품 카드 컨테이너 탐색 (MRT 검색 결과 구조)
+        const cards = document.querySelectorAll(
+            'li[class*="offer"], li[class*="product"], div[class*="offer-card"], div[class*="product-card"], article'
+        );
+
+        const extractFromCard = (card) => {
+            const link = card.querySelector('a[href]');
+            if (!link) return null;
+            const href = link.href || '';
+            if (!/(experiences|offers|products)/.test(href)) return null;
+            if (!/\\/\\d{4,}/.test(href)) return null;
+            if (seen.has(href)) return null;
+
+            // 제목
+            const titleEl = card.querySelector('[class*="title"], [class*="name"], h2, h3');
+            const title = (titleEl?.innerText || link.innerText || '').trim().replace(/\\s+/g, ' ').substring(0, 80);
+            if (title.length < 5) return null;
+
+            // 가격
+            let price = '';
+            const priceEl = card.querySelector('[class*="price"], [class*="amount"]');
+            if (priceEl) price = priceEl.innerText.trim().replace(/\\s+/g, ' ').substring(0, 30);
+
+            // 평점
+            let rating = '';
+            const ratingEl = card.querySelector('[class*="rating"], [class*="score"], [class*="star"]');
+            if (ratingEl) {
+                const txt = ratingEl.innerText.trim();
+                const m = txt.match(/[0-9]+\\.?[0-9]*/);
+                if (m) rating = m[0];
+            }
+
+            // 리뷰수
+            let reviewCount = '';
+            const reviewEl = card.querySelector('[class*="review"], [class*="count"]');
+            if (reviewEl) {
+                const txt = reviewEl.innerText.trim();
+                const m = txt.match(/([0-9,]+)\\s*(?:개|건|명|reviews?)?/);
+                if (m) reviewCount = m[1].replace(',', '');
+            }
+
+            // 지역/카테고리 태그
+            let region = '';
+            const regionEl = card.querySelector('[class*="tag"], [class*="location"], [class*="area"], [class*="category"]');
+            if (regionEl) region = regionEl.innerText.trim().substring(0, 20);
+
+            return { title, url: href, price, rating, reviewCount, region };
+        };
+
+        // 카드가 없으면 링크 기반 폴백
+        if (cards.length === 0) {
+            for (const el of document.querySelectorAll('a[href]')) {
+                const href = el.href || '';
+                if (!/(experiences|offers|products)/.test(href)) continue;
+                if (!/\\/\\d{4,}/.test(href)) continue;
+                if (seen.has(href)) continue;
+                seen.add(href);
+                const title = el.innerText.trim().replace(/\\s+/g, ' ').substring(0, 80);
+                if (title.length < 5) continue;
+                items.push({ title, url: href, price: '', rating: '', reviewCount: '', region: '' });
+                if (items.length >= topN) break;
+            }
+            return items;
+        }
+
+        for (const card of cards) {
+            const item = extractFromCard(card);
+            if (!item) continue;
+            seen.add(item.url);
+            items.push(item);
             if (items.length >= topN) break;
         }
         return items;
     }""", top_n)
 
     return products
+
+
+def format_products_as_context(products: list[dict], keyword: str) -> str:
+    """검색 결과를 Claude 컨텍스트 문자열로 변환."""
+    if not products:
+        return ""
+    lines = [f"[마이리얼트립 검색 결과 — '{keyword}']"]
+    for p in products:
+        parts = [f"- 상품명: {p['title']}"]
+        if p.get("region"):
+            parts.append(f"  지역: {p['region']}")
+        if p.get("price"):
+            parts.append(f"  가격: {p['price']}")
+        if p.get("rating"):
+            rev = f" ({p['reviewCount']}개 리뷰)" if p.get("reviewCount") else ""
+            parts.append(f"  평점: {p['rating']}{rev}")
+        parts.append(f"  URL: {p['url']}")
+        lines.append("\n".join(parts))
+    return "\n\n".join(lines)
 
 
 # ── 메인 함수 ─────────────────────────────────────────────────────────────────
@@ -180,11 +261,29 @@ def get_affiliate_links(keyword: str, top_n: int = 3, on_log=None) -> list[dict]
             "title": product["title"],
             "original_url": product["url"],
             "affiliate_url": affiliate_url,
+            "price": product.get("price", ""),
+            "rating": product.get("rating", ""),
+            "review_count": product.get("reviewCount", ""),
+            "region": product.get("region", ""),
         })
 
     success = len([r for r in results if r['affiliate_url']])
     log(f"\n[MRT] 완료: {success}/{len(results)}개 링크 생성")
     return results
+
+
+def get_affiliate_links_with_context(keyword: str, top_n: int = 3, on_log=None) -> tuple[list[dict], str]:
+    """get_affiliate_links() + 상품 정보 컨텍스트 문자열도 함께 반환.
+
+    Returns:
+        (links, product_context_str)
+        product_context_str: Claude extra_context에 주입용 상품 정보 요약
+    """
+    links = get_affiliate_links(keyword, top_n=top_n, on_log=on_log)
+    if not links:
+        return [], ""
+    context = format_products_as_context(links, keyword)
+    return links, context
 
 
 # ── 하위 호환: Playwright 기반 함수 (더 이상 사용 안 함) ─────────────────────

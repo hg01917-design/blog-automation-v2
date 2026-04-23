@@ -903,7 +903,18 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
                 for i, p in enumerate(valid_links, 1):
                     name = p["title"][:60]
                     aff_url = p.get('affiliate_url', '')
+                    price = p.get('price', '')
+                    rating = p.get('rating', '')
+                    review_count = p.get('review_count', '')
+                    region = p.get('region', '')
                     mrt_ctx += f"{i}. 상품명: {name}\n   URL: {aff_url}\n"
+                    if price:
+                        mrt_ctx += f"   가격: {price}\n"
+                    if rating:
+                        rev_str = f" ({review_count}개 리뷰)" if review_count else ""
+                        mrt_ctx += f"   평점: {rating}{rev_str}\n"
+                    if region:
+                        mrt_ctx += f"   지역: {region}\n"
                 keyword_with_mrt = keyword + mrt_ctx
                 log(f"[파이프라인] MRT {len(valid_links)}개 관련 제휴 링크 주입 완료")
             else:
