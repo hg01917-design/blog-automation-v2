@@ -96,11 +96,23 @@ class SingleRunWorker(QThread):
         self.keyword = keyword
         self.forced_title = forced_title
 
+    def _dbg(self, msg):
+        try:
+            from datetime import datetime as _dt
+            with open("/tmp/blogauto_debug.log", "a") as f:
+                f.write(f"[{_dt.now().strftime('%H:%M:%S')}] [SingleRunWorker] {msg}\n")
+        except Exception:
+            pass
+
     def run(self):
+        self._dbg(f"run() 진입: {self.blog_id}")
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "agents"))
+        self._dbg("orchestrator import 시작")
         from agents import orchestrator
+        self._dbg("orchestrator import 완료")
         self.blog_signal.emit(self.blog_id)
         try:
+            self._dbg(f"run_single 호출: {self.keyword}")
             result = orchestrator.run_single(
                 self.blog_id,
                 keyword=self.keyword or None,
@@ -108,13 +120,16 @@ class SingleRunWorker(QThread):
                 on_status=self._status,
                 forced_title=self.forced_title or None,
             )
+            self._dbg(f"run_single 완료: success={result.get('success')}")
             if result["success"]:
                 self.finished.emit(f"[완료] {self.blog_id}: {result['title']}")
             else:
                 self.finished.emit(f"[실패] {self.blog_id}: {result['reason']}")
         except Exception as e:
+            self._dbg(f"run_single 예외: {e}")
             self.finished.emit(f"[오류] {self.blog_id}: {e}")
         finally:
+            self._dbg("run() 종료")
             self.blog_signal.emit("")
 
     def _log(self, msg):
