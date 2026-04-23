@@ -1492,12 +1492,33 @@ class BlogAutomationApp(QMainWindow):
         self._forced_title = None       # 키워드 분석에서 강제 적용 제목
         self._build_ui()
         self._refresh_stats()
-        # 앱 시작 시 스케줄러 자동 실행
-        # 자동 시작 비활성화 — 수동으로 실행 버튼 눌러야 함
-        pass
+        # orchestrator + 의존 모듈을 메인 스레드에서 미리 import
+        # (백그라운드 QThread 첫 import 시 playwright 등 C 확장 모듈 충돌 방지)
+        QTimer.singleShot(300, self._preload_agents)
 
     def _auto_start_scheduler(self):
         pass
+
+    def _preload_agents(self):
+        """메인 스레드에서 orchestrator + 의존 모듈을 미리 import.
+        QThread 안에서 처음 import 시 playwright 등 C 확장이 충돌하는 문제 방지.
+        """
+        try:
+            agents_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents")
+            if agents_path not in sys.path:
+                sys.path.insert(0, agents_path)
+            from agents import orchestrator  # noqa — sys.modules 캐시 목적
+            try:
+                with open("/tmp/blogauto_debug.log", "a") as f:
+                    f.write("[preload] orchestrator 메인 스레드 사전 로드 완료\n")
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                with open("/tmp/blogauto_debug.log", "a") as f:
+                    f.write(f"[preload] 실패: {e}\n")
+            except Exception:
+                pass
 
     def _build_ui(self):
         central = QWidget()
