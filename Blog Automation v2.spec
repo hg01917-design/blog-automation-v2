@@ -32,6 +32,7 @@ a = Analysis(
         ('tg_send.py', '.'),
         ('issue_card.py', '.'),
         ('cdp_utils.py', '.'),
+        ('public_api.py', '.'),
     ],
     hiddenimports=pyqt5_hiddenimports + ['playwright', 'requests', 'anthropic'],
     hookspath=[],
