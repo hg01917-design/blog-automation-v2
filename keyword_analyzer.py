@@ -120,6 +120,53 @@ def get_related_from_search(keyword: str) -> list[str]:
         return []
 
 
+def get_datalab_scores(keywords: list[str]) -> dict[str, float]:
+    """네이버 DataLab으로 키워드별 상대 검색량 점수 반환 (0~100).
+    API 한 번에 최대 5개 → 배치 처리.
+    """
+    import datetime
+    cid = os.environ.get("NAVER_DATALAB_CLIENT_ID", "")
+    csec = os.environ.get("NAVER_DATALAB_CLIENT_SECRET", "")
+    if not cid:
+        return {}
+
+    end = datetime.date.today()
+    start = end - datetime.timedelta(days=90)
+    scores: dict[str, float] = {}
+
+    for i in range(0, len(keywords), 5):
+        batch = keywords[i:i + 5]
+        body = json.dumps({
+            "startDate": start.strftime("%Y-%m-%d"),
+            "endDate":   end.strftime("%Y-%m-%d"),
+            "timeUnit":  "month",
+            "keywordGroups": [
+                {"groupName": kw, "keywords": [kw]} for kw in batch
+            ],
+        }).encode()
+        try:
+            req = urllib.request.Request(
+                "https://openapi.naver.com/v1/datalab/search",
+                data=body,
+                headers={
+                    "X-Naver-Client-Id":     cid,
+                    "X-Naver-Client-Secret": csec,
+                    "Content-Type":          "application/json",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = json.loads(r.read())
+            for res in data.get("results", []):
+                pts = [d["ratio"] for d in res.get("data", []) if d.get("ratio") is not None]
+                scores[res["title"]] = round(sum(pts) / len(pts), 1) if pts else 0.0
+        except Exception:
+            for kw in batch:
+                scores[kw] = -1.0
+        time.sleep(0.2)
+
+    return scores
+
+
 def _load_env():
     """앱 시작 후에도 .env 미로드 상태면 직접 로드."""
     if os.environ.get("NAVER_SEARCH_CLIENT_ID"):
@@ -161,42 +208,36 @@ def analyze_keyword(keyword: str, on_log=None) -> dict:
     log(f"[분석] 발행량: {main_total:,}개 → {difficulty_label(main_total)}")
 
     log(f"[분석] 구글 자동완성 수집 중...")
-    naver_kws = get_autocomplete(keyword)
-    log(f"[분석] 구글 자동완성 {len(naver_kws)}개")
+    related_kws = get_autocomplete(keyword)
+    log(f"[분석] 구글 자동완성 {len(related_kws)}개")
 
-    log(f"[분석] 네이버 블로그 연관어 수집 중...")
-    daum_kws = get_related_from_search(keyword)
-    log(f"[분석] 네이버 블로그 연관어 {len(daum_kws)}개")
-
-    # 중복 제거 후 경쟁도 체크 (naver 우선, daum 추가)
-    related_kws = list(dict.fromkeys(naver_kws + daum_kws))
-    log(f"[분석] 전체 연관 키워드 {len(related_kws)}개 경쟁도 체크 중...")
-
-    kw_data: dict[str, dict] = {}
+    log(f"[분석] 네이버 발행량 체크 중...")
+    related: list[dict] = []
     for kw in related_kws:
         if kw == keyword:
             continue
         total = get_blog_count(kw)
-        kw_data[kw] = {"keyword": kw, "total": total, "level": difficulty_label(total)}
+        related.append({"keyword": kw, "total": total, "level": difficulty_label(total), "score": -1.0})
         time.sleep(0.1)
-
-    def _make_list(kws):
-        out = [kw_data[k] for k in kws if k != keyword and k in kw_data]
-        out.sort(key=lambda x: x["total"] if x["total"] >= 0 else 999999)
-        return out
-
-    naver_related = _make_list(naver_kws)
-    daum_related  = _make_list(daum_kws)
-    related = list({r["keyword"]: r for r in naver_related + daum_related}.values())
+    # 발행량 오름차순
     related.sort(key=lambda x: x["total"] if x["total"] >= 0 else 999999)
+
+    log(f"[분석] DataLab 검색량 조회 중...")
+    kw_list = [r["keyword"] for r in related]
+    dl_scores = get_datalab_scores(kw_list)
+    for r in related:
+        r["score"] = dl_scores.get(r["keyword"], -1.0)
+    log(f"[분석] DataLab 완료")
+
+    # 검색량 내림차순 복사본 (탭 2용)
+    volume_sorted = sorted(related, key=lambda x: x["score"] if x["score"] >= 0 else -1, reverse=True)
 
     return {
         "keyword": keyword,
         "total": main_total,
         "level": difficulty_label(main_total),
-        "related": related,
-        "naver_related": naver_related,
-        "daum_related": daum_related,
+        "related": related,           # 발행량 오름차순
+        "volume_sorted": volume_sorted,  # 검색량 내림차순
     }
 
 
