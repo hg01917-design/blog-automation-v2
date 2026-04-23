@@ -707,6 +707,192 @@ class KeywordCollectWorker(QThread):
             self.finished.emit(f"[오류] {e}")
 
 
+# ─── 키워드 분석 ────────────────────────────────────────────────────────────
+
+class _KeywordAnalysisWorker(QThread):
+    """Naver API로 키워드 경쟁도·연관키워드 분석 + Claude 제목 생성"""
+    log_signal      = pyqtSignal(str)
+    result_signal   = pyqtSignal(dict)   # 분석 결과
+    titles_signal   = pyqtSignal(list)   # 제목 후보
+    finished        = pyqtSignal()
+
+    def __init__(self, keyword: str, blog_id: str):
+        super().__init__()
+        self.keyword = keyword
+        self.blog_id = blog_id
+
+    def run(self):
+        try:
+            from keyword_analyzer import analyze_keyword, filter_by_blog, generate_titles
+            result = analyze_keyword(self.keyword, on_log=self.log_signal.emit)
+            result["filtered"] = filter_by_blog(result["related"], self.blog_id)
+            self.result_signal.emit(result)
+            # 제목 생성 (분석 완료 후)
+            self.log_signal.emit(f"[분석] SEO 제목 생성 중...")
+            titles = generate_titles(self.keyword, self.blog_id, on_log=self.log_signal.emit)
+            self.titles_signal.emit(titles)
+        except Exception as e:
+            self.log_signal.emit(f"[분석] 오류: {e}")
+        finally:
+            self.finished.emit()
+
+
+class KeywordAnalysisDialog(QDialog):
+    """키워드 분석 결과 다이얼로그 — 키워드·제목 선택 → 블로그 생성으로 연결"""
+    keyword_selected = pyqtSignal(str)  # 선택된 키워드/제목을 외부로 전달
+
+    _STYLE = """
+        QDialog { background: #0d0f18; color: #e0e0e0; }
+        QLabel  { color: #e0e0e0; }
+        QTableWidget { background: #1a1d2e; color: #e0e0e0; gridline-color: #2a2d3e;
+                       border: 1px solid #2a2d3e; font-size: 11px; }
+        QTableWidget::item:selected { background: #4f8ef7; color: #fff; }
+        QHeaderView::section { background: #1e2233; color: #9ca3af;
+                               padding: 4px; border: none; font-size: 11px; }
+        QTextEdit { background: #1a1d2e; color: #9ca3af; border: 1px solid #2a2d3e;
+                    font-size: 10px; font-family: Menlo; }
+        QPushButton { background: #1a1d2e; color: #9ca3af; border: 1px solid #2a2d3e;
+                      border-radius: 4px; padding: 5px 12px; font-size: 11px; }
+        QPushButton:hover { background: #4f8ef7; color: #fff; }
+        QPushButton#use_btn { background: #22c55e; color: #fff; border: none; font-weight: bold; }
+        QPushButton#use_btn:hover { background: #16a34a; }
+    """
+
+    def __init__(self, keyword: str, blog_id: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"🔍 키워드 분석 — {keyword}")
+        self.setMinimumSize(720, 560)
+        self.setStyleSheet(self._STYLE)
+        self._keyword = keyword
+        self._blog_id = blog_id
+        self._worker = None
+        self._selected_kw = keyword
+
+        self._build_ui()
+        self._run_analysis()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(14, 14, 14, 14)
+
+        # ── 상단: 메인 키워드 경쟁도 ──
+        top = QHBoxLayout()
+        self._main_label = QLabel(f"키워드: <b>{self._keyword}</b>")
+        self._main_label.setStyleSheet("font-size:13px; color:#e0e0e0;")
+        self._level_label = QLabel("분석 중...")
+        self._level_label.setStyleSheet("font-size:12px; color:#f5a623;")
+        top.addWidget(self._main_label)
+        top.addStretch()
+        top.addWidget(self._level_label)
+        layout.addLayout(top)
+
+        # ── 연관 키워드 테이블 ──
+        layout.addWidget(QLabel("📊 연관 키워드 경쟁도 (발행량 오름차순 — 블로그 수준 적합 키워드 위에 표시)"))
+        self._kw_table = QTableWidget(0, 3)
+        self._kw_table.setHorizontalHeaderLabels(["키워드", "발행량", "난이도"])
+        self._kw_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self._kw_table.setColumnWidth(1, 90)
+        self._kw_table.setColumnWidth(2, 110)
+        self._kw_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._kw_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._kw_table.itemSelectionChanged.connect(self._on_kw_selected)
+        layout.addWidget(self._kw_table)
+
+        # ── SEO 제목 후보 ──
+        layout.addWidget(QLabel("✍ SEO 제목 후보 (클릭해서 선택)"))
+        self._title_list = QListWidget()
+        self._title_list.setMaximumHeight(120)
+        self._title_list.setStyleSheet(
+            "background:#1a1d2e; color:#e0e0e0; border:1px solid #2a2d3e; font-size:12px;")
+        self._title_list.itemClicked.connect(self._on_title_clicked)
+        layout.addWidget(self._title_list)
+
+        # ── 선택된 키워드/제목 표시 ──
+        sel_row = QHBoxLayout()
+        sel_row.addWidget(QLabel("선택:"))
+        self._sel_edit = QLineEdit(self._keyword)
+        self._sel_edit.setStyleSheet(
+            "background:#1a1d2e; color:#e0e0e0; border:1px solid #4f8ef7;"
+            "border-radius:4px; padding:4px 8px; font-size:12px;")
+        sel_row.addWidget(self._sel_edit)
+        layout.addLayout(sel_row)
+
+        # ── 로그 ──
+        self._log = QTextEdit()
+        self._log.setMaximumHeight(80)
+        self._log.setReadOnly(True)
+        layout.addWidget(self._log)
+
+        # ── 버튼 ──
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("닫기")
+        cancel_btn.clicked.connect(self.reject)
+        use_btn = QPushButton("이 키워드/제목으로 글 생성")
+        use_btn.setObjectName("use_btn")
+        use_btn.clicked.connect(self._use_selected)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(use_btn)
+        layout.addLayout(btn_row)
+
+    def _run_analysis(self):
+        self._worker = _KeywordAnalysisWorker(self._keyword, self._blog_id)
+        self._worker.log_signal.connect(self._append_log)
+        self._worker.result_signal.connect(self._on_result)
+        self._worker.titles_signal.connect(self._on_titles)
+        self._worker.start()
+
+    def _append_log(self, msg: str):
+        self._log.append(msg)
+
+    def _on_result(self, result: dict):
+        # 메인 경쟁도
+        total = result["total"]
+        level = result["level"]
+        color = "#22c55e" if "낮음" in level else ("#f5a623" if "보통" in level else "#ef4444")
+        self._level_label.setText(f"발행량: {total:,}개 | {level}")
+        self._level_label.setStyleSheet(f"font-size:12px; color:{color};")
+
+        # 연관 키워드 테이블 — 블로그 수준 적합 먼저, 나머지 뒤에
+        filtered_kws = {r["keyword"] for r in result.get("filtered", [])}
+        all_related = result.get("related", [])
+
+        self._kw_table.setRowCount(len(all_related))
+        for i, item in enumerate(all_related):
+            kw_item = QTableWidgetItem(item["keyword"])
+            total_item = QTableWidgetItem(f"{item['total']:,}" if item['total'] >= 0 else "-")
+            level_item = QTableWidgetItem(item["level"])
+            total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+            # 블로그 수준 적합 키워드 강조
+            if item["keyword"] in filtered_kws:
+                for it in (kw_item, total_item, level_item):
+                    it.setForeground(QColor("#22c55e"))
+            self._kw_table.setItem(i, 0, kw_item)
+            self._kw_table.setItem(i, 1, total_item)
+            self._kw_table.setItem(i, 2, level_item)
+
+    def _on_titles(self, titles: list):
+        self._title_list.clear()
+        for t in titles:
+            self._title_list.addItem(t)
+
+    def _on_kw_selected(self):
+        rows = self._kw_table.selectedItems()
+        if rows:
+            self._sel_edit.setText(rows[0].text())
+
+    def _on_title_clicked(self, item):
+        self._sel_edit.setText(item.text())
+
+    def _use_selected(self):
+        text = self._sel_edit.text().strip()
+        if text:
+            self.keyword_selected.emit(text)
+            self.accept()
+
+
 # ─── 키워드 엔진 다이얼로그 ────────────────────────────────────────────────
 
 class _KeywordWriteWorker(QThread):
@@ -1300,6 +1486,13 @@ class BlogAutomationApp(QMainWindow):
             "border-radius:5px;font-size:12px;padding:5px 8px;")
         self._kw_input.returnPressed.connect(self._run_selected)
         kw_row.addWidget(self._kw_input)
+        self._kw_analyze_btn = QPushButton("🔍 분석")
+        self._kw_analyze_btn.setFixedSize(64, 30)
+        self._kw_analyze_btn.setStyleSheet(
+            "background:#1e3a5f;color:#4f8ef7;border:1px solid #2a4a7f;"
+            "border-radius:5px;font-size:11px;font-weight:bold;")
+        self._kw_analyze_btn.clicked.connect(self._open_keyword_analysis)
+        kw_row.addWidget(self._kw_analyze_btn)
         ml.addLayout(kw_row)
 
         # 3. 통계 카드 3개
@@ -1643,6 +1836,18 @@ class BlogAutomationApp(QMainWindow):
 
     def _open_keyword_engine(self):
         dlg = KeywordEngineDialog(self)
+        dlg.exec()
+
+    def _open_keyword_analysis(self):
+        keyword = self._kw_input.text().strip()
+        if not keyword:
+            QMessageBox.warning(self, "키워드 없음", "분석할 키워드를 먼저 입력하세요.")
+            return
+        blog_id = self._agent_combo.currentText()
+        dlg = KeywordAnalysisDialog(keyword, blog_id, self)
+        def _on_selected(kw):
+            self._kw_input.setText(kw)
+        dlg.keyword_selected.connect(_on_selected)
         dlg.exec()
 
     def _add_keyword(self):
