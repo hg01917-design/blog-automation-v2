@@ -6,9 +6,12 @@
 - 한국관광공사 축제/행사정보  → nolja100, triplog
 - 정부24 공공서비스 정보      → baremi542, goodisak, salim1su
 - TMDB 영화/드라마 정보       → phn0502 (OTT 시청 가능 플랫폼 포함)
+- 네이버 쇼핑 검색 API        → goodisak (IT 제품 정보)
 """
+import html as html_mod
 import json
 import os
+import re
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -26,6 +29,11 @@ if _env.exists():
 _RAW_KEY = os.environ.get("PUBLIC_DATA_API_KEY", "")
 # URL 인코딩된 키를 디코딩
 SERVICE_KEY = urllib.parse.unquote(_RAW_KEY)
+
+# 네이버 쇼핑 검색 API
+NAVER_SEARCH_CLIENT_ID = os.environ.get("NAVER_SEARCH_CLIENT_ID", "")
+NAVER_SEARCH_CLIENT_SECRET = os.environ.get("NAVER_SEARCH_CLIENT_SECRET", "")
+_NAVER_SHOP_URL = "https://openapi.naver.com/v1/search/shop.json"
 
 # 교통 전용 API 키 (data.go.kr 별도 신청)
 EXPRESS_BUS_KEY = os.environ.get("EXPRESS_BUS_API_KEY", SERVICE_KEY)
@@ -665,6 +673,96 @@ def fetch_transport_context(keyword: str, on_log=None) -> str:
     return "\n".join(lines)
 
 
+def _simplify_product_query(keyword: str) -> str:
+    """IT 제품 키워드에서 핵심 제품명만 추출.
+
+    예: "엘지 그램 노트북 발열이랑 스펙" → "LG 그램 노트북"
+        "갤럭시 s25 울트라 카메라 성능" → "갤럭시 s25 울트라"
+    """
+    # 제거할 노이즈 패턴 (동사/형용사/조사 등)
+    noise = [
+        r"이랑\s*\w+", r"하는\s*법", r"설정\s*방법", r"사용\s*법", r"구매\s*가이드",
+        r"차이점?", r"비교", r"추천", r"후기", r"리뷰", r"가성비", r"발열", r"배터리",
+        r"성능", r"스펙", r"가격", r"할인", r"최저가", r"고르는\s*법", r"선택\s*기준",
+        r"입문자?", r"직장인", r"학생", r"디자이너", r"영상\s*편집",
+    ]
+    q = keyword
+    for pat in noise:
+        q = re.sub(pat, "", q, flags=re.IGNORECASE)
+    q = re.sub(r"\s+", " ", q).strip()
+    # 너무 짧아지면 원본 앞 3단어 사용
+    words = q.split()
+    if len(q) < 4 and keyword:
+        words = keyword.split()[:3]
+    return " ".join(words[:4])  # 최대 4단어
+
+
+def fetch_naver_shopping_context(keyword: str, on_log=None) -> str:
+    """네이버 쇼핑 검색 API로 IT 제품 정보를 가져와 extra_context로 반환."""
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    if not NAVER_SEARCH_CLIENT_ID or not NAVER_SEARCH_CLIENT_SECRET:
+        log("[네이버쇼핑] API 키 없음 — 건너뜀")
+        return ""
+
+    query = _simplify_product_query(keyword)
+    log(f"[네이버쇼핑] 검색어: '{query}' (원본: '{keyword}')")
+
+    params = urllib.parse.urlencode({
+        "query": query,
+        "display": 5,
+        "sort": "sim",
+    })
+    url = f"{_NAVER_SHOP_URL}?{params}"
+    try:
+        req = urllib.request.Request(url, headers={
+            "X-Naver-Client-Id": NAVER_SEARCH_CLIENT_ID,
+            "X-Naver-Client-Secret": NAVER_SEARCH_CLIENT_SECRET,
+            "User-Agent": "Mozilla/5.0",
+        })
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        log(f"[네이버쇼핑] API 호출 오류: {e}")
+        return ""
+
+    items = data.get("items", [])
+    if not items:
+        log(f"[네이버쇼핑] 결과 없음: {query}")
+        return ""
+
+    lines = [f"[네이버 쇼핑 검색 결과 — {query}]"]
+    seen_titles = set()
+    for item in items[:5]:
+        title = re.sub(r"<[^>]+>", "", item.get("title", ""))
+        title = html_mod.unescape(title).strip()
+        if title in seen_titles:
+            continue
+        seen_titles.add(title)
+        brand = item.get("brand", "").strip()
+        maker = item.get("maker", "").strip()
+        low = item.get("lprice", "")
+        high = item.get("hprice", "")
+        category = item.get("category1", "")
+        price_str = f"{int(low):,}원" if low else "가격 미정"
+        if high and high != low:
+            price_str += f" ~ {int(high):,}원"
+        parts = [f"- 상품명: {title}"]
+        if brand:
+            parts.append(f"  브랜드: {brand}")
+        if maker and maker != brand:
+            parts.append(f"  제조사: {maker}")
+        parts.append(f"  최저가: {price_str}")
+        if category:
+            parts.append(f"  카테고리: {category}")
+        lines.append("\n".join(parts))
+
+    log(f"[네이버쇼핑] {len(seen_titles)}개 제품 정보 수집")
+    return "\n\n".join(lines)
+
+
 def fetch_context_for_blog(blog_id: str, keyword: str, on_log=None) -> str:
     """blog_id에 따라 적합한 공공API 데이터를 가져와 extra_context로 반환.
 
@@ -678,6 +776,9 @@ def fetch_context_for_blog(blog_id: str, keyword: str, on_log=None) -> str:
         welfare_hints = ["지원", "혜택", "신청", "급여", "보조", "복지", "정책", "수당", "바우처"]
         if any(h in keyword for h in welfare_hints):
             return fetch_gov_service_context(keyword, on_log=on_log)
+        elif blog_id == "goodisak":
+            # IT 블로그: 네이버 쇼핑 API로 실제 제품 정보 수집
+            return fetch_naver_shopping_context(keyword, on_log=on_log)
     elif blog_id == "phn0502":
         # 영화/드라마 블로그: TMDB 실제 정보 + OTT 시청 가능 플랫폼
         return fetch_tmdb_context(keyword, on_log=on_log)
