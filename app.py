@@ -772,7 +772,16 @@ class KeywordAnalysisDialog(QDialog):
         self._selected_kw = keyword
 
         self._build_ui()
+        # 모든 자식 위젯에 Enter키 차단 이벤트필터 설치
+        for child in self.findChildren(QLineEdit):
+            child.installEventFilter(self)
         self._run_analysis()
+
+    def eventFilter(self, obj, event):
+        from PyQt5.QtCore import QEvent
+        if event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            return True  # Enter 완전 차단
+        return super().eventFilter(obj, event)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -1909,8 +1918,7 @@ class BlogAutomationApp(QMainWindow):
             def _on_title(kw, title):
                 self._kw_input.setText(kw)
                 self._forced_title = title
-                self.log_box.append(f"[키워드분석] 강제 제목 설정: '{title}'")
-                self._run_selected()   # 제목 선택 즉시 실행
+                self.log_box.append(f"[키워드분석] 강제 제목 설정: '{title}' — 지금 실행 버튼을 눌러주세요")
             dlg.keyword_selected.connect(_on_kw)
             dlg.title_forced.connect(_on_title)
             dlg.exec()
