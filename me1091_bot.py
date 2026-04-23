@@ -861,11 +861,17 @@ def run_one_product(on_log=None) -> bool:
 
     keyword = product_info.get("name") or name
 
+    # 원본 URL → 쿠팡파트너스 단축 링크 변환
+    from coupang_api import create_affiliate_link as _make_aff_link
+    affiliate_link = _make_aff_link(link, on_log=_log)
+    if affiliate_link == link and "link.coupang.com" not in link:
+        _log(f"[me1091] ⚠️ 파트너스 링크 변환 실패 — 원본 URL 사용: {link[:60]}")
+
     # 쿠팡 이미지(리뷰+상품) 참고 → Gemini 실사진 재생성
     image_paths, image_infos_list = prepare_images_with_gemini(product_info, keyword)
 
     title, content, tags = generate_review_post(
-        product_info, link,
+        product_info, affiliate_link,
         angle_id=angle_id, angle_hint=angle_hint, angle_instruction=angle_instruction
     )
     if not title or not content:
@@ -897,7 +903,7 @@ def run_one_product(on_log=None) -> bool:
             on_log=_log,
         )
         if ok:
-            mark_done(name, link, angle=angle_id)
+            mark_done(name, affiliate_link, angle=angle_id)
             _log(f"[me1091] ✅ 임시저장 완료: {title} (각도: {angle_id})")
         return ok
     except Exception as e:

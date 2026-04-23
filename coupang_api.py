@@ -56,6 +56,52 @@ def _generate_hmac(method: str, path: str, query: str) -> dict:
     return {"Authorization": authorization}
 
 
+def create_affiliate_link(coupang_url: str, on_log=None) -> str:
+    """쿠팡 상품 URL → 파트너스 단축 링크(link.coupang.com) 변환.
+
+    이미 link.coupang.com 이면 그대로 반환.
+    API 키 없거나 실패 시 원본 URL 반환.
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    # 이미 파트너스 링크면 그대로
+    if "link.coupang.com" in coupang_url:
+        return coupang_url
+
+    if not ACCESS_KEY or not SECRET_KEY:
+        log("[쿠팡] API 키 없음 — 원본 URL 사용")
+        return coupang_url
+
+    try:
+        import json as _json
+        import urllib.request as _req
+
+        path = "/v2/providers/affiliate_open_api/apis/openapi/deeplink"
+        body = _json.dumps({"coupangUrls": [coupang_url]}).encode("utf-8")
+
+        headers = _generate_hmac("POST", path, "")
+        headers["Content-Type"] = "application/json;charset=UTF-8"
+
+        url = f"{DOMAIN}{path}"
+        request = _req.Request(url, data=body, headers=headers, method="POST")
+        with _req.urlopen(request, timeout=10) as resp:
+            data = _json.loads(resp.read().decode("utf-8"))
+
+        shorten = data.get("data", [{}])[0].get("shortenUrl", "")
+        if shorten:
+            log(f"[쿠팡] 파트너스 링크 변환: {coupang_url[:50]} → {shorten}")
+            return shorten
+
+        log(f"[쿠팡] 변환 응답에 shortenUrl 없음: {data}")
+        return coupang_url
+
+    except Exception as e:
+        log(f"[쿠팡] deeplink API 오류: {e}")
+        return coupang_url
+
+
 def search_products(keyword: str, category: str = "", limit: int = 3) -> list:
     """쿠팡파트너스 API로 상품을 검색한다.
 
