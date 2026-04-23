@@ -249,6 +249,9 @@ def _body_to_tinymce_html(body_text: str, blog_id: str) -> str:
     for line in body.split('\n'):
         s = line.strip()
         if not s:
+            # 빈 줄 → 일반 텍스트 단락 사이에만 간격 삽입 (H2/이미지/애드센스 인접 제외)
+            if parts and parts[-1].startswith('<p data-ke-size="size19">') and not parts[-1] == SP:
+                parts.append(SP)
             continue
         # H3
         h3 = re.match(r'^###\s+(.+)$', s) or re.match(r'^\[H3\](.+?)\[/H3\]$', s, re.IGNORECASE)
@@ -1976,6 +1979,9 @@ def _md_to_wp_html(content: str) -> str:
                 table_buf = []
 
         if not stripped:
+            # 빈 줄 → 단락 사이 시각적 간격 추가 (<p>&nbsp;</p>)
+            if html_parts and html_parts[-1] not in ('<p>&nbsp;</p>', '') and not html_parts[-1].startswith('<h'):
+                html_parts.append('<p>&nbsp;</p>')
             continue
 
         if stripped.startswith("### "):

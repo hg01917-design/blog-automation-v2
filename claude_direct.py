@@ -149,19 +149,35 @@ def _build_prompt(blog_id: str, keyword: str, extra_context: str = None) -> str:
             "\n\n아래 형식으로만 출력해줘 (다른 형식 절대 금지):\n"
             "===제목===\n(SEO 최적화된 롱테일 제목)\n===제목끝===\n\n"
             "===본문===\n"
-            "<h2>소제목</h2> 바로 아래에 [이미지N] 마커 삽입\n"
-            "강조는 <strong>텍스트</strong> 사용\n"
-            "마크다운 기호(##, **) 절대 사용 금지\n"
-            "[애드센스] 마커 3개 본문에 분산 삽입 (위아래 빈 줄 2칸)\n"
+            "## 소제목1\n"
+            "[이미지1]\n"
+            "프롬프트: (영어 장면 묘사)\n"
+            "파일명: (영문-소문자-하이픈.jpg)\n"
+            "alt: (한국어 설명)\n"
+            "[/이미지1]\n"
+            "본문 내용...\n\n"
+            "[애드센스]\n\n"
+            "## 소제목2\n"
+            "[이미지2]\n"
+            "프롬프트: (영어 — 동일 프롬프트)\n"
+            "파일명: (영문-소문자-하이픈-2.jpg)\n"
+            "alt: (한국어)\n"
+            "[/이미지2]\n"
+            "본문 내용...\n"
             "===본문끝===\n\n"
             "===태그===\n태그1, 태그2, ... (10~20개)\n===태그끝===\n\n"
             "===메타===\n(검색결과 미리보기용 요약 80~120자)\n===메타끝===\n"
         )
         _IMAGE_RULE = (
             "\n\n[이미지 규칙 — 필수]\n"
-            "각 <h2> 소제목 바로 아래 줄에 [이미지N] 마커 삽입 (N=1부터 순서대로).\n"
-            "본문 끝에 ===이미지=== 섹션:\n"
-            "===이미지===\n[이미지1]\n- 프롬프트: (영어)\n- 파일명: (영문-소문자-하이픈.jpg)\n- alt: (한국어)\n===이미지끝===\n"
+            "각 소제목(## 또는 <h2>) 바로 다음 줄에 [이미지N]...[/이미지N] 블록 삽입 (N=1부터 순서대로).\n"
+            "형식:\n"
+            "[이미지N]\n"
+            "프롬프트: (영어, 글 전체 주제 장면 묘사 — 모든 블록 동일)\n"
+            "파일명: (영문-소문자-하이픈.jpg)\n"
+            "alt: (한국어, 해당 소제목 관련 설명)\n"
+            "[/이미지N]\n"
+            "※ ===이미지=== 섹션 별도 추가 절대 금지. {{이미지N}} 형식 사용 금지.\n"
         )
     else:
         # Playwright 타입 (Tistory / Naver)
@@ -187,8 +203,11 @@ def _build_prompt(blog_id: str, keyword: str, extra_context: str = None) -> str:
                 "\n\n아래 형식으로만 출력해줘 (다른 형식 절대 금지):\n"
                 "===제목===\n(SEO 최적화된 롱테일 제목)\n===제목끝===\n\n"
                 "===본문===\n"
-                "[H2]소제목[/H2]  ← 소제목 마커\n"
-                "[이미지N]        ← 소제목 바로 다음 줄에 고정\n"
+                "[H2]소제목[/H2]\n"
+                "[이미지N]\n"
+                "프롬프트: (영어, 글 전체 주제 장면 묘사 — 모든 블록 동일)\n"
+                "alt: (한국어, 해당 소제목 관련 설명)\n"
+                "[/이미지N]\n"
                 "본문 내용...\n"
                 "\n"
                 "[애드센스]\n"
@@ -303,6 +322,24 @@ def _run_claude(full_prompt: str, on_log=None, timeout: int = 300) -> str:
         return ""
 
 
+def _repair_truncated(text: str, on_log=None) -> str:
+    """===본문끝=== 누락 시 자동 복구. 본문이 2000자 이상이면 끝 마커 자동 추가."""
+    if "===본문===" not in text or "===본문끝===" in text:
+        return text
+    body_start = text.find("===본문===") + 7
+    body_len = len(text[body_start:].strip())
+    if body_len < 2000:
+        return text  # 너무 짧음 — 실제 실패
+    if on_log:
+        on_log(f"[Direct] ⚠️ ===본문끝=== 누락 감지 (본문 {body_len}자) — 자동 복구")
+    result = text.rstrip()
+    if "===태그===" not in result:
+        result += "\n===본문끝===\n\n===태그===\n===태그끝===\n\n===메타===\n===메타끝==="
+    else:
+        result += "\n===본문끝==="
+    return result
+
+
 def _verify_content(text: str, on_log=None, blog_id: str = None) -> bool:
     """검증 전용 하이쿠 인스턴스로 블로그 글 형식 검증.
     생성 AI와 완전히 분리된 별도 호출.
@@ -322,6 +359,11 @@ def _verify_content(text: str, on_log=None, blog_id: str = None) -> bool:
         if is_naver else
         "4. [애드센스] 마커 1개 이상\n"
     )
+    # 앞 2000자 + 뒤 500자로 구조 마커가 잘리지 않도록
+    if len(text) > 2500:
+        text_sample = text[:2000] + "\n...[중략]...\n" + text[-500:]
+    else:
+        text_sample = text
     verify_prompt = (
         "[출력 규칙 — 최우선]\n"
         "아래 텍스트가 블로그 형식을 갖추면 'PASS' 한 단어만 출력.\n"
@@ -333,7 +375,7 @@ def _verify_content(text: str, on_log=None, blog_id: str = None) -> bool:
         f"{h2_rule}"
         f"{adsense_rule}"
         "5. CLAUDE.md·세션 시작·확인하겠습니다 등 메타 텍스트 없음\n\n"
-        f"===검증대상===\n{text[:3000]}\n===검증대상끝==="
+        f"===검증대상===\n{text_sample}\n===검증대상끝==="
     )
     result = _run_claude(verify_prompt, on_log=on_log, timeout=60)
     result = result.strip()
@@ -423,6 +465,7 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         if not raw or len(raw) < 500:
             log(f"[Direct] 1단계 응답 짧음 ({len(raw)}자) — 재시도")
             continue
+        raw = _repair_truncated(raw, on_log=on_log)
         if not _is_valid_blog_content(raw, blog_id=blog_id):
             log(f"[Direct] ⛔ 블로그 형식 아님 (메타 텍스트 감지) — 재시도 ({attempt}/3)")
             raw = ""
