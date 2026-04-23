@@ -1821,25 +1821,31 @@ class BlogAutomationApp(QMainWindow):
         threading.Thread(target=_stream, daemon=True).start()
 
     def _run_selected(self):
-        if self._single_worker and self._single_worker.isRunning():
-            self.log_box.append("[실행] 이미 실행 중입니다.")
-            return
-        blog_id = self._agent_combo.currentText()
-        # 직접 입력 우선, 없으면 큐에서 선택된 키워드
-        keyword = self._kw_input.text().strip() or self._selected_keyword or None
-        if keyword:
-            self.log_box.append(f"[실행] {blog_id} — 키워드: '{keyword}'")
-        else:
-            self.log_box.append(f"[실행] {blog_id} 시작...")
-        self.run_btn.setEnabled(False)
-        self.pause_btn.setEnabled(True)
-        forced_title = getattr(self, '_forced_title', None)
-        self._forced_title = None  # 사용 후 초기화
-        self._single_worker = SingleRunWorker(blog_id, keyword=keyword, forced_title=forced_title)
-        self._single_worker.log_signal.connect(self._append_log)
-        self._single_worker.status_signal.connect(self._on_status)
-        self._single_worker.finished.connect(self._on_run_done)
-        self._single_worker.start()
+        try:
+            if self._single_worker and self._single_worker.isRunning():
+                self.log_box.append("[실행] 이미 실행 중입니다.")
+                return
+            blog_id = self._agent_combo.currentText()
+            keyword = self._kw_input.text().strip() or getattr(self, '_selected_keyword', None) or None
+            if keyword:
+                self.log_box.append(f"[실행] {blog_id} — 키워드: '{keyword}'")
+            else:
+                self.log_box.append(f"[실행] {blog_id} 시작...")
+            self.run_btn.setEnabled(False)
+            self.pause_btn.setEnabled(True)
+            forced_title = getattr(self, '_forced_title', None)
+            self._forced_title = None
+            self._single_worker = SingleRunWorker(blog_id, keyword=keyword, forced_title=forced_title)
+            self._single_worker.log_signal.connect(self._append_log)
+            self._single_worker.status_signal.connect(self._on_status)
+            self._single_worker.finished.connect(self._on_run_done)
+            self._single_worker.start()
+        except Exception as e:
+            import traceback
+            self.log_box.append(f"[오류] 실행 실패: {e}")
+            self.log_box.append(traceback.format_exc())
+            self.run_btn.setEnabled(True)
+            self.pause_btn.setEnabled(False)
 
     def _stop_worker(self):
         if self.sched_worker and self.sched_worker.isRunning():
@@ -1943,6 +1949,18 @@ class BlogAutomationApp(QMainWindow):
 
 
 if __name__ == "__main__":
+    import traceback
+
+    def _excepthook(exc_type, exc_val, exc_tb):
+        msg = "".join(traceback.format_exception(exc_type, exc_val, exc_tb))
+        print(msg, file=sys.stderr)
+        try:
+            QMessageBox.critical(None, "오류 발생", f"{exc_type.__name__}: {exc_val}\n\n앱을 계속 사용할 수 있습니다.")
+        except Exception:
+            pass
+
+    sys.excepthook = _excepthook
+
     app = QApplication(sys.argv)
     app.setStyleSheet(DARK_STYLE)
     window = BlogAutomationApp()
