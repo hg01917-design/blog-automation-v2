@@ -118,15 +118,30 @@ def ensure_chrome_cdp(on_log=None):
     raise RuntimeError(f"Chrome CDP 시작 실패 ({PROFILE_DIR}) — 15초 타임아웃")
 
 
+def _push_chrome_back():
+    """Chrome 창을 다른 모든 창 뒤로 밀어 포커스 탈취 방지"""
+    try:
+        subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events" to tell process "Google Chrome" '
+             'to set index of every window to -1'],
+            capture_output=True, timeout=2
+        )
+    except Exception:
+        pass
+
+
 def connect_cdp(on_log=None):
     """Chrome CDP에 연결하여 (playwright, browser) 반환"""
     ensure_chrome_cdp(on_log)
+    _push_chrome_back()
     pw = sync_playwright().start()
     try:
         browser = pw.chromium.connect_over_cdp(CDP_URL)
     except Exception as e:
         pw.stop()
         raise RuntimeError(f"CDP 연결 실패: {e}")
+    _push_chrome_back()
     return pw, browser
 
 
@@ -177,33 +192,12 @@ def get_or_create_page(browser, url_contains=None, navigate_to=None):
             _apply_stealth(page)
             return page
 
-    # 탭 열기 전 현재 포커스 앱 저장
-    _prev_app = None
-    try:
-        r = subprocess.run(
-            ["osascript", "-e",
-             'tell application "System Events" to get name of first application process whose frontmost is true'],
-            capture_output=True, text=True, timeout=2
-        )
-        _prev_app = r.stdout.strip()
-    except Exception:
-        pass
-
     page = context.new_page()
     _apply_stealth(page)
     if navigate_to:
         page.goto(navigate_to, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)
-
-    # Chrome이 포커스 뺏은 경우 원래 앱으로 복귀
-    if _prev_app and _prev_app != "Google Chrome":
-        try:
-            subprocess.run(
-                ["osascript", "-e", f'tell application "{_prev_app}" to activate'],
-                capture_output=True, timeout=2
-            )
-        except Exception:
-            pass
+    _push_chrome_back()
     return page
 
 
