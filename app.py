@@ -1537,26 +1537,36 @@ class BlogAutomationApp(QMainWindow):
         if self._single_worker and self._single_worker.isRunning():
             self.log_box.append("[전체실행] 이미 실행 중입니다.")
             return
-        import subprocess
+        if hasattr(self, '_all_proc') and self._all_proc and self._all_proc.poll() is None:
+            self.log_box.append("[전체실행] 이미 실행 중입니다.")
+            return
+        import subprocess, threading
         from pathlib import Path
         script = Path(__file__).parent / "overnight_run.py"
         self.log_box.append("[전체실행] overnight_run.py 시작...")
         self.run_all_btn.setEnabled(False)
+        self.run_btn.setEnabled(False)
         self.pause_btn.setEnabled(True)
+        self._all_stop = threading.Event()
         self._all_proc = subprocess.Popen(
             [sys.executable, str(script)],
             cwd=str(Path(__file__).parent),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1
         )
-        import threading
         def _stream():
             for line in self._all_proc.stdout:
+                if self._all_stop.is_set():
+                    break
                 self._append_log(line.rstrip())
             self._all_proc.wait()
             self.run_all_btn.setEnabled(True)
+            self.run_btn.setEnabled(True)
             self.pause_btn.setEnabled(False)
-            self._append_log("[전체실행] 완료")
+            if self._all_stop.is_set():
+                self._append_log("[전체실행] 정지됨")
+            else:
+                self._append_log("[전체실행] 완료")
         threading.Thread(target=_stream, daemon=True).start()
 
     def _run_selected(self):
@@ -1584,8 +1594,11 @@ class BlogAutomationApp(QMainWindow):
         if self._single_worker and self._single_worker.isRunning():
             self._single_worker.terminate()
         if hasattr(self, '_all_proc') and self._all_proc and self._all_proc.poll() is None:
+            if hasattr(self, '_all_stop'):
+                self._all_stop.set()
             self._all_proc.terminate()
             self.run_all_btn.setEnabled(True)
+            self.run_btn.setEnabled(True)
         self.pause_btn.setEnabled(False)
         self.run_btn.setEnabled(True)
 
