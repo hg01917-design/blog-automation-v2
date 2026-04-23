@@ -1202,21 +1202,11 @@ class BlogAutomationApp(QMainWindow):
         self._build_ui()
         self._refresh_stats()
         # 앱 시작 시 스케줄러 자동 실행
-        QTimer.singleShot(500, self._auto_start_scheduler)
+        # 자동 시작 비활성화 — 수동으로 실행 버튼 눌러야 함
+        pass
 
     def _auto_start_scheduler(self):
-        """앱 시작 시 스케줄러 자동 실행."""
-        try:
-            from agents.orchestrator import DEFAULT_BLOG_ORDER
-            blogs = DEFAULT_BLOG_ORDER
-        except Exception:
-            blogs = ["goodisak", "nolja100", "salim1su", "baremi542"]
-        self.sched_worker = SchedulerWorker(blogs)
-        self.sched_worker.log_signal.connect(self._append_log)
-        self.sched_worker.finished.connect(
-            lambda msg: self._append_log(f"[스케줄러] {msg}"))
-        self.sched_worker.start()
-        self._append_log(f"[스케줄러] 자동 시작 — 블로그: {blogs}")
+        pass
 
     def _build_ui(self):
         central = QWidget()
