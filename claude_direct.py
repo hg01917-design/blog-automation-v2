@@ -83,7 +83,8 @@ def _build_prompt(blog_id: str, keyword: str, extra_context: str = None) -> str:
     is_wordpress = blog_id in _WORDPRESS_BLOGS
 
     # ── SEO 규칙 (플랫폼별 분기) ────────────────────────────────────────
-    _is_naver = blog_id == "salim1su"
+    # me1091: 네이버 산문형 리뷰 블로그 (소제목 없음, 애드센스 없음)
+    _is_naver = blog_id in ("salim1su", "me1091")
 
     if _is_naver:
         _SEO_TITLE_RULE = (
@@ -306,7 +307,16 @@ def _verify_content(text: str, on_log=None, blog_id: str = None) -> bool:
     """검증 전용 하이쿠 인스턴스로 블로그 글 형식 검증.
     생성 AI와 완전히 분리된 별도 호출.
     """
-    is_naver = blog_id == "salim1su"
+    # me1091: 산문 형태(소제목 없음) + 네이버 자체광고 → H2/adsense 체크 모두 제외
+    # salim1su: 네이버 자체광고 → adsense 체크 제외
+    is_prose = blog_id == "me1091"
+    is_naver = blog_id in ("salim1su", "me1091")
+
+    h2_rule = (
+        "3. (me1091: 소제목 없는 산문 형태 — 이 항목은 PASS 조건에서 제외)\n"
+        if is_prose else
+        "3. 소제목([H2] 또는 <h2>) 2개 이상\n"
+    )
     adsense_rule = (
         "4. (네이버 블로그: [애드센스] 마커 없어야 정상 — 이 항목은 PASS 조건에서 제외)\n"
         if is_naver else
@@ -320,7 +330,7 @@ def _verify_content(text: str, on_log=None, blog_id: str = None) -> bool:
         "검증 기준 (모두 충족해야 PASS):\n"
         "1. ===제목=== 과 ===제목끝=== 포함\n"
         "2. ===본문=== 과 ===본문끝=== 포함\n"
-        "3. 소제목([H2] 또는 <h2>) 2개 이상\n"
+        f"{h2_rule}"
         f"{adsense_rule}"
         "5. CLAUDE.md·세션 시작·확인하겠습니다 등 메타 텍스트 없음\n\n"
         f"===검증대상===\n{text[:3000]}\n===검증대상끝==="
@@ -349,7 +359,7 @@ _CLAUDE_META_PHRASES = [
 ]
 
 
-def _is_valid_blog_content(text: str) -> bool:
+def _is_valid_blog_content(text: str, blog_id: str = None) -> bool:
     """블로그 본문 형식인지 확인. Claude 분석/메타 텍스트면 False."""
     if "===제목===" not in text and "===본문===" not in text:
         return False
@@ -367,7 +377,11 @@ def _is_valid_blog_content(text: str) -> bool:
     if len(body.strip()) < 1500:
         return False  # 본문 1500자 미만 = 메타 텍스트로 간주
 
-    # 소제목 최소 2개 필수
+    # me1091 / salim1su: 산문 형태(소제목 없음) 또는 네이버 자체광고 → H2 체크 스킵
+    if blog_id in ("me1091", "salim1su"):
+        return True
+
+    # 그 외 블로그: 소제목 최소 2개 필수
     import re as _re
     h2_count = len(_re.findall(r'\[H2\]|<h2\b', body, _re.IGNORECASE))
     if h2_count < 2:
@@ -409,7 +423,7 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         if not raw or len(raw) < 500:
             log(f"[Direct] 1단계 응답 짧음 ({len(raw)}자) — 재시도")
             continue
-        if not _is_valid_blog_content(raw):
+        if not _is_valid_blog_content(raw, blog_id=blog_id):
             log(f"[Direct] ⛔ 블로그 형식 아님 (메타 텍스트 감지) — 재시도 ({attempt}/3)")
             raw = ""
             continue
