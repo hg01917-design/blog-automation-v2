@@ -281,6 +281,34 @@ def _run_claude(full_prompt: str, on_log=None, timeout: int = 300) -> str:
         return ""
 
 
+def _verify_content(text: str, on_log=None) -> bool:
+    """검증 전용 하이쿠 인스턴스로 블로그 글 형식 검증.
+    생성 AI와 완전히 분리된 별도 호출.
+    """
+    verify_prompt = (
+        "[출력 규칙 — 최우선]\n"
+        "아래 텍스트가 블로그 형식을 갖추면 'PASS' 한 단어만 출력.\n"
+        "그렇지 않으면 'FAIL: 이유 한 줄' 형식으로만 출력.\n"
+        "다른 설명·분석·인사 일절 금지.\n\n"
+        "검증 기준 (모두 충족해야 PASS):\n"
+        "1. ===제목=== 과 ===제목끝=== 포함\n"
+        "2. ===본문=== 과 ===본문끝=== 포함\n"
+        "3. 소제목([H2] 또는 <h2>) 2개 이상\n"
+        "4. [애드센스] 마커 1개 이상\n"
+        "5. CLAUDE.md·세션 시작·확인하겠습니다 등 메타 텍스트 없음\n\n"
+        f"===검증대상===\n{text[:3000]}\n===검증대상끝==="
+    )
+    result = _run_claude(verify_prompt, on_log=on_log, timeout=60)
+    result = result.strip()
+    if result.startswith("PASS"):
+        if on_log:
+            on_log("[Verify] ✅ 검증 통과")
+        return True
+    if on_log:
+        on_log(f"[Verify] ❌ 검증 실패: {result[:120]}")
+    return False
+
+
 _CLAUDE_META_PHRASES = [
     "CLAUDE.md", "세션 시작", "확인하겠습니다", "어떻게 진행하면 좋을까요",
     "임시저장 글 검수", "git pull origin main", "노션 현황판",
@@ -334,6 +362,11 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             continue
         if not _is_valid_blog_content(raw):
             log(f"[Direct] ⛔ 블로그 형식 아님 (메타 텍스트 감지) — 재시도 ({attempt}/3)")
+            raw = ""
+            continue
+        # 검증 AI (Subagent) — 생성 AI와 분리된 별도 하이쿠 호출
+        if not _verify_content(raw, on_log=on_log):
+            log(f"[Direct] ⛔ 검증 AI 불합격 — 재시도 ({attempt}/3)")
             raw = ""
             continue
         log(f"[Direct] 1단계 완료 ({len(raw)}자)")

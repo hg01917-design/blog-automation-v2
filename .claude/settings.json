@@ -13,5 +13,18 @@
       "Bash(curl -s http://localhost:9222/json/version *)",
       "mcp__claude_ai_Notion__notion-fetch"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/hana/Downloads/blog-automation-v2/hooks/pre_bash_check.py"
+          }
+        ]
+      }
+    ]
   }
 }
