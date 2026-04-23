@@ -796,8 +796,8 @@ class KeywordAnalysisDialog(QDialog):
             "QTabWidget::pane{border:1px solid #2a2d3e;background:#0d0f18;}")
         self._naver_table = self._make_kw_table()
         self._daum_table  = self._make_kw_table()
-        self._kw_tabs.addTab(self._naver_table, "🔵 네이버")
-        self._kw_tabs.addTab(self._daum_table,  "🟡 다음")
+        self._kw_tabs.addTab(self._naver_table, "🔵 구글 자동완성")
+        self._kw_tabs.addTab(self._daum_table,  "🟠 네이버 블로그")
         layout.addWidget(self._kw_tabs)
 
         # ── SEO 제목 후보 ──

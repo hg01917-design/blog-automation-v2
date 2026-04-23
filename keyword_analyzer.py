@@ -53,39 +53,36 @@ def difficulty_label(total: int) -> str:
 
 
 def get_autocomplete(keyword: str) -> list[str]:
-    """네이버 자동완성으로 연관 키워드 수집."""
+    """구글 자동완성으로 연관 키워드 수집 (API 키 불필요, 한국어 지원)."""
     try:
-        url = f"{_NAVER_AC_URL}?query={urllib.parse.quote(keyword)}&con=1&frm=nv&ans=2&type=people"
+        url = (
+            f"http://suggestqueries.google.com/complete/search"
+            f"?client=firefox&hl=ko&q={urllib.parse.quote(keyword)}"
+        )
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=5) as r:
             data = json.loads(r.read())
-        results = []
-        for group in data.get("items", []):
-            for item in group:
-                if isinstance(item, list) and item:
-                    results.append(item[0])
+        # 응답: [query, [suggestion1, suggestion2, ...]]
+        suggestions = data[1] if len(data) > 1 else []
+        results = [s for s in suggestions if s != keyword]
         return list(dict.fromkeys(results))[:15]
     except Exception:
         return []
 
 
 def get_daum_autocomplete(keyword: str) -> list[str]:
-    """다음 자동완성으로 연관 키워드 수집 (API 키 불필요)."""
+    """구글 자동완성 (다음 탭용 — 같은 소스, 다른 파라미터로 추가 결과)."""
     try:
+        # gl=KR 파라미터로 한국 지역 결과
         url = (
-            f"https://suggest-bar.daum.net/suggest"
-            f"?mod=json&col=wed&q={urllib.parse.quote(keyword)}"
+            f"http://suggestqueries.google.com/complete/search"
+            f"?client=firefox&hl=ko&gl=KR&q={urllib.parse.quote(keyword)}"
         )
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=5) as r:
             data = json.loads(r.read())
-        results = []
-        for item in data.get("items", []):
-            # items 는 [["단어", ...], ...] 형태
-            if isinstance(item, list) and item:
-                results.append(item[0])
-            elif isinstance(item, str):
-                results.append(item)
+        suggestions = data[1] if len(data) > 1 else []
+        results = [s for s in suggestions if s != keyword]
         return list(dict.fromkeys(results))[:15]
     except Exception:
         return []
@@ -143,16 +140,13 @@ def analyze_keyword(keyword: str, on_log=None) -> dict:
     main_total = get_blog_count(keyword)
     log(f"[분석] 발행량: {main_total:,}개 → {difficulty_label(main_total)}")
 
-    log(f"[분석] 네이버 연관 키워드 수집 중...")
+    log(f"[분석] 구글 자동완성 수집 중...")
     naver_kws = get_autocomplete(keyword)
-    if not naver_kws:
-        log(f"[분석] 네이버 자동완성 없음 → 블로그 검색으로 대체...")
-        naver_kws = get_related_from_search(keyword)
-    log(f"[분석] 네이버 {len(naver_kws)}개")
+    log(f"[분석] 구글 자동완성 {len(naver_kws)}개")
 
-    log(f"[분석] 다음 연관 키워드 수집 중...")
-    daum_kws = get_daum_autocomplete(keyword)
-    log(f"[분석] 다음 {len(daum_kws)}개")
+    log(f"[분석] 네이버 블로그 연관어 수집 중...")
+    daum_kws = get_related_from_search(keyword)
+    log(f"[분석] 네이버 블로그 연관어 {len(daum_kws)}개")
 
     # 중복 제거 후 경쟁도 체크 (naver 우선, daum 추가)
     related_kws = list(dict.fromkeys(naver_kws + daum_kws))
