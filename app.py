@@ -938,20 +938,35 @@ class KeywordAnalysisDialog(QDialog):
             return  # Enter가 다이얼로그 닫는 것 방지
         super().keyPressEvent(event)
 
+    def _detach_worker(self):
+        """닫기 전 워커 시그널 끊기 — 소멸된 슬롯 호출로 인한 세그폴트 방지."""
+        if self._worker:
+            try:
+                self._worker.log_signal.disconnect()
+                self._worker.result_signal.disconnect()
+                self._worker.titles_signal.disconnect()
+                self._worker.finished.disconnect()
+            except Exception:
+                pass
+
+    def accept(self):
+        self._detach_worker()
+        super().accept()
+
+    def reject(self):
+        self._detach_worker()
+        super().reject()
+
     def _use_keyword_only(self):
-        """선택된 키워드만 넘기고 Claude가 자체 제목 생성."""
         kw = self._sel_edit.text().strip()
         if kw:
             self.keyword_selected.emit(kw)
             self.accept()
 
     def _use_with_title(self):
-        """선택된 제목을 강제 적용해서 글 생성."""
         sel = self._sel_edit.text().strip()
         if not sel:
             return
-        # 제목 후보 목록에서 선택됐으면 sel이 제목, 키워드는 원래 키워드
-        # 키워드 테이블에서 선택됐으면 sel이 키워드, 제목도 동일하게 사용
         self.title_forced.emit(self._keyword, sel)
         self.accept()
 
