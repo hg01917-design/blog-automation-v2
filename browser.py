@@ -130,17 +130,31 @@ def _push_chrome_back():
         pass
 
 
+def _push_chrome_back_persistent(duration=4.0, interval=0.3):
+    """Chrome이 포커스를 뺏지 못하도록 duration초간 반복적으로 밀어냄"""
+    import threading
+
+    def _keep_pushing():
+        import time
+        end = time.time() + duration
+        while time.time() < end:
+            _push_chrome_back()
+            time.sleep(interval)
+
+    t = threading.Thread(target=_keep_pushing, daemon=True)
+    t.start()
+
+
 def connect_cdp(on_log=None):
     """Chrome CDP에 연결하여 (playwright, browser) 반환"""
     ensure_chrome_cdp(on_log)
-    _push_chrome_back()
+    _push_chrome_back_persistent(duration=5.0)
     pw = sync_playwright().start()
     try:
         browser = pw.chromium.connect_over_cdp(CDP_URL)
     except Exception as e:
         pw.stop()
         raise RuntimeError(f"CDP 연결 실패: {e}")
-    _push_chrome_back()
     return pw, browser
 
 
@@ -191,12 +205,12 @@ def get_or_create_page(browser, url_contains=None, navigate_to=None):
             _apply_stealth(page)
             return page
 
+    _push_chrome_back_persistent(duration=5.0)
     page = context.new_page()
     _apply_stealth(page)
     if navigate_to:
         page.goto(navigate_to, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)
-    _push_chrome_back()
     return page
 
 
