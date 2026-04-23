@@ -829,13 +829,20 @@ class KeywordAnalysisDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         cancel_btn = QPushButton("닫기")
+        cancel_btn.setAutoDefault(False)
+        cancel_btn.setDefault(False)
         cancel_btn.clicked.connect(self.reject)
         use_btn = QPushButton("이 키워드/제목으로 글 생성")
         use_btn.setObjectName("use_btn")
+        use_btn.setAutoDefault(False)
+        use_btn.setDefault(False)
         use_btn.clicked.connect(self._use_selected)
         btn_row.addWidget(cancel_btn)
         btn_row.addWidget(use_btn)
         layout.addLayout(btn_row)
+
+        # Enter키로 다이얼로그 닫히지 않도록 sel_edit returnPressed 차단
+        self._sel_edit.returnPressed.connect(lambda: None)
 
     def _run_analysis(self):
         self._worker = _KeywordAnalysisWorker(self._keyword, self._blog_id)
@@ -1856,16 +1863,19 @@ class BlogAutomationApp(QMainWindow):
         dlg.exec()
 
     def _open_keyword_analysis(self):
-        keyword = self._kw_input.text().strip()
-        if not keyword:
-            QMessageBox.warning(self, "키워드 없음", "분석할 키워드를 먼저 입력하세요.")
-            return
-        blog_id = self._agent_combo.currentText()
-        dlg = KeywordAnalysisDialog(keyword, blog_id, self)
-        def _on_selected(kw):
-            self._kw_input.setText(kw)
-        dlg.keyword_selected.connect(_on_selected)
-        dlg.exec()
+        try:
+            keyword = self._kw_input.text().strip()
+            if not keyword:
+                QMessageBox.warning(self, "키워드 없음", "분석할 키워드를 먼저 입력하세요.")
+                return
+            blog_id = self._agent_combo.currentText()
+            dlg = KeywordAnalysisDialog(keyword, blog_id, self)
+            def _on_selected(kw):
+                self._kw_input.setText(kw)
+            dlg.keyword_selected.connect(_on_selected)
+            dlg.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "오류", f"키워드 분석 창 열기 실패:\n{e}")
 
     def _add_keyword(self):
         text, ok = QInputDialog.getText(self, "키워드 추가", "키워드:")
