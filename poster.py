@@ -2010,7 +2010,31 @@ def _md_to_wp_html(content: str) -> str:
     if table_buf:
         html_parts.append(flush_table())
 
-    return "\n".join(html_parts)
+    # H2/H3/이미지/애드센스 앞뒤 강제 빈 줄 2칸 삽입 (Tistory와 동일 규칙)
+    WP_SP = '<p>&nbsp;</p>'
+
+    def _wp_needs_spacing(tag: str) -> bool:
+        return (
+            tag.startswith('<h2') or
+            tag.startswith('<h3') or
+            bool(re.match(r'^\{\{이미지\d+\}\}$', tag)) or
+            'adsbygoogle' in tag or
+            tag.startswith('<script') and 'pagead' in tag
+        )
+
+    spaced = []
+    for i, tag in enumerate(html_parts):
+        nxt = html_parts[i + 1] if i < len(html_parts) - 1 else None
+        if _wp_needs_spacing(tag):
+            if spaced and spaced[-1] != WP_SP:
+                spaced += [WP_SP, WP_SP]
+            spaced.append(tag)
+            if nxt and nxt != WP_SP:
+                spaced += [WP_SP, WP_SP]
+        else:
+            spaced.append(tag)
+
+    return "\n".join(spaced)
 
 
 def _wp_upload_image(site_url: str, auth_header: str, filepath: str,
