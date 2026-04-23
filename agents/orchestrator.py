@@ -261,7 +261,7 @@ def _generate_agent_template(blog_id: str, module_name: str, category: str):
 # ── 단일 실행 ───────────────────────────────────────────────────────────────
 
 def run_single(blog_id: str, keyword: str = None, page_id: str = None,
-               on_log=None, on_status=None):
+               on_log=None, on_status=None, forced_title: str = None):
     """한 블로그에 대해 전체 파이프라인 실행.
 
     Returns:
@@ -377,7 +377,11 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
                 _db.set_keyword_status(keyword, "failed", blog_id)
             return _fail(blog_id, keyword, f"검수 불합격 ({MAX_WRITER_RETRIES}회)", logs)
 
-        # ── 4. 포스팅 ──
+        # ── 4. 포스팅 (forced_title 지정 시 제목 교체) ──
+        if forced_title and result:
+            result["title"] = forced_title
+            log(f"[오케스트레이터] ✎ 강제 제목 적용: '{forced_title}'")
+
         post_result = poster_agent.run(
             result, blog_id, keyword, page_id,
             on_log=log, on_status=on_status

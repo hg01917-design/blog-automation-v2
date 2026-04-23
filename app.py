@@ -90,10 +90,11 @@ class SingleRunWorker(QThread):
     blog_signal   = pyqtSignal(str)
     finished      = pyqtSignal(str)
 
-    def __init__(self, blog_id: str, keyword: str = None):
+    def __init__(self, blog_id: str, keyword: str = None, forced_title: str = None):
         super().__init__()
         self.blog_id = blog_id
         self.keyword = keyword
+        self.forced_title = forced_title
 
     def run(self):
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "agents"))
@@ -105,6 +106,7 @@ class SingleRunWorker(QThread):
                 keyword=self.keyword or None,
                 on_log=self._log,
                 on_status=self._status,
+                forced_title=self.forced_title or None,
             )
             if result["success"]:
                 self.finished.emit(f"[완료] {self.blog_id}: {result['title']}")
@@ -739,7 +741,8 @@ class _KeywordAnalysisWorker(QThread):
 
 class KeywordAnalysisDialog(QDialog):
     """키워드 분석 결과 다이얼로그 — 키워드·제목 선택 → 블로그 생성으로 연결"""
-    keyword_selected = pyqtSignal(str)  # 선택된 키워드/제목을 외부로 전달
+    keyword_selected = pyqtSignal(str)        # 키워드만 선택 (Claude가 제목 생성)
+    title_forced     = pyqtSignal(str, str)   # (keyword, forced_title) — 제목 강제 적용
 
     _STYLE = """
         QDialog { background: #0d0f18; color: #e0e0e0; }
@@ -832,13 +835,24 @@ class KeywordAnalysisDialog(QDialog):
         cancel_btn.setAutoDefault(False)
         cancel_btn.setDefault(False)
         cancel_btn.clicked.connect(self.reject)
-        use_btn = QPushButton("이 키워드/제목으로 글 생성")
-        use_btn.setObjectName("use_btn")
-        use_btn.setAutoDefault(False)
-        use_btn.setDefault(False)
-        use_btn.clicked.connect(self._use_selected)
+
+        kw_btn = QPushButton("키워드만 사용 (Claude가 제목 생성)")
+        kw_btn.setAutoDefault(False)
+        kw_btn.setDefault(False)
+        kw_btn.setStyleSheet(
+            "background:#1e3a5f;color:#4f8ef7;border:1px solid #2a4a7f;"
+            "border-radius:4px;padding:5px 12px;font-size:11px;")
+        kw_btn.clicked.connect(self._use_keyword_only)
+
+        title_btn = QPushButton("이 제목 그대로 사용")
+        title_btn.setObjectName("use_btn")
+        title_btn.setAutoDefault(False)
+        title_btn.setDefault(False)
+        title_btn.clicked.connect(self._use_with_title)
+
         btn_row.addWidget(cancel_btn)
-        btn_row.addWidget(use_btn)
+        btn_row.addWidget(kw_btn)
+        btn_row.addWidget(title_btn)
         layout.addLayout(btn_row)
 
         # Enter키로 다이얼로그 닫히지 않도록 sel_edit returnPressed 차단
@@ -910,11 +924,22 @@ class KeywordAnalysisDialog(QDialog):
             return  # Enter가 다이얼로그 닫는 것 방지
         super().keyPressEvent(event)
 
-    def _use_selected(self):
-        text = self._sel_edit.text().strip()
-        if text:
-            self.keyword_selected.emit(text)
+    def _use_keyword_only(self):
+        """선택된 키워드만 넘기고 Claude가 자체 제목 생성."""
+        kw = self._sel_edit.text().strip()
+        if kw:
+            self.keyword_selected.emit(kw)
             self.accept()
+
+    def _use_with_title(self):
+        """선택된 제목을 강제 적용해서 글 생성."""
+        sel = self._sel_edit.text().strip()
+        if not sel:
+            return
+        # 제목 후보 목록에서 선택됐으면 sel이 제목, 키워드는 원래 키워드
+        # 키워드 테이블에서 선택됐으면 sel이 키워드, 제목도 동일하게 사용
+        self.title_forced.emit(self._keyword, sel)
+        self.accept()
 
 
 # ─── 키워드 엔진 다이얼로그 ────────────────────────────────────────────────
@@ -1409,6 +1434,7 @@ class BlogAutomationApp(QMainWindow):
         self.sched_worker  = None
         self._single_worker = None
         self._selected_keyword = None   # 키워드 큐에서 선택된 키워드 저장
+        self._forced_title = None       # 키워드 분석에서 강제 적용 제목
         self._build_ui()
         self._refresh_stats()
         # 앱 시작 시 스케줄러 자동 실행
@@ -1793,7 +1819,9 @@ class BlogAutomationApp(QMainWindow):
             self.log_box.append(f"[실행] {blog_id} 시작...")
         self.run_btn.setEnabled(False)
         self.pause_btn.setEnabled(True)
-        self._single_worker = SingleRunWorker(blog_id, keyword=keyword)
+        forced_title = getattr(self, '_forced_title', None)
+        self._forced_title = None  # 사용 후 초기화
+        self._single_worker = SingleRunWorker(blog_id, keyword=keyword, forced_title=forced_title)
         self._single_worker.log_signal.connect(self._append_log)
         self._single_worker.status_signal.connect(self._on_status)
         self._single_worker.finished.connect(self._on_run_done)
@@ -1870,9 +1898,16 @@ class BlogAutomationApp(QMainWindow):
                 return
             blog_id = self._agent_combo.currentText()
             dlg = KeywordAnalysisDialog(keyword, blog_id, self)
-            def _on_selected(kw):
+            def _on_kw(kw):
                 self._kw_input.setText(kw)
-            dlg.keyword_selected.connect(_on_selected)
+                self._forced_title = None
+            def _on_title(kw, title):
+                self._kw_input.setText(kw)
+                self._forced_title = title
+                self.log_box.append(f"[키워드분석] 강제 제목 설정: '{title}'")
+                self._run_selected()   # 제목 선택 즉시 실행
+            dlg.keyword_selected.connect(_on_kw)
+            dlg.title_forced.connect(_on_title)
             dlg.exec()
         except Exception as e:
             QMessageBox.critical(self, "오류", f"키워드 분석 창 열기 실패:\n{e}")
