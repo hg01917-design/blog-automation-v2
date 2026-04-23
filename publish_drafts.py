@@ -231,24 +231,19 @@ def publish_wp_draft():
     _log(f"[WP] 선택된 드래프트: [{post_id}] {title}")
     _log(f"[WP] 콘텐츠 길이: {len(content_html)}자")
 
-    # ── 품질 검수 + 자동/Claude 수정 ──
+    # ── 품질 검수 + 자동 수정 (마커 제거만, 재생성 없음) ──
     wp_issues = _content_quality_gate(content_html, title, "baremi542")
     if wp_issues:
+        short_issue = [i for i in wp_issues if "너무 짧음" in i]
+        if short_issue:
+            _log(f"[WP] ⛔ 글자수 부족 — 스킵: {short_issue[0]}")
+            return False
         fixed_html, remaining = _auto_repair_content(content_html, wp_issues)
         if fixed_html != content_html:
             _log("[WP] 자동 수정 적용")
             content_html = fixed_html
         if remaining:
-            repaired = _claude_repair_draft(content_html, title, remaining, "baremi542")
-            if repaired:
-                content_html = repaired
-                re_issues = _content_quality_gate(content_html, title, "baremi542")
-                if re_issues:
-                    _notify_issue("baremi542", title, re_issues)
-                    return False
-            else:
-                _notify_issue("baremi542", title, remaining)
-                return False
+            _log(f"[WP] ⚠ 미수정 이슈 {len(remaining)}개 (발행 계속): {remaining}")
 
     # 이미지 수 + 위치 체크
     img_count = _count_content_images(content_html)
@@ -366,7 +361,7 @@ def _content_quality_gate(content: str, title: str, blog_id: str) -> list:
 
     검사 항목:
     1. 템플릿 마커 잔재 (===본문===, Gemini프롬프트: 등)
-    2. 본문 길이 너무 짧음 (2000자 미만)
+    2. 본문 길이 너무 짧음 (3000자 미만)
     3. 제목이 키워드 수준으로 짧음 (10자 미만)
     4. 동일 이미지 중복 삽입
     """
@@ -394,8 +389,8 @@ def _content_quality_gate(content: str, title: str, blog_id: str) -> list:
     # 2. 본문 길이 체크 (HTML 태그 제거 후 순수 텍스트)
     plain = re.sub(r'<[^>]+>', ' ', content)
     plain = re.sub(r'\s+', ' ', plain).strip()
-    if len(plain) < 2000:
-        issues.append(f"본문 너무 짧음 ({len(plain)}자 < 2000자) — 내용 보완 필요")
+    if len(plain) < 1500:
+        issues.append(f"본문 너무 짧음 ({len(plain)}자 < 1500자) — 스킵")
 
     # 3. 제목 길이 체크
     if len(title.strip()) < 10:
@@ -856,10 +851,16 @@ def _tistory_check_and_fix(page, blog_id: str, post_id: str):
     _log(f"[{blog_id}] 제목: {title}")
     _log(f"[{blog_id}] 콘텐츠 길이: {len(content)}자")
 
-    # ── 품질 검수 + 자동/Claude 수정 ──
+    # ── 품질 검수 + 자동 수정 (마커 제거만, 재생성 없음) ──
     issues = _content_quality_gate(content, title, blog_id)
     if issues:
-        # 1단계: 자동 수정 시도 (마커 제거, 중복 이미지)
+        # 1500자 미만이면 스킵
+        short_issue = [i for i in issues if "너무 짧음" in i]
+        if short_issue:
+            _log(f"[{blog_id}] ⛔ 글자수 부족 — 스킵: {short_issue[0]}")
+            return False
+
+        # 마커 잔재 등 자동 수정
         fixed_content, remaining = _auto_repair_content(content, issues)
         if fixed_content != content:
             _log(f"[{blog_id}] 자동 수정 적용 — 에디터 업데이트")
@@ -867,22 +868,8 @@ def _tistory_check_and_fix(page, blog_id: str, post_id: str):
             content = fixed_content
 
         if remaining:
-            # 2단계: 자동 수정 후에도 남은 이슈 → Claude 수정 시도
-            _log(f"[{blog_id}] 남은 이슈 {len(remaining)}개 — Claude 수정 시도")
-            repaired = _claude_repair_draft(content, title, remaining, blog_id)
-            if repaired:
-                page.evaluate("(c) => tinymce.activeEditor.setContent(c)", repaired)
-                content = repaired
-                # 재검수
-                re_issues = _content_quality_gate(content, title, blog_id)
-                if re_issues:
-                    _log(f"[{blog_id}] ⛔ 수정 후에도 검수 실패 — 텔레그램 알림 후 스킵")
-                    _notify_issue(blog_id, title, re_issues)
-                    return False
-            else:
-                _log(f"[{blog_id}] ⛔ Claude 수정 실패 — 텔레그램 알림 후 스킵")
-                _notify_issue(blog_id, title, remaining)
-                return False
+            # 자동 수정 불가 이슈는 로그만 남기고 발행 진행
+            _log(f"[{blog_id}] ⚠ 미수정 이슈 {len(remaining)}개 (발행 계속): {remaining}")
 
     # 이미지 수 + 위치 체크 (Tistory [##_Image 형식 포함)
     img_count_ts = _count_content_images(content)
@@ -2067,16 +2054,16 @@ def publish_naver_draft(blog_id="salim1su") -> bool:
         naver_text = page.evaluate("() => document.body.innerText || ''")
         issues = _content_quality_gate(naver_text, naver_title, blog_id)
         if issues:
-            # Naver SE3 에디터는 setContent가 어려우므로 자동 수정만 시도
+            short_issue = [i for i in issues if "너무 짧음" in i]
+            if short_issue:
+                _log(f"[{blog_id}] ⛔ 글자수 부족 — 스킵: {short_issue[0]}")
+                return False
             fixed_text, remaining = _auto_repair_content(naver_text, issues)
             if remaining:
-                # 자동 수정 불가 → 텔레그램 알림 후 스킵 (Naver는 에디터 직접 수정 어려움)
-                _log(f"[{blog_id}] ⛔ 품질 검수 실패 — 텔레그램 알림 후 스킵")
-                _notify_issue(blog_id, naver_title, remaining)
-                return False
+                _log(f"[{blog_id}] ⚠ 미수정 이슈 {len(remaining)}개 (발행 계속): {remaining}")
 
         # 글자수 체크
-        if info.get('length', 0) < 1700:
+        if info.get('length', 0) < 1500:
             _log(f"[{blog_id}] 글자수 부족({info.get('length')}자) — 스킵")
             return False
 

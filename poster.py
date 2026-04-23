@@ -806,12 +806,13 @@ def _post_tistory(account, title, body_html, tags=None,
             "nolja100": "여행",
             "woll100":  "교통정보",
             "phn0502":  "영화",
+            "goodisak": None,  # 동적 결정 (IT/금융)
         }
-        if blog_id_local in ("nolja100", "goodisak", "woll100", "phn0502"):
-            if blog_id_local in _TISTORY_CAT:
-                cat_name = _TISTORY_CAT[blog_id_local]
+        if blog_id_local in _TISTORY_CAT:
+            if blog_id_local == "goodisak":
+                cat_name = _get_goodisak_category(keyword or title) or "IT정보"
             else:
-                cat_name = _get_goodisak_category(keyword or title)
+                cat_name = _TISTORY_CAT[blog_id_local]
             if not cat_name:
                 log(f"[포스팅] 카테고리 없음 — 스킵 ({blog_id_local})")
             else:
@@ -1822,44 +1823,74 @@ def _post_naver(account, title, content, tags=None,
                     except Exception as _tage:
                         log(f"[포스팅] 태그 입력 실패: {_tage}")
 
-                # 발행 패널 닫기 — 에디터 본문 아무데나 클릭 후 저장 버튼
+                # 발행 패널 닫기 — 패널이 완전히 닫혀야 임시저장 버튼이 노출됨
+                # 패널 바깥 헤더 영역 클릭 → Escape → 제목 입력창 클릭 순으로 시도
                 try:
-                    editor_area = page.locator('.se-editor')
-                    if editor_area.is_visible(timeout=2000):
-                        editor_area.click(position={"x": 100, "y": 100})
-                    else:
+                    closed = False
+                    # 1순위: 헤더 영역 클릭 (패널 바깥)
+                    header = page.locator('.se-header')
+                    if header.is_visible(timeout=1500):
+                        header.click(position={"x": 300, "y": 20})
+                        time.sleep(0.8)
+                        closed = True
+                    if not closed:
                         page.keyboard.press("Escape")
-                    time.sleep(random.uniform(0.8, 1.5))
+                        time.sleep(0.8)
+                    # 패널이 사라졌는지 확인
+                    panel_still_open = page.locator('.publish_btn__m9KHH').is_visible(timeout=1000)
+                    if panel_still_open:
+                        page.keyboard.press("Escape")
+                        time.sleep(0.5)
+                        # 제목 입력창 클릭으로 포커스 이동
+                        title_input = page.locator('.se-title-input')
+                        if title_input.is_visible(timeout=1000):
+                            title_input.click()
+                        time.sleep(0.8)
                     log("[포스팅] 발행 패널 닫힘")
                 except Exception:
                     page.keyboard.press("Escape")
-                    time.sleep(0.8)
+                    time.sleep(1.0)
             else:
                 log("[포스팅] 발행 패널 버튼 미발견 — 태그/카테고리 건너뜀")
         except Exception as _panel_e:
             log(f"[포스팅] 발행 패널 처리 오류: {_panel_e}")
 
-        # ── 임시저장 ──
+        # ── 임시저장 — 발행 패널이 닫힌 상태에서만 클릭 ──
         log("[포스팅] 임시저장 중...")
         _naver_dismiss_overlays(page)
+        time.sleep(random.uniform(1.0, 1.5))
         saved = False
         try:
-            save_btn = page.locator('.save_btn__bzc5B')
-            if save_btn.is_visible(timeout=3000):
-                save_btn.click()
+            # 저장 버튼 찾기 — "발행" 텍스트 버튼은 절대 클릭 금지
+            saved = page.evaluate("""() => {
+                const buttons = document.querySelectorAll('button');
+                for (const btn of buttons) {
+                    const text = btn.textContent.trim();
+                    if (text === '발행' || text === '공개발행' || text === '발행하기') continue;
+                    if (text === '임시저장' || text === '저장' || text.includes('임시저장') || text.includes('저장')) {
+                        btn.click(); return text;
+                    }
+                }
+                return false;
+            }""")
+            if saved:
+                log(f"[포스팅] 저장 버튼 클릭: '{saved}'")
                 saved = True
         except Exception:
             pass
         if not saved:
+            # 폴백: 클래스명으로 찾기
+            try:
+                save_btn = page.locator('.save_btn__bzc5B')
+                if save_btn.is_visible(timeout=2000):
+                    save_btn.click()
+                    saved = True
+            except Exception:
+                pass
+        if not saved:
             page.keyboard.press("Meta+s")
         _rand_delay(page, 2000, 3000)
-        if saved:
-            log(f"[포스팅] 임시저장 완료: {title[:30]}...")
-            return True
-        # 폴백: Ctrl+S
-        page.keyboard.press("Meta+s")
-        _rand_delay(page, 2000, 3000)
-        log(f"[포스팅] 임시저장(Ctrl+S) 시도: {title[:30]}...")
+        log(f"[포스팅] 임시저장 {'완료' if saved else '(Meta+S 시도)'}: {title[:30]}...")
         return True
 
         # ── 아래는 사용 안 함 (임시저장 후 return) — 발행 폴백용 보존 ──

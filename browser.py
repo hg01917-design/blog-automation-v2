@@ -130,25 +130,44 @@ def _push_chrome_back():
         pass
 
 
-def _push_chrome_back_persistent(duration=4.0, interval=0.3):
-    """Chrome이 포커스를 뺏지 못하도록 duration초간 반복적으로 밀어냄"""
+_chrome_suppress_stop = None
+
+def start_chrome_suppress(interval=0.5):
+    """봇 실행 전체 동안 Chrome이 포커스를 뺏지 못하도록 전역 데몬 시작"""
     import threading
+    global _chrome_suppress_stop
+    if _chrome_suppress_stop is not None:
+        return  # 이미 실행 중
 
-    def _keep_pushing():
-        import time
-        end = time.time() + duration
-        while time.time() < end:
+    stop_flag = threading.Event()
+    _chrome_suppress_stop = stop_flag
+
+    def _loop():
+        while not stop_flag.is_set():
             _push_chrome_back()
-            time.sleep(interval)
+            stop_flag.wait(interval)
 
-    t = threading.Thread(target=_keep_pushing, daemon=True)
+    t = threading.Thread(target=_loop, daemon=True)
     t.start()
+
+
+def stop_chrome_suppress():
+    """Chrome 포커스 억제 데몬 종료"""
+    global _chrome_suppress_stop
+    if _chrome_suppress_stop:
+        _chrome_suppress_stop.set()
+        _chrome_suppress_stop = None
+
+
+def _push_chrome_back_persistent(duration=4.0, interval=0.3):
+    """하위 호환용 — start_chrome_suppress() 사용 권장"""
+    start_chrome_suppress(interval=interval)
 
 
 def connect_cdp(on_log=None):
     """Chrome CDP에 연결하여 (playwright, browser) 반환"""
     ensure_chrome_cdp(on_log)
-    _push_chrome_back_persistent(duration=5.0)
+    start_chrome_suppress()
     pw = sync_playwright().start()
     try:
         browser = pw.chromium.connect_over_cdp(CDP_URL)

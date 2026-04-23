@@ -1661,9 +1661,9 @@ def _post_one_blogger_blog(blog_id: str) -> bool:
             _db_set(kw, "failed", blog_id=blog_id)
             return False
 
-        log(f"[{blog_id}] Blogger API 발행 중: '{title}' (HTML {len(html_body)}자, 라벨 {len(tags[:12])}개, blog_id={blogger_id})")
+        log(f"[{blog_id}] Blogger API 임시저장 중: '{title}' (HTML {len(html_body)}자, 라벨 {len(tags[:12])}개, blog_id={blogger_id})")
         result = _blogger_publish(title=title, content=html_body, labels=tags[:12],
-                                  status="LIVE", blog_id=blogger_id)
+                                  status="DRAFT", blog_id=blogger_id)
         if not result.get("ok"):
             log(f"[{blog_id}] Blogger 발행 실패: {result.get('reason')}")
             log(f"[{blog_id}] 디버그: 라벨={tags[:12]}, HTML앞100={html_body[:100]!r}")
@@ -1672,8 +1672,8 @@ def _post_one_blogger_blog(blog_id: str) -> bool:
 
         post_url = result.get("url", "")
         post_id  = result.get("id", "")
-        log(f"[{blog_id}] ✅ 발행 완료: {post_url}")
-        _db_set(kw, "published", blog_id=blog_id, title=title)
+        log(f"[{blog_id}] ✅ 임시저장 완료: {post_url}")
+        _db_set(kw, "draft_saved", blog_id=blog_id, title=title)
 
         # Playwright로 이미지 삽입
         if image_paths and post_id and blogger_id:
@@ -2035,12 +2035,8 @@ def _post_one_blog_inner(blog_id):
             if ok:
                 # 모든 블로그 임시저장 → draft_saved (Claude Code가 검수 후 발행)
                 _db_set(kw, "draft_saved", blog_id=blog_id, title=saved_title)
-                # triplog/baremi542: 즉시 WP 발행 후 백링크용 URL 저장 (링크 피라미드)
-                if blog_id in ("triplog", "baremi542"):
-                    _tl_url = _publish_triplog_immediately(kw, saved_title, blog_id=blog_id)
-                    if _tl_url:
-                        _store_crosslink_url(kw, _tl_url, tier=blog_id)
-                        _db_set(kw, "published", blog_id=blog_id, title=saved_title)
+                # 자동 발행 비활성화 — 임시저장까지만 (triplog/baremi542 포함 전체)
+                pass
                 return True
             else:
                 _db_set(kw, "failed", blog_id=blog_id)
