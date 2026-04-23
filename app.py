@@ -886,6 +886,11 @@ class KeywordAnalysisDialog(QDialog):
     def _on_title_clicked(self, item):
         self._sel_edit.setText(item.text())
 
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            return  # Enter가 다이얼로그 닫는 것 방지
+        super().keyPressEvent(event)
+
     def _use_selected(self):
         text = self._sel_edit.text().strip()
         if text:
