@@ -343,7 +343,9 @@ def fetch_gov_service_context(keyword: str, on_log=None) -> str:
     )
     _stop = {"월", "일", "년", "원", "명", "개", "건", "회", "번", "차",
              "및", "또", "등", "의", "을", "를", "이", "가", "은", "는",
-             "얼마", "몇", "어떤", "누구", "언제", "어디", "왜", "어떻게"}
+             "얼마", "몇", "어떤", "누구", "언제", "어디", "왜", "어떻게",
+             "받을", "받나", "있나", "있어", "있는", "수", "되나", "되는",
+             "하는", "하나", "인지", "인가", "할까", "해야", "인데", "이고"}
     cleaned = _strip.sub("", keyword).strip()
     words = [w for w in cleaned.replace(",", " ").split() if len(w) >= 2 and w not in _stop]
     search_kw = " ".join(words[:2]) if words else keyword[:10]
@@ -358,10 +360,15 @@ def fetch_gov_service_context(keyword: str, on_log=None) -> str:
         return d.get("data", [])
 
     items = _search(search_kw)
-    # 결과 없으면 3자 이상 단어 중 마지막 단어로 재시도
-    if not items and len(words) > 1:
-        fallback_kw = words[-1]
-        items = _search(fallback_kw)
+    # 결과 없으면 두 번째 단어 → 첫 번째 단어 순으로 재시도
+    if not items and len(words) >= 2:
+        items = _search(words[1])
+        if items:
+            search_kw = words[1]
+    if not items and words:
+        items = _search(words[0])
+        if items:
+            search_kw = words[0]
         if items:
             search_kw = fallback_kw
 
