@@ -358,84 +358,113 @@ def fetch_bokjiro_context(keyword: str, on_log=None) -> str:
              "얼마", "몇", "어떤", "누구", "언제", "어디", "왜", "어떻게",
              "받을", "받나", "있나", "있어", "있는", "수", "되나", "되는",
              "하는", "하나", "인지", "인가", "할까", "해야", "인데", "이고"}
+    # 복지 용어 단축 정규화 (API 제목 검색 호환)
+    _welfare_norm = {
+        "차상위계층": "차상위", "기초생활수급자": "기초수급", "기초수급자": "기초수급",
+        "의료급여수급자": "의료급여", "장애인복지": "장애인", "노인복지": "노인",
+        "한부모가족": "한부모", "다문화가족": "다문화", "청소년복지": "청소년",
+    }
+
     cleaned = _strip.sub("", keyword).strip()
     words = [w for w in cleaned.split() if len(w) >= 2 and w not in _stop]
-    search_kw = " ".join(words[:2]) if words else keyword[:10]
+    # 정규화 적용
+    words = [_welfare_norm.get(w, w) for w in words]
 
-    log(f"[복지로API] 검색어: '{search_kw}' (원본: '{keyword}')")
+    # 2단어 → 1단어 → 4자 초과 시 앞 3자 로 폴백
+    candidates = []
+    if len(words) >= 2:
+        candidates.append(" ".join(words[:2]))
+    if words:
+        candidates.append(words[0])
+    # 첫 단어가 5자 이상이면 앞 3자도 후보
+    if words and len(words[0]) >= 5:
+        candidates.append(words[0][:3])
 
-    # 복지로 목록 API 호출 (XML 응답)
-    params = {
-        "serviceKey": key,
-        "callTp": "L",
-        "pageNo": "1",
-        "numOfRows": "5",
-        "srchKeyCode": "001",  # 제목 검색
-        "searchWrd": search_kw,
-    }
-    url = _BOKJIRO_LIST_URL + "?" + urllib.parse.urlencode(params)
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            raw = resp.read()
-    except Exception as e:
-        log(f"[복지로API] 호출 실패: {e}")
+    def _call(search_kw: str, srch_code: str = "001") -> list:
+        """복지로 API 호출 → servList 목록 반환 (없으면 [])"""
+        params = {
+            "serviceKey": key,
+            "callTp": "L",
+            "pageNo": "1",
+            "numOfRows": "5",
+            "srchKeyCode": srch_code,  # 001=제목, 002=내용, 003=제목+내용
+            "searchWrd": search_kw,
+        }
+        url = _BOKJIRO_LIST_URL + "?" + urllib.parse.urlencode(params)
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                raw = resp.read()
+        except Exception as e:
+            log(f"[복지로API] 호출 실패: {e}")
+            return []
+        try:
+            root = ET.fromstring(raw)
+            code = root.findtext(".//resultCode") or ""
+            # 0 = 성공, 40 = NO DATA FOUND (정상 케이스)
+            if code not in ("0", "00", "40", ""):
+                log(f"[복지로API] API 오류 코드 {code}: {root.findtext('.//resultMessage') or ''}")
+                return []
+            return root.findall(".//servList")
+        except ET.ParseError:
+            return []
+
+    items = []
+    search_kw = ""
+    # 1차: 제목 검색(001) → 2차: 제목+내용 검색(003)
+    for srch_code in ("001", "003"):
+        for cand in candidates:
+            log(f"[복지로API] 검색어: '{cand}' srch={srch_code} (원본: '{keyword}')")
+            items = _call(cand, srch_code)
+            if items:
+                search_kw = cand
+                break
+            log(f"[복지로API] '{cand}' 결과 없음 (srch={srch_code})")
+        if items:
+            break
+
+    if not items:
+        log(f"[복지로API] 검색 결과 없음 — 폴백")
         return ""
 
-    # XML 파싱
-    try:
-        root = ET.fromstring(raw)
-        # 에러 응답 체크
-        result_msg = root.findtext(".//resultMsg") or root.findtext(".//errMsg") or ""
-        result_code = root.findtext(".//resultCode") or ""
-        if result_code and result_code != "00":
-            log(f"[복지로API] API 오류 ({result_code}): {result_msg}")
-            return ""
+    lines = [f"[복지로 복지서비스 정보 ('{search_kw}' 검색 결과)]"]
+    for item in items[:3]:
+        def t(tag): return (item.findtext(tag) or "").strip()
 
-        items = root.findall(".//servList") or root.findall(".//wlfareinfo")
-        if not items:
-            log(f"[복지로API] '{search_kw}' 검색 결과 없음")
-            return ""
+        name = t("servNm")
+        dept = t("jurMnofNm")
+        target = t("trgterIndvdlArray")
+        summary = t("servDgst")
+        cycle = t("sprtCycNm")
+        give_type = t("srvPvsnNm")
+        detail_link = t("servDtlLink")
+        theme = t("intrsThemaArray")
 
-        lines = [f"[복지로 복지서비스 정보 ('{search_kw}' 검색 결과)]"]
-        for item in items[:3]:
-            def t(tag): return (item.findtext(tag) or "").strip()
+        if not name:
+            continue
+        lines.append(f"\n[서비스] {name}")
+        if dept:
+            lines.append(f"  소관기관: {dept}")
+        if target:
+            lines.append(f"  지원대상: {target[:100]}")
+        if give_type:
+            lines.append(f"  급여유형: {give_type}")
+        if cycle:
+            lines.append(f"  지급주기: {cycle}")
+        if theme:
+            lines.append(f"  관심주제: {theme[:80]}")
+        if summary:
+            lines.append(f"  요약: {summary[:200]}")
+        if detail_link:
+            lines.append(f"  상세: {detail_link}")
 
-            name = t("servNm") or t("wlfareSvcNm")
-            dept = t("jurMnofNm") or t("ministryNm")
-            target = t("trgterIndvdlNm") or t("trgterNm")
-            support_type = t("srvTypNm") or t("servDgstCn")
-            apply_url = t("srvPvsnNm") or t("aplyUrlAddr")
-            summary = t("servDgstCn") or t("servSumry")
-
-            if not name:
-                continue
-            lines.append(f"\n[서비스] {name}")
-            if dept:
-                lines.append(f"  소관기관: {dept}")
-            if target:
-                lines.append(f"  지원대상: {target[:100]}")
-            if support_type:
-                lines.append(f"  급여유형: {support_type[:80]}")
-            if summary:
-                lines.append(f"  요약: {summary[:150]}")
-            if apply_url and apply_url.startswith("http"):
-                lines.append(f"  신청: {apply_url}")
-
-        if len(lines) <= 1:
-            log(f"[복지로API] 파싱 결과 없음")
-            return ""
-
-        ctx = "\n".join(lines)
-        log(f"[복지로API] {len(items)}건 수집 완료 ({len(ctx)}자)")
-        return ctx
-
-    except ET.ParseError as e:
-        log(f"[복지로API] XML 파싱 실패: {e}")
+    if len(lines) <= 1:
+        log(f"[복지로API] 파싱 결과 없음")
         return ""
-    except Exception as e:
-        log(f"[복지로API] 처리 오류: {e}")
-        return ""
+
+    ctx = "\n".join(lines)
+    log(f"[복지로API] {len(items)}건 수집 완료 ({len(ctx)}자)")
+    return ctx
 
 
 def fetch_gov_service_context(keyword: str, on_log=None) -> str:
