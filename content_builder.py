@@ -32,9 +32,6 @@ def insert_adsense_markers(marker_text: str, blog_id: str = "") -> str:
     if blog_id == "salim1su":
         return marker_text
 
-    if '##AD##' in marker_text or '[애드센스]' in marker_text:
-        return marker_text  # 이미 삽입되어 있으면 건드리지 않음
-
     lines = marker_text.split('\n')
 
     # 순수 텍스트 길이 계산 (마커, 태그 제외)
@@ -51,6 +48,11 @@ def insert_adsense_markers(marker_text: str, blog_id: str = "") -> str:
     else:
         max_ads = 3
 
+    # 이미 삽입된 개수 확인 — 부족할 때만 추가
+    existing_count = marker_text.count('##AD##') + marker_text.count('[애드센스]')
+    if existing_count >= max_ads:
+        return marker_text
+
     # H2 위치와 TABLE 위치 찾기
     # ##H2:heading## 형식(마커) 또는 ## heading (마크다운) 모두 인식
     h2_indices = [i for i, ln in enumerate(lines)
@@ -59,32 +61,32 @@ def insert_adsense_markers(marker_text: str, blog_id: str = "") -> str:
                   or re.match(r'^\[H2\].+\[/H2\]', ln.strip(), re.IGNORECASE)]
     table_indices = [i for i, ln in enumerate(lines) if re.match(r'##TABLE:\d+##', ln.strip())]
 
+    # 이미 삽입된 위치 파악 (중복 방지용)
+    existing_positions = set(i for i, ln in enumerate(lines) if ln.strip() in ('##AD##', '[애드센스]'))
+    need_ads = max_ads - existing_count
+
     # 삽입 위치 계산 (line index 기준, 뒤에서부터 삽입하기 위해 역순 정렬)
     insert_positions = []
 
-    # 1순위: 첫번째 H2 앞
-    if len(h2_indices) >= 1:
-        insert_positions.append(h2_indices[0])
-
-    # 2순위: 두번째 H2 앞
-    if max_ads >= 2 and len(h2_indices) >= 2:
-        insert_positions.append(h2_indices[1])
+    # H2 앞 순서대로 — 이미 인접 위치에 있는 것 제외
+    for h2_idx in h2_indices[1:]:  # 1번째 H2는 도입부 전이므로 2번째부터
+        if h2_idx not in existing_positions and (h2_idx - 1) not in existing_positions:
+            insert_positions.append(h2_idx)
+        if len(insert_positions) >= need_ads:
+            break
 
     # 3순위: 표 아래 (5000자 이상일 때)
-    if max_ads >= 3 and table_indices:
-        # 첫 번째 표 바로 다음 줄에 삽입
+    if len(insert_positions) < need_ads and table_indices:
         table_after = table_indices[0] + 1
-        # H2 바로 앞에 이미 삽입되는 위치와 겹치지 않도록
-        if table_after not in insert_positions:
+        if table_after not in insert_positions and table_after not in existing_positions:
             insert_positions.append(table_after)
 
     # 본문 말미 — 워드프레스(baremi542)만 허용
     is_wordpress = blog_id == "baremi542"
-    if is_wordpress and len(insert_positions) < max_ads:
+    if is_wordpress and len(insert_positions) < need_ads:
         insert_positions.append(len(lines))
 
-    # max_ads 개수만큼만
-    insert_positions = insert_positions[:max_ads]
+    insert_positions = insert_positions[:need_ads]
 
     # 뒤에서부터 삽입 (인덱스 밀림 방지)
     for pos in sorted(insert_positions, reverse=True):

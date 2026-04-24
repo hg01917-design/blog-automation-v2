@@ -1302,11 +1302,51 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
         tags = [keyword]  # 최소 키워드라도 태그로 사용
     log(f"[검수] 글 품질 기록 — 본문 {char_count}자, 태그 {len(tags)}개 → 임시저장 진행")
 
+    # triplog: MRT 1회차 링크가 첫 H2 전에 있는지 검증·교정
+    if blog_id == "triplog":
+        body = _ensure_mrt_intro_link(body, log)
+
     # 텍스트 체크포인트 저장 — 이미지/Playwright 실패 시 다음 라운드에서 재사용
     _save_text_buffer(blog_id, keyword, title, body, tags, images)
 
     ok = _run_image_and_post(blog_id, keyword, title, body, tags, images)
     return (ok, title) if ok else (False, title)
+
+
+def _ensure_mrt_intro_link(body: str, log_fn=None) -> str:
+    """MRT 1회차 링크가 첫 H2(또는 <h2>) 전 도입부에 없으면 이동한다."""
+    mrt_pat = re.compile(
+        r'(?:[^\n]*)?<a[^>]+(?:myrealt|mrt\.kr)[^>]*>.*?</a>(?:[^\n]*)?',
+        re.DOTALL | re.IGNORECASE
+    )
+    h2_pat = re.compile(r'(?m)^(?:##\s+|<h2\b|\[H2\])', re.IGNORECASE)
+
+    link_m = mrt_pat.search(body)
+    if not link_m:
+        return body
+    h2_m = h2_pat.search(body)
+    if not h2_m:
+        return body
+
+    first_link_pos = link_m.start()
+    first_h2_pos = h2_m.start()
+
+    if first_link_pos < first_h2_pos:
+        return body  # 이미 도입부에 있음 ✅
+
+    # 1회차 링크가 첫 H2 뒤에 있음 → 첫 H2 직전으로 이동
+    link_text = link_m.group(0).strip()
+    # 원래 위치에서 링크 줄 제거 (앞뒤 빈 줄 포함)
+    body_no_link = body[:link_m.start()].rstrip('\n') + '\n\n' + body[link_m.end():].lstrip('\n')
+    # 첫 H2 직전에 삽입
+    new_h2_m = h2_pat.search(body_no_link)
+    if not new_h2_m:
+        return body_no_link
+    insert_pos = new_h2_m.start()
+    result = body_no_link[:insert_pos] + link_text + '\n\n' + body_no_link[insert_pos:]
+    if log_fn:
+        log_fn("[MRT] 1회차 링크를 도입부 끝(첫 H2 전)으로 이동 완료")
+    return result
 
 
 def _run_image_and_post(blog_id, keyword, title, body, tags, images):
