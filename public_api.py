@@ -360,15 +360,11 @@ def fetch_gov_service_context(keyword: str, on_log=None) -> str:
         return d.get("data", [])
 
     items = _search(search_kw)
-    # 결과 없으면 두 번째 단어 → 첫 번째 단어 순으로 재시도
-    if not items and len(words) >= 2:
-        items = _search(words[1])
-        if items:
-            search_kw = words[1]
-    if not items and words:
-        items = _search(words[0])
-        if items:
-            search_kw = words[0]
+
+    # 1차 검색 실패 시 — API에 없는 지역/특수 프로그램일 가능성 높음
+    # fallback 데이터는 주입하지 않음 (엉뚱한 프로그램 혼입 방지)
+    if not items:
+        log(f"[PublicAPI] '{search_kw}' 검색 결과 없음 — 관련 없는 데이터 주입 방지로 스킵")
         if items:
             search_kw = fallback_kw
 
