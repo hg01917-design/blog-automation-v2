@@ -304,7 +304,7 @@ def generate_titles(keyword: str, blog_id: str, on_log=None) -> list[str]:
 
     try:
         from claude_direct import _run_claude, _FORMAT_ENFORCE_PREFIX
-        raw = _run_claude(prompt, on_log=on_log, timeout=60)
+        raw = _run_claude(prompt, on_log=on_log, timeout=120)
         lines = [l.strip() for l in raw.strip().splitlines() if l.strip()]
         import re
         titles = []
