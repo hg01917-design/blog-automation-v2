@@ -1703,8 +1703,10 @@ class BlogAutomationApp(QMainWindow):
         self.pause_btn = QPushButton("⏸  정지")
         self.pause_btn.setEnabled(False)
         self.pause_btn.setStyleSheet(
-            "background:#1a1d2e;color:#e0e0e0;border:1px solid #1e2233;"
-            "border-radius:6px;font-size:12px;min-height:32px;")
+            "QPushButton:enabled{background:#e74c3c;color:#fff;border:none;"
+            "border-radius:6px;font-size:12px;font-weight:bold;min-height:32px;}"
+            "QPushButton:disabled{background:#1a1d2e;color:#555;border:1px solid #1e2233;"
+            "border-radius:6px;font-size:12px;min-height:32px;}")
         self.pause_btn.clicked.connect(self._stop_worker)
         reset_btn = QPushButton("↺  리셋")
         reset_btn.setStyleSheet(
@@ -1877,13 +1879,10 @@ class BlogAutomationApp(QMainWindow):
                     break
                 self._append_log(line.rstrip())
             self._all_proc.wait()
-            self.run_all_btn.setEnabled(True)
-            self.run_btn.setEnabled(True)
-            self.pause_btn.setEnabled(False)
-            if self._all_stop.is_set():
-                self._append_log("[전체실행] 정지됨")
-            else:
-                self._append_log("[전체실행] 완료")
+            stopped = self._all_stop.is_set()
+            # UI는 메인 스레드에서만 — QTimer로 위임
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(0, lambda: self._on_all_done(stopped))
         threading.Thread(target=_stream, daemon=True).start()
 
     def _run_selected(self):
@@ -1924,6 +1923,15 @@ class BlogAutomationApp(QMainWindow):
             self.log_box.append(traceback.format_exc())
             self.run_btn.setEnabled(True)
             self.pause_btn.setEnabled(False)
+
+    def _on_all_done(self, stopped: bool):
+        self.run_all_btn.setEnabled(True)
+        self.run_btn.setEnabled(True)
+        self.pause_btn.setEnabled(False)
+        if stopped:
+            self._append_log("[전체실행] 정지됨")
+        else:
+            self._append_log("[전체실행] 완료")
 
     def _stop_worker(self):
         if self.sched_worker and self.sched_worker.isRunning():
