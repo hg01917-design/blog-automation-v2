@@ -332,15 +332,20 @@ def fetch_gov_service_context(keyword: str, on_log=None) -> str:
         log("[PublicAPI] API 키 없음 — 공공서비스 데이터 스킵")
         return ""
 
-    # 키워드에서 검색어 추출 — SEO 부사구 제거 후 핵심 2단어
+    # 키워드에서 검색어 추출 — SEO 부사구·의문어 제거 후 핵심 2단어
     _strip = re.compile(
         r"(서류\s*준비\s*없이|빠르게|쉽게|간단하게|신청하는\s*법|"
         r"신청\s*방법|조건\s*금액|신청\s*자격|총정리|완벽정리|한눈에|"
-        r"\d{4}년?\s*최신|2026\s*년?\s*기준|최신\s*정보)",
+        r"\d{4}년?\s*최신|2026\s*년?\s*기준|최신\s*정보|"
+        r"얼마\s*받나|얼마나|받나|지급액과|대상자별|혜택금액|"
+        r"지원금액|지급방법|지급일|지급기준|얼마씩|월\s*얼마|어떻게|어디서)",
         re.IGNORECASE,
     )
+    _stop = {"월", "일", "년", "원", "명", "개", "건", "회", "번", "차",
+             "및", "또", "등", "의", "을", "를", "이", "가", "은", "는",
+             "얼마", "몇", "어떤", "누구", "언제", "어디", "왜", "어떻게"}
     cleaned = _strip.sub("", keyword).strip()
-    words = cleaned.replace(",", " ").split()
+    words = [w for w in cleaned.replace(",", " ").split() if len(w) >= 2 and w not in _stop]
     search_kw = " ".join(words[:2]) if words else keyword[:10]
 
     def _search(q: str) -> list:
@@ -353,7 +358,7 @@ def fetch_gov_service_context(keyword: str, on_log=None) -> str:
         return d.get("data", [])
 
     items = _search(search_kw)
-    # 결과 없으면 마지막 단어(명사)만으로 재시도
+    # 결과 없으면 3자 이상 단어 중 마지막 단어로 재시도
     if not items and len(words) > 1:
         fallback_kw = words[-1]
         items = _search(fallback_kw)
