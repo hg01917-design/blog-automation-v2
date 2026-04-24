@@ -889,25 +889,19 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
                 log(f"[파이프라인] ⚠️ MRT 제휴 링크 생성 실패 — triplog 발행 스킵")
 
             if valid_links:
-                mrt_ctx = (
-                    "\n\n[마이리얼트립 제휴 상품 — 링크 2회 필수 삽입]\n"
-                    "글 최상단(첫 문단 전)에 반드시 이 한 줄을 삽입해:\n"
-                    "「이 글에는 마이리얼트립 파트너스 프로그램을 통해 소정의 수수료를 받을 수 있는 제휴 링크가 포함되어 있습니다.」\n\n"
-                    "아래 제휴 상품 링크를 본문에 2회 삽입해 (CTR 최적화):\n"
-                    "  1회차: 첫 번째 소제목(##) 바로 아래 — 후킹 문구 1줄 + 링크\n"
-                    "         후킹 예시: '이 투어는 성수기에 금방 마감돼요 — 날짜 먼저 잡아두세요'\n"
-                    "  2회차: 맺음말 직전 — '지금 예약 확인해보세요' CTA + 링크\n"
-                    "링크 형식: <a href=\"URL\" target=\"_blank\" style=\"color:#1a73e8;font-weight:bold;\">상품명 예약하기</a>\n\n"
-                    "아래 상품 중 글 내용과 가장 관련된 것 1~2개 선택해서 삽입:\n"
-                )
+                # ── 1부: 글 작성 참고 자료 (상품 정보를 리서치 소스로 활용) ──
+                mrt_ctx = "\n\n[마이리얼트립 상품 정보 — 글 작성 참고 자료]\n"
+                mrt_ctx += "아래는 이 여행지에서 실제로 판매 중인 투어/체험 상품이다.\n"
+                mrt_ctx += "상품명·가격·평점·리뷰수를 글 내용에 직접 반영해 구체성을 높여라.\n"
+                mrt_ctx += "(예: '현지에서 블루라인파크 당일권을 7,300원에 살 수 있고, 4.7점 기준으로 후기도 좋아요')\n\n"
                 for i, p in enumerate(valid_links, 1):
-                    name = p["title"][:60]
-                    aff_url = p.get('affiliate_url', '')
+                    name = p["title"][:70]
                     price = p.get('price', '')
                     rating = p.get('rating', '')
                     review_count = p.get('review_count', '')
                     region = p.get('region', '')
-                    mrt_ctx += f"{i}. 상품명: {name}\n   URL: {aff_url}\n"
+                    aff_url = p.get('affiliate_url', '')
+                    mrt_ctx += f"{i}. {name}\n"
                     if price:
                         mrt_ctx += f"   가격: {price}\n"
                     if rating:
@@ -915,8 +909,20 @@ def run_posting_pipeline(blog_id, keyword, _resume=None):
                         mrt_ctx += f"   평점: {rating}{rev_str}\n"
                     if region:
                         mrt_ctx += f"   지역: {region}\n"
+                    mrt_ctx += f"   예약링크: {aff_url}\n"
+
+                # ── 2부: 링크 삽입 지시 ──
+                mrt_ctx += (
+                    "\n[마이리얼트립 제휴 링크 — 본문 2회 삽입 필수]\n"
+                    "글 최상단에 이 한 줄 삽입:\n"
+                    "「이 글에는 마이리얼트립 파트너스 프로그램을 통해 소정의 수수료를 받을 수 있는 제휴 링크가 포함되어 있습니다.」\n\n"
+                    "위 상품 중 글과 가장 관련된 것 1~2개 선택해서 아래 형식으로 2회 삽입:\n"
+                    "  1회차: 첫 H2 소제목 아래 — 후킹 문구 1줄 + 링크\n"
+                    "  2회차: Q&A 직후 마무리 문단 앞 — CTA + 링크\n"
+                    "링크 형식: <a href=\"예약링크\" target=\"_blank\" style=\"color:#1a73e8;font-weight:bold;\">상품명 예약하기</a>\n"
+                )
                 keyword_with_mrt = keyword + mrt_ctx
-                log(f"[파이프라인] MRT {len(valid_links)}개 관련 제휴 링크 주입 완료")
+                log(f"[파이프라인] MRT {len(valid_links)}개 상품 정보 + 제휴 링크 주입 완료")
             else:
                 log(f"[파이프라인] MRT 관련 상품 없음 — 제휴 섹션 생략")
         except Exception as e:
