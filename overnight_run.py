@@ -2284,8 +2284,12 @@ if __name__ == "__main__":
         except Exception:
             pass
 
+    _skip_crawl = "--skip-crawl" in _sys.argv
+
     _crawled_keywords = {}
-    if not _state.get("crawling_done"):
+    if _skip_crawl:
+        log("[크롤링] --skip-crawl 옵션 — 키워드 수집/롱테일 확장 건너뜀")
+    elif not _state.get("crawling_done"):
         log("[크롤링] salim1su, baremi542 키워드 수집")
         from keyword_crawler import crawl_keywords
         for bid in ["salim1su", "baremi542"]:
@@ -2353,11 +2357,12 @@ if __name__ == "__main__":
             except Exception as _e:
                 log(f"[경쟁모니터] 오류: {_e}")
         save_log()
-    else:
+    elif not _skip_crawl:
         log("[크롤링] 오늘 이미 완료 — 스킵")
 
     # ── 포스팅 실행 ──
-    _target_blog = _sys.argv[1] if len(_sys.argv) > 1 else None
+    _args_no_flags = [a for a in _sys.argv[1:] if not a.startswith("--")]
+    _target_blog = _args_no_flags[0] if _args_no_flags else None
     if _target_blog:
         log(f"[실행] 블로그 지정: {_target_blog}")
         ok = post_one_blog(_target_blog)

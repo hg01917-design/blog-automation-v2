@@ -1869,7 +1869,7 @@ class BlogAutomationApp(QMainWindow):
         # PyInstaller 환경에서 sys.executable은 앱 자체 → python3 직접 사용
         python_bin = shutil.which("python3") or shutil.which("python") or "/usr/local/bin/python3"
         self._all_proc = subprocess.Popen(
-            [python_bin, str(script)],
+            [python_bin, str(script), "--skip-crawl"],
             cwd=str(project_dir),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1
