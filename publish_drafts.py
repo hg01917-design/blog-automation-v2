@@ -1441,6 +1441,12 @@ def publish_triplog_draft() -> bool:
     content_html = post["content"]["rendered"]
     _log(f"[triplog] 선택된 드래프트: [{post_id}] {title} ({len(content_html)}자)")
 
+    # [이미지N] / [/이미지N] 잔재 제거
+    if re.search(r'\[/?이미지\s*\d+\]', content_html):
+        content_html = re.sub(r'\[/?이미지\s*\d+\]', '', content_html)
+        content_html = re.sub(r'<p>\s*</p>', '', content_html)
+        _log("[triplog] [이미지N] 태그 잔재 제거 완료")
+
     img_count_tl = _count_content_images(content_html)
     img_spread_tl = _check_image_spread(content_html, img_count_tl)
     _log(f"[triplog] 이미지: {img_count_tl}개, 분포 양호: {img_spread_tl}")

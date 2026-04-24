@@ -272,6 +272,16 @@ def _body_to_tinymce_html(body_text: str, blog_id: str) -> str:
         if s in ('[애드센스]', '##AD##'):
             parts.append('<p data-ke-size="size19" data-adsense="1">&nbsp;</p>')
             continue
+        # 꿀팁 박스 / 인용 (> 로 시작)
+        if s.startswith('> '):
+            tip = s[2:]
+            tip = re.sub(r'\[BOLD\](.+?)\[/BOLD\]', r'<strong>\1</strong>', tip, flags=re.IGNORECASE)
+            tip = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', tip)
+            parts.append(
+                f'<blockquote style="background:#f0f7ff;border-left:4px solid #1a73e8;'
+                f'padding:12px 16px;margin:16px 0;border-radius:4px;">{tip}</blockquote>'
+            )
+            continue
         # 마크다운 표 (줄 단위 처리 불가 — 스킵)
         if s.startswith('|') and s.endswith('|'):
             continue
@@ -2210,11 +2220,14 @@ def _post_wordpress(account, title, content, tags=None,
     content = re.sub(r'═{3,}.*?═{3,}', '', content, flags=re.DOTALL)
     # {{마이리얼트립링크}} 등 미치환 플레이스홀더 제거 ({{이미지N}}은 나중에 처리하므로 제외)
     content = re.sub(r'\{\{(?!이미지\d+\}\})[^}]+\}\}', '', content)
+    # [이미지N] / [/이미지N] 잔재 제거 ({{이미지N}} 플레이스홀더로 치환되지 못한 경우)
+    content = re.sub(r'\[/?이미지\s*\d+\]', '', content)
 
     # 1. [애드센스] 마커가 없으면 H2 기준 자동 삽입
     if "[애드센스]" not in content:
         md_lines = content.split("\n")
-        h2_positions = [i for i, ln in enumerate(md_lines) if re.match(r'^##\s+', ln.strip())]
+        h2_positions = [i for i, ln in enumerate(md_lines)
+                        if re.match(r'^##\s+', ln.strip()) or re.match(r'^<h2\b', ln.strip(), re.IGNORECASE)]
         pure_text = re.sub(r"\s+", "", re.sub(r"##.*|{{.*?}}|\|.*", "", content))
         char_count = len(pure_text)
         max_ads = 1 if char_count < 3000 else (2 if char_count < 5000 else 3)

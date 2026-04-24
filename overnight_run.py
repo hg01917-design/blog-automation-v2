@@ -1323,7 +1323,8 @@ def _run_image_and_post(blog_id, keyword, title, body, tags, images):
     blog_img_dir.mkdir(parents=True, exist_ok=True)
 
     # H2 소제목 개수 = 본문 이미지 수 (최소 1)
-    h2_count = len(re.findall(r'^##\s+', body, re.MULTILINE))
+    # ## / <h2> / [H2]...[/H2] 모두 인식
+    h2_count = len(re.findall(r'^##\s+|^<h2\b|\[H2\]', body, re.MULTILINE))
     MIN_IMAGES = max(h2_count, 1)
     log(f"[파이프라인] H2 소제목 {h2_count}개 → 본문 이미지 {MIN_IMAGES}개 목표")
 

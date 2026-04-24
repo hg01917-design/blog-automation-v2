@@ -54,7 +54,9 @@ def insert_adsense_markers(marker_text: str, blog_id: str = "") -> str:
     # H2 위치와 TABLE 위치 찾기
     # ##H2:heading## 형식(마커) 또는 ## heading (마크다운) 모두 인식
     h2_indices = [i for i, ln in enumerate(lines)
-                  if re.match(r'##H2:.+?##', ln.strip()) or re.match(r'^##\s+\S', ln.strip())]
+                  if re.match(r'##H2:.+?##', ln.strip())
+                  or re.match(r'^##\s+\S', ln.strip())
+                  or re.match(r'^\[H2\].+\[/H2\]', ln.strip(), re.IGNORECASE)]
     table_indices = [i for i, ln in enumerate(lines) if re.match(r'##TABLE:\d+##', ln.strip())]
 
     # 삽입 위치 계산 (line index 기준, 뒤에서부터 삽입하기 위해 역순 정렬)
