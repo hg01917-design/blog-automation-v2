@@ -102,10 +102,40 @@ _OFFICIAL_DOMAINS = [
     "moel.go.kr", "work.go.kr", "gov.kr", "go.kr",
 ]
 
+_SEO_STRIP = re.compile(
+    r"(서류\s*준비\s*없이|빠르게|쉽게|간단하게|한번에|"
+    r"신청하는\s*법|신청\s*방법|조건\s*금액|신청\s*자격|"
+    r"총정리|완벽정리|한눈에|꼼꼼히|알아보기|"
+    r"\d{4}년?\s*최신|2026\s*년?\s*기준|최신\s*정보|"
+    r"얼마\s*받나|얼마나|받나|몇\s*만원|지급액과|대상자별|혜택금액|"
+    r"지원금액|지급방법|지급일|지급기준|얼마씩|월\s*얼마|"
+    r"어떻게|어디서|왜|뭐가|누가|언제)",
+    re.IGNORECASE,
+)
+
+_STOP_WORDS = {"월", "일", "년", "원", "명", "개", "건", "회", "번", "차",
+               "및", "또", "등", "의", "을", "를", "이", "가", "은", "는",
+               "얼마", "몇", "어떤", "누구", "언제", "어디", "왜", "어떻게",
+               "받을", "받나", "있나", "있어", "있는", "수", "되나", "되는",
+               "하는", "하나", "인지", "인가", "할까", "해야", "인데", "이고"}
+
+
+def _core_keyword(keyword: str) -> str:
+    """SEO 부사구·의문어 제거 후 핵심 명사구 추출."""
+    cleaned = _SEO_STRIP.sub("", keyword).strip()
+    words = [w for w in cleaned.split() if len(w) >= 2 and w not in _STOP_WORDS]
+    return " ".join(words[:3]) if words else keyword[:20]
+
 
 def _derive_fact_query(keyword: str, blog_id: str) -> str:
     """키워드에서 팩트 수집에 최적화된 검색 쿼리 도출.
     수치/조건 데이터가 없는 카테고리는 빈 문자열 반환 → 팩트 수집 건너뜀."""
+
+    # baremi542/salim1su: 키워드 자체로 직접 검색 (고정 쿼리보다 정확)
+    if blog_id in ("baremi542", "salim1su"):
+        core = _core_keyword(keyword)
+        return f"{core} 지원금액 신청자격 공식 site:go.kr OR site:or.kr"
+
     for triggers, query in _FACT_QUERIES:
         if any(t in keyword for t in triggers):
             return query
@@ -119,8 +149,6 @@ def _derive_fact_query(keyword: str, blog_id: str) -> str:
 
     # 매칭 없으면 키워드 + 블로그별 보조어
     suffix = {
-        "salim1su":  " 금액 조건 방법 공식",
-        "baremi542": " 지원금액 신청자격 조건 공식",
         "goodisak":  " 스펙 가격 공식",
     }.get(blog_id, " 공식 정보")
     return keyword + suffix
@@ -222,71 +250,46 @@ def _extract_page_facts(page, url: str, on_log=None) -> str:
 
 
 def _search_and_get_official_url(page, query: str, blog_id: str, on_log=None) -> str:
-    """네이버 검색 → 공식 도메인 결과 URL 반환."""
+    """Google 검색 → 공식 도메인(.go.kr/.or.kr) URL 반환.
+    Naver는 go.kr 링크를 auth redirect로 감싸므로 Google 사용.
+    """
     def log(msg):
         if on_log:
             on_log(msg)
 
     encoded = urllib.parse.quote(query)
-    search_url = f"https://search.naver.com/search.naver?query={encoded}"
+    search_url = f"https://www.google.com/search?q={encoded}&hl=ko&num=10"
 
     try:
         page.goto(search_url, wait_until="domcontentloaded", timeout=20000)
         page.wait_for_timeout(2000)
     except Exception as e:
-        log(f"[팩트수집] 네이버 검색 실패: {e}")
+        log(f"[팩트수집] Google 검색 실패: {e}")
         return ""
 
-    # 검색 결과에서 공식 도메인 링크 우선 추출
-    for domain in _OFFICIAL_DOMAINS:
-        try:
-            link = page.locator(f'a[href*="{domain}"]').first
-            if link.count() > 0:
-                href = link.get_attribute("href")
-                if href and href.startswith("http"):
-                    log(f"[팩트수집] 공식 도메인 발견: {domain} → {href[:80]}")
-                    return href
-        except Exception:
-            continue
-
-    # 공식 도메인 없으면 첫 번째 검색 결과 링크
+    # Google 결과에서 공식 도메인 직접 URL 추출
     try:
-        first_link = page.locator('.total_wrap a.link_tit, .lst_total a').first
-        if first_link.count() > 0:
-            href = first_link.get_attribute("href")
-            if href and href.startswith("http"):
-                log(f"[팩트수집] 첫 번째 결과 사용: {href[:80]}")
-                return href
+        urls = page.evaluate("""() => {
+            const anchors = document.querySelectorAll('a[href]');
+            const result = [];
+            for (const a of anchors) {
+                const href = a.href || '';
+                if (href.startsWith('http') &&
+                    (href.includes('.go.kr') || href.includes('.or.kr')) &&
+                    !href.includes('google') && !href.includes('accounts') &&
+                    !href.includes('translate')) {
+                    result.push(href);
+                }
+            }
+            return [...new Set(result)].slice(0, 5);
+        }""")
+        if urls:
+            log(f"[팩트수집] Google에서 공식 URL 발견: {urls[0][:80]}")
+            return urls[0]
     except Exception:
         pass
 
     return ""
-
-
-_SEO_STRIP = re.compile(
-    r"(서류\s*준비\s*없이|빠르게|쉽게|간단하게|한번에|"
-    r"신청하는\s*법|신청\s*방법|조건\s*금액|신청\s*자격|"
-    r"총정리|완벽정리|한눈에|꼼꼼히|알아보기|"
-    r"\d{4}년?\s*최신|2026\s*년?\s*기준|최신\s*정보|"
-    r"얼마\s*받나|얼마나|받나|몇\s*만원|지급액과|대상자별|혜택금액|"
-    r"지원금액|지급방법|지급일|지급기준|얼마씩|월\s*얼마|"
-    r"어떻게|어디서|왜|뭐가|누가|언제)",
-    re.IGNORECASE,
-)
-
-# API 검색에 쓸 수 없는 단독 단어 (1~2자 또는 의문사)
-_STOP_WORDS = {"월", "일", "년", "원", "명", "개", "건", "회", "번", "차",
-               "및", "또", "등", "의", "을", "를", "이", "가", "은", "는",
-               "얼마", "몇", "어떤", "누구", "언제", "어디", "왜", "어떻게",
-               "받을", "받나", "있나", "있어", "있는", "수", "되나", "되는",
-               "하는", "하나", "인지", "인가", "할까", "해야", "인데", "이고"}
-
-
-def _core_keyword(keyword: str) -> str:
-    """SEO 부사구·의문어 제거 후 핵심 명사구 추출."""
-    cleaned = _SEO_STRIP.sub("", keyword).strip()
-    words = [w for w in cleaned.split() if len(w) >= 2 and w not in _STOP_WORDS]
-    return " ".join(words[:3]) if words else keyword[:20]
 
 
 def _fallback_public_api(keyword: str, blog_id: str, on_log=None) -> dict:
