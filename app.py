@@ -1861,29 +1861,42 @@ class BlogAutomationApp(QMainWindow):
         if hasattr(self, '_all_proc') and self._all_proc and self._all_proc.poll() is None:
             self.log_box.append("[전체실행] 이미 실행 중입니다.")
             return
-        import subprocess, threading, shutil
+        import subprocess, threading, shutil, os as _os
         from pathlib import Path
-        # PyInstaller 빌드 내부가 아닌 실제 프로젝트 폴더 사용
         project_dir = Path("/Users/hana/Downloads/blog-automation-v2")
         script = project_dir / "overnight_run.py"
+        # PATH에 /usr/local/bin 명시적 추가 (번들 환경 대비)
+        env = _os.environ.copy()
+        env["PATH"] = "/usr/local/bin:/usr/bin:/bin:" + env.get("PATH", "")
+        python_bin = "/usr/local/bin/python3"
+        for candidate in ["/usr/local/bin/python3", "/usr/bin/python3",
+                          shutil.which("python3") or ""]:
+            if candidate and Path(candidate).exists():
+                python_bin = candidate
+                break
+        self.log_box.append(f"[전체실행] python={python_bin}")
         self.log_box.append("[전체실행] overnight_run.py 시작...")
         self.run_all_btn.setEnabled(False)
         self.run_btn.setEnabled(False)
         self.pause_btn.setEnabled(True)
         self._all_stop = threading.Event()
-        # PyInstaller 환경에서 sys.executable은 앱 자체 → python3 직접 사용
-        python_bin = shutil.which("python3") or shutil.which("python") or "/usr/local/bin/python3"
-        self._all_proc = subprocess.Popen(
-            [python_bin, str(script), "--skip-crawl"],
-            cwd=str(project_dir),
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1
-        )
+        try:
+            self._all_proc = subprocess.Popen(
+                [python_bin, str(script), "--skip-crawl"],
+                cwd=str(project_dir),
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                env=env, text=True, bufsize=1
+            )
+        except Exception as e:
+            self.log_box.append(f"[전체실행] 프로세스 시작 실패: {e}")
+            self.run_all_btn.setEnabled(True)
+            self.run_btn.setEnabled(True)
+            self.pause_btn.setEnabled(False)
+            return
         def _stream():
             for line in self._all_proc.stdout:
                 if self._all_stop.is_set():
                     break
-                # 시그널로 메인 스레드에 전달 (직접 호출 시 segfault 위험)
                 self._all_log_signal.emit(line.rstrip())
             self._all_proc.wait()
             stopped = self._all_stop.is_set()
