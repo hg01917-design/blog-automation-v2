@@ -1725,6 +1725,26 @@ class BlogAutomationApp(QMainWindow):
         btn_row.addWidget(reset_btn, 1)
         ml.addLayout(btn_row)
 
+        # 5-1. 파이프라인 그룹 실행 버튼
+        pipeline_row = QHBoxLayout()
+        pipeline_row.setSpacing(6)
+        pipeline_lbl = QLabel("파이프라인:")
+        pipeline_lbl.setStyleSheet("color:#888;font-size:11px;")
+        pipeline_row.addWidget(pipeline_lbl)
+        for grp_name, grp_label, grp_color in [
+            ("travel", "✈ 여행", "#e67e22"),
+            ("it",     "💻 IT",  "#8e44ad"),
+            ("daily",  "🏠 일상", "#16a085"),
+        ]:
+            btn = QPushButton(grp_label)
+            btn.setStyleSheet(
+                f"background:{grp_color};color:#fff;border:none;border-radius:5px;"
+                "font-size:11px;font-weight:bold;min-height:26px;padding:0 8px;")
+            btn.clicked.connect(lambda checked, g=grp_name: self._run_pipeline(g))
+            pipeline_row.addWidget(btn, 1)
+        pipeline_row.addStretch(1)
+        ml.addLayout(pipeline_row)
+
         self._stack.addWidget(main_w)
 
         # ── 설정 뷰 ──
@@ -1889,6 +1909,54 @@ class BlogAutomationApp(QMainWindow):
             )
         except Exception as e:
             self.log_box.append(f"[전체실행] 프로세스 시작 실패: {e}")
+            self.run_all_btn.setEnabled(True)
+            self.run_btn.setEnabled(True)
+            self.pause_btn.setEnabled(False)
+            return
+        def _stream():
+            for line in self._all_proc.stdout:
+                if self._all_stop.is_set():
+                    break
+                self._all_log_signal.emit(line.rstrip())
+            self._all_proc.wait()
+            stopped = self._all_stop.is_set()
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(0, lambda: self._on_all_done(stopped))
+        threading.Thread(target=_stream, daemon=True).start()
+
+    def _run_pipeline(self, group: str):
+        if self._single_worker and self._single_worker.isRunning():
+            self.log_box.append(f"[파이프라인] 이미 실행 중입니다.")
+            return
+        if hasattr(self, '_all_proc') and self._all_proc and self._all_proc.poll() is None:
+            self.log_box.append(f"[파이프라인] 이미 실행 중입니다.")
+            return
+        import subprocess, threading, shutil, os as _os
+        from pathlib import Path
+        project_dir = Path("/Users/hana/Downloads/blog-automation-v2")
+        script = project_dir / "overnight_run.py"
+        env = _os.environ.copy()
+        env["PATH"] = "/usr/local/bin:/usr/bin:/bin:" + env.get("PATH", "")
+        python_bin = "/usr/local/bin/python3"
+        for candidate in ["/usr/local/bin/python3", "/usr/bin/python3",
+                          shutil.which("python3") or ""]:
+            if candidate and Path(candidate).exists():
+                python_bin = candidate
+                break
+        self.log_box.append(f"[파이프라인] {group} 그룹 실행 시작...")
+        self.run_all_btn.setEnabled(False)
+        self.run_btn.setEnabled(False)
+        self.pause_btn.setEnabled(True)
+        self._all_stop = threading.Event()
+        try:
+            self._all_proc = subprocess.Popen(
+                [python_bin, str(script), f"--group={group}", "--skip-crawl"],
+                cwd=str(project_dir),
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                env=env, text=True, bufsize=1
+            )
+        except Exception as e:
+            self.log_box.append(f"[파이프라인] 프로세스 시작 실패: {e}")
             self.run_all_btn.setEnabled(True)
             self.run_btn.setEnabled(True)
             self.pause_btn.setEnabled(False)

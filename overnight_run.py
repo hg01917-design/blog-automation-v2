@@ -2362,8 +2362,35 @@ if __name__ == "__main__":
 
     # ── 포스팅 실행 ──
     _args_no_flags = [a for a in _sys.argv[1:] if not a.startswith("--")]
-    _target_blog = _args_no_flags[0] if _args_no_flags else None
-    if _target_blog:
+
+    # --group=travel|it|daily 지원
+    _group_arg = next((a for a in _sys.argv[1:] if a.startswith("--group=")), None)
+    _PIPELINE_GROUPS = {
+        "travel": ["triplog", "blogspot_travel", "nolja100", "woll100"],
+        "it":     ["goodisak", "blogspot_it"],
+        "daily":  ["baremi542", "salim1su", "phn0502", "me1091"],
+    }
+
+    if _group_arg:
+        _group_name = _group_arg.split("=", 1)[1]
+        _group_blogs = _PIPELINE_GROUPS.get(_group_name, [])
+        if not _group_blogs:
+            log(f"[오류] 알 수 없는 그룹: {_group_name} (travel|it|daily)")
+        else:
+            log(f"[실행] 파이프라인 그룹 '{_group_name}': {' → '.join(_group_blogs)}")
+            for _bid in _group_blogs:
+                log(f"[파이프라인] {_bid} 시작")
+                _ok = post_one_blog(_bid)
+                log(f"[파이프라인] {_bid}: {'✅' if _ok else '⚠'}")
+    elif len(_args_no_flags) > 1:
+        # 복수 블로그 지정: python3 overnight_run.py triplog nolja100 ...
+        log(f"[실행] 복수 블로그 지정: {_args_no_flags}")
+        for _bid in _args_no_flags:
+            log(f"[다중] {_bid} 시작")
+            _ok = post_one_blog(_bid)
+            log(f"[다중] {_bid}: {'✅' if _ok else '⚠'}")
+    elif _args_no_flags:
+        _target_blog = _args_no_flags[0]
         log(f"[실행] 블로그 지정: {_target_blog}")
         ok = post_one_blog(_target_blog)
         log(f"[완료] {_target_blog}: {'✅' if ok else '⚠'}")
