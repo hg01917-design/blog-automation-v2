@@ -1482,6 +1482,9 @@ class KeywordEngineDialog(QDialog):
 
 
 class BlogAutomationApp(QMainWindow):
+    # 전체실행 스트림 로그를 메인 스레드에 안전하게 전달하는 시그널
+    _all_log_signal = pyqtSignal(str)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Blog Automation v2")
@@ -1494,6 +1497,8 @@ class BlogAutomationApp(QMainWindow):
         self._forced_title = None       # 키워드 분석에서 강제 적용 제목
         self._build_ui()
         self._refresh_stats()
+        # 전체실행 스트림 로그 시그널 → 메인 스레드 _append_log 연결
+        self._all_log_signal.connect(self._append_log)
         # orchestrator + 의존 모듈을 메인 스레드에서 미리 import
         # (백그라운드 QThread 첫 import 시 playwright 등 C 확장 모듈 충돌 방지)
         QTimer.singleShot(300, self._preload_agents)
@@ -1878,10 +1883,10 @@ class BlogAutomationApp(QMainWindow):
             for line in self._all_proc.stdout:
                 if self._all_stop.is_set():
                     break
-                self._append_log(line.rstrip())
+                # 시그널로 메인 스레드에 전달 (직접 호출 시 segfault 위험)
+                self._all_log_signal.emit(line.rstrip())
             self._all_proc.wait()
             stopped = self._all_stop.is_set()
-            # UI는 메인 스레드에서만 — QTimer로 위임
             from PyQt5.QtCore import QTimer
             QTimer.singleShot(0, lambda: self._on_all_done(stopped))
         threading.Thread(target=_stream, daemon=True).start()
