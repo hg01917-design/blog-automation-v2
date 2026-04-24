@@ -572,6 +572,7 @@ class _SettingsPanel(QWidget):
         ("NAVER_ID",            "Naver 아이디",             "user123",                 False),
         ("NAVER_PW",            "Naver 비밀번호",           "...",                     True),
         ("NOTION_TOKEN",        "Notion Integration Token","secret_...",              True),
+        ("BOKJIRO_API_KEY",     "복지로 API Key (data.go.kr)","인증키 (복지로 서비스 신청 후)", True),
     ]
 
     def __init__(self, parent=None):

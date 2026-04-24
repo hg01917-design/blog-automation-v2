@@ -5,6 +5,7 @@
 지원 API:
 - 한국관광공사 축제/행사정보  → nolja100, triplog
 - 정부24 공공서비스 정보      → baremi542, goodisak, salim1su
+- 복지로 복지서비스 정보       → baremi542 (지역 복지 포함)
 - TMDB 영화/드라마 정보       → phn0502 (OTT 시청 가능 플랫폼 포함)
 - 네이버 쇼핑 검색 API        → goodisak (IT 제품 정보)
 """
@@ -14,6 +15,7 @@ import os
 import re
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
@@ -34,6 +36,12 @@ SERVICE_KEY = urllib.parse.unquote(_RAW_KEY)
 NAVER_SEARCH_CLIENT_ID = os.environ.get("NAVER_SEARCH_CLIENT_ID", "")
 NAVER_SEARCH_CLIENT_SECRET = os.environ.get("NAVER_SEARCH_CLIENT_SECRET", "")
 _NAVER_SHOP_URL = "https://openapi.naver.com/v1/search/shop.json"
+
+# 복지로 복지서비스 API (data.go.kr 별도 신청)
+_BOKJIRO_KEY_RAW = os.environ.get("BOKJIRO_API_KEY", "")
+BOKJIRO_KEY = urllib.parse.unquote(_BOKJIRO_KEY_RAW) if _BOKJIRO_KEY_RAW else ""
+_BOKJIRO_LIST_URL = "http://apis.data.go.kr/B554287/NationalWelfareInformationsV001/NationalWelfarelistV001"
+_BOKJIRO_DETAIL_URL = "http://apis.data.go.kr/B554287/NationalWelfareInformationsV001/NationalWelfaredetailedV001"
 
 # 교통 전용 API 키 (data.go.kr 별도 신청)
 EXPRESS_BUS_KEY = os.environ.get("EXPRESS_BUS_API_KEY", SERVICE_KEY)
@@ -317,6 +325,117 @@ def fetch_travel_context(keyword: str, on_log=None) -> str:
         return ""
 
     return "\n".join(all_lines)
+
+
+def fetch_bokjiro_context(keyword: str, on_log=None) -> str:
+    """복지로 API로 복지서비스 목록 조회 후 context 반환.
+
+    data.go.kr B554287/NationalWelfareInformationsV001 서비스 사용.
+    BOKJIRO_API_KEY 환경변수 필요.
+
+    Returns: extra_context 문자열 (없으면 빈 문자열)
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    key = BOKJIRO_KEY or SERVICE_KEY
+    if not key:
+        log("[복지로API] API 키 없음 — 스킵")
+        return ""
+
+    # SEO 부사구 제거 후 핵심 검색어 추출
+    _strip = re.compile(
+        r"(서류\s*준비\s*없이|빠르게|쉽게|간단하게|신청하는\s*법|"
+        r"신청\s*방법|조건\s*금액|신청\s*자격|총정리|완벽정리|한눈에|"
+        r"\d{4}년?\s*최신|2026\s*년?\s*기준|최신\s*정보|"
+        r"얼마\s*받나|얼마나|받나|지급액과|대상자별|혜택금액|"
+        r"지원금액|지급방법|지급일|지급기준|얼마씩|월\s*얼마|어떻게|어디서)",
+        re.IGNORECASE,
+    )
+    _stop = {"월", "일", "년", "원", "명", "개", "건", "회", "번", "차",
+             "및", "또", "등", "의", "을", "를", "이", "가", "은", "는",
+             "얼마", "몇", "어떤", "누구", "언제", "어디", "왜", "어떻게",
+             "받을", "받나", "있나", "있어", "있는", "수", "되나", "되는",
+             "하는", "하나", "인지", "인가", "할까", "해야", "인데", "이고"}
+    cleaned = _strip.sub("", keyword).strip()
+    words = [w for w in cleaned.split() if len(w) >= 2 and w not in _stop]
+    search_kw = " ".join(words[:2]) if words else keyword[:10]
+
+    log(f"[복지로API] 검색어: '{search_kw}' (원본: '{keyword}')")
+
+    # 복지로 목록 API 호출 (XML 응답)
+    params = {
+        "serviceKey": key,
+        "callTp": "L",
+        "pageNo": "1",
+        "numOfRows": "5",
+        "srchKeyCode": "001",  # 제목 검색
+        "searchWrd": search_kw,
+    }
+    url = _BOKJIRO_LIST_URL + "?" + urllib.parse.urlencode(params)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            raw = resp.read()
+    except Exception as e:
+        log(f"[복지로API] 호출 실패: {e}")
+        return ""
+
+    # XML 파싱
+    try:
+        root = ET.fromstring(raw)
+        # 에러 응답 체크
+        result_msg = root.findtext(".//resultMsg") or root.findtext(".//errMsg") or ""
+        result_code = root.findtext(".//resultCode") or ""
+        if result_code and result_code != "00":
+            log(f"[복지로API] API 오류 ({result_code}): {result_msg}")
+            return ""
+
+        items = root.findall(".//servList") or root.findall(".//wlfareinfo")
+        if not items:
+            log(f"[복지로API] '{search_kw}' 검색 결과 없음")
+            return ""
+
+        lines = [f"[복지로 복지서비스 정보 ('{search_kw}' 검색 결과)]"]
+        for item in items[:3]:
+            def t(tag): return (item.findtext(tag) or "").strip()
+
+            name = t("servNm") or t("wlfareSvcNm")
+            dept = t("jurMnofNm") or t("ministryNm")
+            target = t("trgterIndvdlNm") or t("trgterNm")
+            support_type = t("srvTypNm") or t("servDgstCn")
+            apply_url = t("srvPvsnNm") or t("aplyUrlAddr")
+            summary = t("servDgstCn") or t("servSumry")
+
+            if not name:
+                continue
+            lines.append(f"\n[서비스] {name}")
+            if dept:
+                lines.append(f"  소관기관: {dept}")
+            if target:
+                lines.append(f"  지원대상: {target[:100]}")
+            if support_type:
+                lines.append(f"  급여유형: {support_type[:80]}")
+            if summary:
+                lines.append(f"  요약: {summary[:150]}")
+            if apply_url and apply_url.startswith("http"):
+                lines.append(f"  신청: {apply_url}")
+
+        if len(lines) <= 1:
+            log(f"[복지로API] 파싱 결과 없음")
+            return ""
+
+        ctx = "\n".join(lines)
+        log(f"[복지로API] {len(items)}건 수집 완료 ({len(ctx)}자)")
+        return ctx
+
+    except ET.ParseError as e:
+        log(f"[복지로API] XML 파싱 실패: {e}")
+        return ""
+    except Exception as e:
+        log(f"[복지로API] 처리 오류: {e}")
+        return ""
 
 
 def fetch_gov_service_context(keyword: str, on_log=None) -> str:
@@ -790,9 +909,12 @@ def fetch_context_for_blog(blog_id: str, keyword: str, on_log=None) -> str:
         # 여행 블로그: 관광지 + 숙박 + 음식점 + 축제 통합 정보
         return fetch_travel_context(keyword, on_log=on_log)
     elif blog_id in {"baremi542", "goodisak", "salim1su"}:
-        # 정보성 블로그: 정부24 공공서비스
         welfare_hints = ["지원", "혜택", "신청", "급여", "보조", "복지", "정책", "수당", "바우처"]
         if any(h in keyword for h in welfare_hints):
+            if blog_id == "baremi542" and BOKJIRO_KEY:
+                # baremi542: 복지로 API 우선 (지역 복지 포함), 실패 시 정부24 폴백
+                ctx = fetch_bokjiro_context(keyword, on_log=on_log)
+                return ctx if ctx else fetch_gov_service_context(keyword, on_log=on_log)
             return fetch_gov_service_context(keyword, on_log=on_log)
         elif blog_id == "goodisak":
             # IT 블로그: 네이버 쇼핑 API로 실제 제품 정보 수집
