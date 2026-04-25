@@ -41,7 +41,10 @@ def insert_adsense_markers(marker_text: str, blog_id: str = "") -> str:
     char_count = len(plain)
 
     # 광고 개수 결정
-    if char_count < 3000:
+    if blog_id == "nolja100":
+        # nolja100: 1000자당 1개 (최대 4개)
+        max_ads = min(4, max(1, char_count // 1000))
+    elif char_count < 3000:
         max_ads = 1
     elif char_count < 5000:
         max_ads = 2

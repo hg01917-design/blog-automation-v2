@@ -425,7 +425,7 @@ def _is_valid_blog_content(text: str, blog_id: str = None) -> bool:
 
     # 그 외 블로그: 소제목 최소 2개 필수
     import re as _re
-    h2_count = len(_re.findall(r'\[H2\]|<h2\b', body, _re.IGNORECASE))
+    h2_count = len(_re.findall(r'\[H2\]|<h2\b|^##\s+', body, _re.IGNORECASE | _re.MULTILINE))
     if h2_count < 2:
         return False
 
