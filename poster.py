@@ -731,8 +731,9 @@ def _post_tistory(account, title, body_html, tags=None,
 
         # ── 애드센스 placeholder 위치에 서식 삽입 (전체 루프) ──
         adsense_count = page.evaluate("""() => {
-            const body = tinymce.activeEditor.getBody();
-            return body.querySelectorAll('[data-adsense]').length;
+            const ed = window.tinymce && tinymce.activeEditor;
+            if (!ed) return 0;
+            return ed.getBody().querySelectorAll('[data-adsense]').length;
         }""")
         for _ad_i in range(adsense_count):
             has_adsense = page.evaluate("""() => {
