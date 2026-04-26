@@ -345,30 +345,39 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
                 issues = review2["issues"]
 
             # 2차 수정: Claude에 기존 글 + 이슈 전달해서 부분 수정
-            if True:
-                log(f"[오케스트레이터] 부분 수정 시도 (이슈 {len(issues)}건)...")
-                from claude_playwright import repair_text
-                raw_to_fix = (fixed or review["result"]).get("raw", "")
-                if raw_to_fix:
-                    repaired_raw = repair_text(raw_to_fix, issues, on_log=log)
-                    if repaired_raw:
-                        # raw를 파싱해서 result 재구성
-                        try:
-                            repaired_result = active_writer._parse_raw(repaired_raw, keyword, log)
-                            if repaired_result:
-                                repaired_result["raw"] = repaired_raw
-                                repaired_result["image_paths"] = result.get("image_paths", {})
-                                review3 = common_review_agent.run(
-                                    repaired_result, keyword, blog_id, on_log=log, on_status=on_status
-                                )
-                                if review3["passed"]:
-                                    log("[오케스트레이터] ✓ 부분 수정 후 검수 통과")
-                                    result = review3["result"]
-                                    break
-                        except Exception as e:
-                            log(f"[오케스트레이터] 부분 수정 파싱 오류: {e}")
+            # issues가 빈 리스트면 final_review 실패 — reason 문자열을 이슈로 사용
+            issues_for_repair = issues if issues else [
+                review.get("reason", "AI 패턴 및 자연스럽지 않은 문체 수정 필요")
+            ]
+            log(f"[오케스트레이터] 부분 수정 시도 ({len(issues_for_repair)}건)...")
+            from claude_playwright import repair_text
+            # raw 없으면 원본 result에서 폴백
+            raw_to_fix = (
+                (fixed or review["result"]).get("raw", "")
+                or result.get("raw", "")
+            )
+            if raw_to_fix:
+                repaired_raw = repair_text(raw_to_fix, issues_for_repair, on_log=log)
+                if repaired_raw:
+                    # raw를 파싱해서 result 재구성
+                    try:
+                        repaired_result = active_writer._parse_raw(repaired_raw, keyword, log)
+                        if repaired_result:
+                            repaired_result["raw"] = repaired_raw
+                            repaired_result["image_paths"] = result.get("image_paths", {})
+                            review3 = common_review_agent.run(
+                                repaired_result, keyword, blog_id, on_log=log, on_status=on_status
+                            )
+                            if review3["passed"]:
+                                log("[오케스트레이터] ✓ 부분 수정 후 검수 통과")
+                                result = review3["result"]
+                                break
+                    except Exception as e:
+                        log(f"[오케스트레이터] 부분 수정 파싱 오류: {e}")
+            else:
+                log("[오케스트레이터] raw 텍스트 없음 — 부분 수정 건너뜀")
 
-            log(f"[오케스트레이터] 검수 불합격 — 전체 재생성")
+            log(f"[오케스트레이터] 검수 불합격 — 수정 후에도 미통과")
             result = None
 
         if not result:
