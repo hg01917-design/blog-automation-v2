@@ -729,39 +729,45 @@ def _post_tistory(account, title, body_html, tags=None,
             ed.fire('change');
         }""")
 
-        # ── 애드센스 placeholder 위치에 서식 삽입 ──
-        has_adsense = page.evaluate("""() => {
-            const ed = tinymce.activeEditor;
-            const body = ed.getBody();
-            const p = body.querySelector('[data-adsense]');
-            if (!p) return false;
-            const range = ed.getDoc().createRange();
-            range.selectNode(p);
-            ed.selection.setRng(range);
-            ed.focus();
-            p.parentNode.removeChild(p);
-            ed.fire('change');
-            return true;
+        # ── 애드센스 placeholder 위치에 서식 삽입 (전체 루프) ──
+        adsense_count = page.evaluate("""() => {
+            const body = tinymce.activeEditor.getBody();
+            return body.querySelectorAll('[data-adsense]').length;
         }""")
-        if has_adsense:
-            ok = _tistory_insert_adsense_format(page, log)
-            if ok:
-                page.evaluate("""() => {
-                    const ed = tinymce.activeEditor;
-                    if (!ed) return;
-                    const body = ed.getBody();
-                    const p = ed.getDoc().createElement('p');
-                    p.setAttribute('data-ke-size', 'size19');
-                    p.innerHTML = '<br data-mce-bogus="1">';
-                    body.appendChild(p);
-                    const range = ed.getDoc().createRange();
-                    range.setStart(p, 0);
-                    range.collapse(true);
-                    ed.selection.setRng(range);
-                    ed.focus();
-                }""")
-            else:
-                log("[포스팅] 애드센스 서식 삽입 실패 — 스킵")
+        for _ad_i in range(adsense_count):
+            has_adsense = page.evaluate("""() => {
+                const ed = tinymce.activeEditor;
+                const body = ed.getBody();
+                const p = body.querySelector('[data-adsense]');
+                if (!p) return false;
+                const range = ed.getDoc().createRange();
+                range.selectNode(p);
+                ed.selection.setRng(range);
+                ed.focus();
+                p.parentNode.removeChild(p);
+                ed.fire('change');
+                return true;
+            }""")
+            if has_adsense:
+                ok = _tistory_insert_adsense_format(page, log)
+                if ok:
+                    page.evaluate("""() => {
+                        const ed = tinymce.activeEditor;
+                        if (!ed) return;
+                        const body = ed.getBody();
+                        const p = ed.getDoc().createElement('p');
+                        p.setAttribute('data-ke-size', 'size19');
+                        p.innerHTML = '<br data-mce-bogus="1">';
+                        body.appendChild(p);
+                        const range = ed.getDoc().createRange();
+                        range.setStart(p, 0);
+                        range.collapse(true);
+                        ed.selection.setRng(range);
+                        ed.focus();
+                    }""")
+                    time.sleep(0.5)
+                else:
+                    log(f"[포스팅] 애드센스 서식 삽입 실패 ({_ad_i+1}번째) — 스킵")
 
         # size19 일괄 적용 + 저장
         page.evaluate("""() => {

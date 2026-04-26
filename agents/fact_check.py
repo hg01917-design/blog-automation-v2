@@ -373,11 +373,17 @@ def run(body: str, keyword: str, blog_name: str = "", on_log=None) -> dict:
     corrections = []
     try:
         for claim in price_claims[:3]:  # 최대 3건 (시간 제한)
-            # 가격 주변 텍스트에서 제품명 추출 (앞 40자)
-            ctx_start = max(0, claim["start"] - 40)
+            # 가격 앞 80자 컨텍스트에서 제품명 추출
+            ctx_start = max(0, claim["start"] - 80)
             ctx_text = body[ctx_start:claim["start"]].strip()
-            # 제품명: 마지막 명사구 (쉼표/마침표 이후)
+            # 마지막 문장 단위로 자르기 (쉼표/마침표/줄바꿈 기준)
             product_query = re.split(r"[,\.。\n]", ctx_text)[-1].strip()
+            # 한국어 문법 조사·어미 제거 (예: "렌탈은 월", "가격이", "비용은")
+            product_query = re.sub(
+                r'\s+\S*(은|는|이|가|을|를|의|에서|에|로|렌탈은?|월|가격은?|비용은?|요금은?|구입은?)\s*$',
+                '', product_query
+            ).strip()
+            # 제품명으로 너무 짧거나 오염된 경우 keyword 사용
             search_query = product_query if len(product_query) > 3 else keyword
             log(f"[팩트체크] 검색어: '{search_query}' (원문: '{ctx_text[-20:]}')")
 

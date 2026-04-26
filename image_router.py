@@ -727,6 +727,18 @@ def generate_thumbnail(blog_id: str, keyword: str, title: str, on_log=None) -> s
         if success:
             log(f"[썸네일] Pollinations 생성 완료")
 
+    if not success:
+        try:
+            from gemini_image import generate_images as _gemini_gen
+            thumb_infos = [{"index": 1, "prompt": thumb_prompt, "filename": thumb_filename, "alt": keyword}]
+            res = _gemini_gen(thumb_infos, on_log=log, skip_webp=False, output_dir=output_dir)
+            if res and 1 in res:
+                thumb_path = res[1]
+                success = True
+                log(f"[썸네일] Gemini 폴백 생성 완료")
+        except Exception as e:
+            log(f"[썸네일] Gemini 폴백 실패: {e}")
+
     if success and Path(thumb_path).exists():
         add_title_overlay(thumb_path, title, blog_id=blog_id, on_log=log)
         log(f"[썸네일] 오버레이 적용 완료: {thumb_filename}")

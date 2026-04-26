@@ -937,7 +937,7 @@ def fetch_context_for_blog(blog_id: str, keyword: str, on_log=None) -> str:
     if blog_id in {"nolja100", "triplog"}:
         # 여행 블로그: 관광지 + 숙박 + 음식점 + 축제 통합 정보
         return fetch_travel_context(keyword, on_log=on_log)
-    elif blog_id in {"baremi542", "goodisak", "salim1su"}:
+    elif blog_id in {"baremi542", "salim1su"}:
         welfare_hints = ["지원", "혜택", "신청", "급여", "보조", "복지", "정책", "수당", "바우처"]
         if any(h in keyword for h in welfare_hints):
             if blog_id == "baremi542" and BOKJIRO_KEY:
@@ -945,9 +945,6 @@ def fetch_context_for_blog(blog_id: str, keyword: str, on_log=None) -> str:
                 ctx = fetch_bokjiro_context(keyword, on_log=on_log)
                 return ctx if ctx else fetch_gov_service_context(keyword, on_log=on_log)
             return fetch_gov_service_context(keyword, on_log=on_log)
-        elif blog_id == "goodisak":
-            # IT 블로그: 네이버 쇼핑 API로 실제 제품 정보 수집
-            return fetch_naver_shopping_context(keyword, on_log=on_log)
     elif blog_id == "phn0502":
         # 영화/드라마 블로그: TMDB 실제 정보 + OTT 시청 가능 플랫폼
         return fetch_tmdb_context(keyword, on_log=on_log)
