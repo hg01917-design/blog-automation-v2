@@ -286,6 +286,54 @@ def get_affiliate_links_with_context(keyword: str, top_n: int = 3, on_log=None) 
     return links, context
 
 
+def build_agent_mrt_context(keyword: str, on_log=None) -> str:
+    """개별 포스팅 에이전트용 — MRT 상품 검색 후 Claude 프롬프트 주입 컨텍스트 반환.
+
+    파이프라인과 동일한 형식: 상품 정보 + 링크 삽입 지시.
+    실패 시 빈 문자열 반환 (발행 중단 없음).
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    try:
+        search_kw = keyword.split()[0] if keyword.strip() else keyword
+        log(f"[MRT] 검색어: '{search_kw}'")
+        links = get_affiliate_links(search_kw, top_n=3, on_log=on_log)
+        valid = [p for p in links if p.get("affiliate_url")]
+        if not valid:
+            log("[MRT] 관련 상품 없음 — 스킵")
+            return ""
+
+        ctx = "\n\n[마이리얼트립 상품 정보 — 글 작성 참고 자료]\n"
+        ctx += "아래는 이 여행지에서 실제로 판매 중인 투어/체험 상품이다.\n"
+        ctx += "상품명·가격·평점·리뷰수를 글 내용에 직접 반영해 구체성을 높여라.\n\n"
+        for i, p in enumerate(valid, 1):
+            ctx += f"{i}. {p['title'][:70]}"
+            if p.get("region"):
+                ctx += f" {p['region']}"
+            ctx += f" {p.get('price', '')}\n"
+            if p.get("rating"):
+                rev = f" ({p.get('review_count','')}개 리뷰)" if p.get("review_count") else ""
+                ctx += f"   평점: {p['rating']}{rev}\n"
+            ctx += f"   예약링크: {p['affiliate_url']}\n"
+
+        ctx += (
+            "\n[마이리얼트립 제휴 링크 — 본문 2회 삽입 필수]\n"
+            "글 최상단에 이 한 줄 삽입:\n"
+            "「이 글에는 마이리얼트립 파트너스 프로그램을 통해 소정의 수수료를 받을 수 있는 제휴 링크가 포함되어 있습니다.」\n\n"
+            "위 상품 중 글과 가장 관련된 것 1~2개 선택해서 아래 형식으로 2회 삽입:\n"
+            "  1회차: 첫 번째 H2 소제목 시작 전 도입부 끝 — 후킹 문구 1줄 + 링크\n"
+            "  2회차: Q&A 직후 마무리 문단 앞 — CTA + 링크\n"
+            "링크 형식: <a href=\"예약링크\" target=\"_blank\" style=\"color:#1a73e8;font-weight:bold;\">상품명 예약하기</a>\n"
+        )
+        log(f"[MRT] {len(valid)}개 상품 컨텍스트 빌드 완료")
+        return ctx
+    except Exception as e:
+        log(f"[MRT] 컨텍스트 빌드 실패 (무시): {e}")
+        return ""
+
+
 # ── 하위 호환: Playwright 기반 함수 (더 이상 사용 안 함) ─────────────────────
 
 def _ensure_partner_login(page, on_log=None) -> bool:

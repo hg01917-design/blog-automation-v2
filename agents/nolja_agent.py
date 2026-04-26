@@ -52,10 +52,20 @@ def run(keyword: str, on_log=None, on_status=None):
     # 1. 사전 팩트 수집
     fc = _fact_collect.collect(keyword, blog_id, on_log=log)
 
+    # MRT 제휴 링크 컨텍스트 (개별 포스팅용)
+    mrt_ctx = ""
+    try:
+        from mrt_affiliate import build_agent_mrt_context
+        mrt_ctx = build_agent_mrt_context(keyword, on_log=log)
+    except Exception as _e:
+        log(f"[MRT] 컨텍스트 로드 실패 (무시): {_e}")
+
+    extra_ctx = "\n\n".join(filter(None, [fc["context"] if fc["success"] else "", mrt_ctx])) or None
+
     # 2. Claude.ai 글 생성
     log(f"[작성] {blog_id} / '{keyword}' — Claude.ai 글 생성")
     raw = generate_text("", blog_id=blog_id, keyword=keyword,
-                        extra_context=fc["context"] if fc["success"] else None,
+                        extra_context=extra_ctx,
                         on_log=log)
 
     if not raw or "추출 실패" in raw:

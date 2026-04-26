@@ -94,6 +94,16 @@ def run(keyword: str, on_log=None, on_status=None):
     result["image_paths"] = image_paths
     result["raw"] = raw
 
+    # 쿠팡 파트너스 배너 삽입
+    try:
+        from coupang_api import get_affiliate_block
+        coupang_block = get_affiliate_block(keyword, blog_id)
+        if coupang_block:
+            result["body"] += coupang_block
+            log("[쿠팡] 파트너스 배너 삽입 완료")
+    except Exception as _e:
+        log(f"[쿠팡] 배너 삽입 실패 (무시): {_e}")
+
     log(f"[작성] ✓ 완료 — 제목: \"{result['title']}\" / 본문: {len(result['body'])}자 / 태그: {len(result['tags'])}개")
     if on_status:
         on_status("writer", "done")
