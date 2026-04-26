@@ -90,15 +90,17 @@ def run(result: dict, keyword: str, blog_id: str,
     if len(tags) < 10:
         log(f"[검수] ⚠ 태그 경고: {len(tags)}개 (권장 10개 이상)")
 
-    # 3. 제목에 메인키워드가 앞에 위치
+    # 3. 제목에 메인키워드가 앞에 위치 (공백 정규화 비교)
+    kw_norm = re.sub(r"\s+", "", keyword)   # "마인크래프트서버"
+    title_norm = re.sub(r"\s+", "", title)  # "마인크래프트서버열기..."
     kw_words = keyword.split()
     first_word = kw_words[0] if kw_words else keyword
-    if first_word not in title[:len(first_word) + 5]:
-        # 키워드 첫 단어가 제목 앞부분에 없으면
-        if keyword not in title:
+    first_word_norm = re.sub(r"\s+", "", first_word)
+    if first_word_norm not in title_norm[:len(first_word_norm) + 5]:
+        if kw_norm not in title_norm:
             issues.append(f"제목에 메인키워드 없음: '{keyword}'")
         else:
-            kw_pos = title.index(keyword)
+            kw_pos = title_norm.index(kw_norm)
             if kw_pos > 5:
                 issues.append(f"메인키워드가 제목 앞이 아닌 {kw_pos}번째 위치")
 
