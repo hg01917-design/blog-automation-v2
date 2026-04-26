@@ -678,6 +678,56 @@ def generate_images_for_blog(
     return results
 
 
+def _generate_pillow_thumbnail(blog_id: str, keyword: str, thumb_path: str, on_log=None) -> bool:
+    """AI 생성 실패 시 Pillow로 그라디언트 배경 썸네일 생성. add_title_overlay 전 단계."""
+    def log(msg):
+        if on_log:
+            on_log(msg)
+    try:
+        from PIL import Image, ImageDraw
+
+        W, H = 1200, 800
+
+        _PALETTES = {
+            "goodisak":  [(8,  12, 35), (18, 35, 80)],    # 딥 네이비 (IT/금융)
+            "nolja100":  [(12,  6, 35), (45, 15, 95)],    # 딥 퍼플 (여행)
+            "salim1su":  [(100,35, 45), (175,75, 90)],    # 로즈핑크 (살림)
+            "baremi542": [(8,  18, 32), (18, 38, 62)],    # 다크슬레이트 (정보)
+            "triplog":   [(4,  45, 30), (12, 85, 58)],    # 에메랄드 (여행WP)
+            "woll100":   [(8,  32, 12), (20, 72, 28)],    # 다크포레스트 (교통)
+            "phn0502":   [(4,   4, 12), (15, 12, 35)],    # 시네마블랙 (영화)
+            "me1091":    [(35,  4,  4), (85, 12, 12)],    # 딥크림슨 (리뷰)
+        }
+        c1, c2 = _PALETTES.get(blog_id, [(15, 15, 40), (35, 35, 80)])
+
+        img = Image.new("RGB", (W, H))
+        draw = ImageDraw.Draw(img)
+        for y in range(H):
+            t = y / H
+            r = int(c1[0] + (c2[0] - c1[0]) * t)
+            g = int(c1[1] + (c2[1] - c1[1]) * t)
+            b = int(c1[2] + (c2[2] - c1[2]) * t)
+            draw.line([(0, y), (W, y)], fill=(r, g, b))
+
+        # 글로우 효과 (좌상단 + 우하단 보케)
+        ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(ov)
+        rg = int(W * 0.55)
+        gc = tuple(min(255, v + 45) for v in c2) + (55,)
+        d.ellipse([(-rg // 2, -rg // 2), (rg, rg)], fill=gc)
+        r2 = int(W * 0.38)
+        sc = tuple(min(255, v + 25) for v in c1) + (38,)
+        d.ellipse([(W - r2, H - r2), (W + r2 // 2, H + r2 // 2)], fill=sc)
+
+        img_final = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+        img_final.save(thumb_path, "JPEG", quality=92)
+        log(f"[썸네일] Pillow 배경 생성 완료 ({W}x{H})")
+        return True
+    except Exception as e:
+        log(f"[썸네일] Pillow 생성 실패: {e}")
+        return False
+
+
 def generate_thumbnail(blog_id: str, keyword: str, title: str, on_log=None) -> str | None:
     """썸네일 1장 별도 생성 + 제목 오버레이 적용. 성공 시 파일 경로 반환."""
     def log(msg):
@@ -738,6 +788,12 @@ def generate_thumbnail(blog_id: str, keyword: str, title: str, on_log=None) -> s
                 log(f"[썸네일] Gemini 폴백 생성 완료")
         except Exception as e:
             log(f"[썸네일] Gemini 폴백 실패: {e}")
+
+    # 최후 폴백: Pillow 그라디언트 배경 (네트워크 불필요)
+    if not success:
+        success = _generate_pillow_thumbnail(blog_id, keyword, thumb_path, on_log=log)
+        if success:
+            log(f"[썸네일] Pillow 로컬 생성 완료")
 
     if success and Path(thumb_path).exists():
         add_title_overlay(thumb_path, title, blog_id=blog_id, on_log=log)
