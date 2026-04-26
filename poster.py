@@ -2000,7 +2000,7 @@ def _md_to_wp_html(content: str) -> str:
             h2_count[0] += 1
             html_parts.append(f'<h2 id="section-{h2_count[0]}">{inline(stripped[3:])}</h2>')
         elif stripped == "[애드센스]":
-            html_parts.append(_get_adsense_html())
+            pass  # Ad Inserter 플러그인이 처리 — 코드 삽입 불필요
         elif re.match(r"^\{\{이미지\d+\}\}$", stripped):
             html_parts.append(stripped)  # 이미지 플레이스홀더 유지
         elif re.match(r"^<h[2-6]\b", stripped, re.IGNORECASE):
@@ -2223,19 +2223,8 @@ def _post_wordpress(account, title, content, tags=None,
     # [이미지N] / [/이미지N] 잔재 제거 ({{이미지N}} 플레이스홀더로 치환되지 못한 경우)
     content = re.sub(r'\[/?이미지\s*\d+\]', '', content)
 
-    # 1. [애드센스] 마커가 없으면 H2 기준 자동 삽입
-    if "[애드센스]" not in content:
-        md_lines = content.split("\n")
-        h2_positions = [i for i, ln in enumerate(md_lines)
-                        if re.match(r'^##\s+', ln.strip()) or re.match(r'^<h2\b', ln.strip(), re.IGNORECASE)]
-        pure_text = re.sub(r"\s+", "", re.sub(r"##.*|{{.*?}}|\|.*", "", content))
-        char_count = len(pure_text)
-        max_ads = 1 if char_count < 3000 else (2 if char_count < 5000 else 3)
-        # 각 H2 바로 앞에 [애드센스] 삽입 (max_ads개까지)
-        for pos in sorted(h2_positions[1:max_ads + 1], reverse=True):
-            md_lines.insert(pos, "[애드센스]")
-        content = "\n".join(md_lines)
-        log(f"[WordPress] [애드센스] {min(max_ads, len(h2_positions[1:]))}개 자동 삽입")
+    # [애드센스] 마커 제거 — Ad Inserter 플러그인이 자동 삽입하므로 코드 삽입 불필요
+    content = re.sub(r'\[애드센스\]', '', content)
 
     # 2. 마크다운 → HTML 변환
     html_content = _md_to_wp_html(content)

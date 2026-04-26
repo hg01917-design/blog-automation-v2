@@ -272,6 +272,7 @@ class SettingsDialog(QDialog):
     # 표시할 키 목록: (env_key, 레이블, placeholder, 비밀번호여부)
     _FIELDS = [
         ("WP_USER",                  "WordPress 사용자명",           "admin",                        False),
+        ("WP_ADMIN_PASSWORD",        "WordPress 관리자 비밀번호",      "로그인 비밀번호",                  True),
         ("WP_APP_PASSWORD",          "WordPress 애플리케이션 비밀번호",  "xxxx xxxx xxxx xxxx xxxx xxxx", True),
         ("NOTION_TOKEN",             "Notion API 토큰",              "secret_...",                   True),
         ("GEMINI_API_KEY",           "Gemini API 키",                "AIza...",                      True),

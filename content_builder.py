@@ -28,8 +28,8 @@ def insert_adsense_markers(marker_text: str, blog_id: str = "") -> str:
     - 3000~5000자 → 2개 (첫번째 H2 앞, 두번째 H2 앞)
     - 5000자 이상 → 3개 (첫번째 H2 앞, 두번째 H2 앞, 표 아래)
     """
-    # 네이버 블로그(salim1su)는 애드센스 미적용
-    if blog_id == "salim1su":
+    # 네이버(salim1su), WordPress(baremi542/triplog)는 Ad Inserter 플러그인 위임
+    if blog_id in ("salim1su", "baremi542", "triplog"):
         return marker_text
 
     lines = marker_text.split('\n')
