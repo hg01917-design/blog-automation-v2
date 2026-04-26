@@ -316,12 +316,6 @@ def publish_wp_draft():
     img_spread_ok = _check_image_spread(content_html, img_count)
     _log(f"[WP] 이미지: {img_count}개, 분포 양호: {img_spread_ok}")
 
-    # 애드센스 체크 (AdSense 스크립트 또는 <!-- adsense --> 스타일)
-    has_adsense = bool(
-        re.search(r'adsbygoogle|data-ad-client|<!-- adsense', content_html, re.IGNORECASE)
-    )
-    _log(f"[WP] 애드센스 있음: {has_adsense}")
-
     updated_content = content_html
 
     # 이미지 보완 — 3개 미만이면 부족한 수만큼 생성 후 삽입
@@ -354,28 +348,6 @@ def publish_wp_draft():
     # 이미지 위치 분포 체크 (재카운트)
     if not _check_image_spread(updated_content, _count_content_images(updated_content)):
         _log("[WP] ⚠ 이미지가 한쪽에 몰려 있음 — 분포 확인 권장")
-
-    # 애드센스 보완
-    if not has_adsense:
-        _log("[WP] 애드센스 없음 → 삽입 중...")
-        # </p> 기준 1/3, 2/3 위치에 애드센스 HTML 삽입
-        adsense_html = (
-            '\n<!-- adsense -->\n'
-            '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>\n'
-            '<ins class="adsbygoogle" style="display:block;text-align:center" '
-            'data-ad-layout="in-article" data-ad-format="fluid" '
-            'data-ad-client="ca-pub-XXXXXXXXXXXXXXXX" data-ad-slot="XXXXXXXXXX"></ins>\n'
-            '<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>\n'
-        )
-        parts = updated_content.split('</p>')
-        n = len(parts)
-        if n >= 4:
-            t1, t2 = n // 3, n * 2 // 3
-            parts.insert(t2, adsense_html)
-            parts.insert(t1, adsense_html)
-        elif n >= 2:
-            parts.insert(n // 2, adsense_html)
-        updated_content = '</p>'.join(parts)
 
     # 공개 발행
     patch_data = {
