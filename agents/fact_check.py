@@ -378,6 +378,13 @@ def run(body: str, keyword: str, blog_name: str = "", on_log=None) -> dict:
             ctx_text = body[ctx_start:claim["start"]].strip()
             # 마지막 문장 단위로 자르기 (쉼표/마침표/줄바꿈 기준)
             product_query = re.split(r"[,\.。\n]", ctx_text)[-1].strip()
+            # 포맷 마커 제거: [BOLD], [/BOLD], 잘린 태그(D] 등), **bold**, ## heading
+            product_query = re.sub(r'\[/?[A-Za-z]+\]', '', product_query)  # 완전한 태그
+            product_query = re.sub(r'\w*\]', '', product_query)             # 잘린 태그 끝부분
+            product_query = re.sub(r'\[.*', '', product_query)              # 잘린 태그 시작부분
+            product_query = re.sub(r'\*{1,3}', '', product_query)
+            product_query = re.sub(r'^#{1,6}\s*', '', product_query)
+            product_query = product_query.strip()
             # 한국어 문법 조사·어미 제거 (예: "렌탈은 월", "가격이", "비용은")
             product_query = re.sub(
                 r'\s+\S*(은|는|이|가|을|를|의|에서|에|로|렌탈은?|월|가격은?|비용은?|요금은?|구입은?)\s*$',
