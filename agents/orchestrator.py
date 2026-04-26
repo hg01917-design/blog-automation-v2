@@ -319,7 +319,7 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
             if attempt > 1:
                 log(f"[오케스트레이터] === 재생성 {attempt}/{MAX_WRITER_RETRIES} ===")
 
-            result = active_writer.run(keyword, on_log=log, on_status=on_status)
+            result = active_writer.run(keyword, on_log=log, on_status=on_status, skip_images=True)
             if not result:
                 continue
 
@@ -344,8 +344,8 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
                     break
                 issues = review2["issues"]
 
-            # 2차 수정: Claude에 기존 글 + 이슈 전달해서 부분 수정 (전체 재생성보다 빠름)
-            if attempt < MAX_WRITER_RETRIES:
+            # 2차 수정: Claude에 기존 글 + 이슈 전달해서 부분 수정
+            if True:
                 log(f"[오케스트레이터] 부분 수정 시도 (이슈 {len(issues)}건)...")
                 from claude_playwright import repair_text
                 raw_to_fix = (fixed or review["result"]).get("raw", "")
@@ -376,6 +376,28 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
                 from keyword_engine import db_handler as _db
                 _db.set_keyword_status(keyword, "failed", blog_id)
             return _fail(blog_id, keyword, f"검수 불합격 ({MAX_WRITER_RETRIES}회)", logs)
+
+        # ── 3-b. 검수 통과 후 이미지 생성 ──
+        if result and result.get("images"):
+            try:
+                from image_router import generate_images_for_blog as _img_gen, generate_thumbnail
+                _is_naver = blog_id in ("salim1su", "me1091")
+                log(f"[오케스트레이터] 검수 통과 → 이미지 {len(result['images'])}개 생성 시작")
+                _img_paths = _img_gen(
+                    blog_id=blog_id,
+                    image_infos=result["images"],
+                    skip_webp=_is_naver,
+                    on_log=log,
+                    title=result.get("title", ""),
+                )
+                _thumb = generate_thumbnail(blog_id, keyword, result["title"], on_log=log)
+                if _thumb:
+                    _img_paths[0] = _thumb
+                result["image_paths"] = _img_paths
+                log(f"[오케스트레이터] 이미지 {len(_img_paths)}개 생성 완료")
+            except Exception as _ie:
+                log(f"[오케스트레이터] 이미지 생성 오류 (무시): {_ie}")
+                result.setdefault("image_paths", {})
 
         # ── 4. 포스팅 (forced_title 지정 시 제목 교체) ──
         if forced_title and result:

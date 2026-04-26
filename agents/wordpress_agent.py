@@ -27,7 +27,7 @@ PERSONA_RULE = (
 )
 
 
-def run(keyword: str, on_log=None, on_status=None):
+def run(keyword: str, on_log=None, on_status=None, skip_images=False):
     """글 + 이미지 생성 후 파싱된 결과를 반환한다.
 
     blog_id는 "baremi542"으로 고정됩니다.
@@ -78,6 +78,13 @@ def run(keyword: str, on_log=None, on_status=None):
 
     # 3. PIL 인포그래픽 카드 생성 (정부지원금 네이비 스타일, 로컬 생성)
     image_paths = {}
+    if skip_images:
+        result["image_paths"] = image_paths
+        result["raw"] = raw
+        log(f"[작성] ✓ 완료 (이미지 스킵) — 제목: \"{result['title']}\" / 본문: {len(result['body'])}자")
+        if on_status:
+            on_status("writer", "done")
+        return result
     try:
         from issue_card import generate_issue_cards
         card_paths = generate_issue_cards(

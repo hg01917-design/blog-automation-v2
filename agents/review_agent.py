@@ -125,8 +125,8 @@ def run(result: dict, keyword: str, blog_id: str,
     if n_pattern:
         issues.append(f"제목 금지패턴: '{n_pattern.group()}'")
 
-    # 6. 이미지 파일 존재 여부
-    for img_info in images:
+    # 6. 이미지 파일 존재 여부 (image_paths가 비어있으면 아직 생성 전 — 스킵)
+    for img_info in (images if image_paths else []):
         idx = img_info["index"]
         filepath = image_paths.get(idx)
         if not filepath:

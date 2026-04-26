@@ -23,7 +23,7 @@ PERSONA_RULE = (
 )
 
 
-def run(keyword: str, on_log=None, on_status=None):
+def run(keyword: str, on_log=None, on_status=None, skip_images=False):
     blog_id = BLOG_ID
 
     def log(msg):
@@ -55,7 +55,7 @@ def run(keyword: str, on_log=None, on_status=None):
         return None
 
     image_paths = {}
-    if result["images"]:
+    if result["images"] and not skip_images:
         log(f"[작성] 이미지 {len(result['images'])}개 생성 시작 (blogspot_daily: Bing)")
         image_paths = _img_router(blog_id, result["images"], skip_webp=False, on_log=log, title=result.get("title", ""))
         log(f"[작성] 이미지 {len(image_paths)}개 생성 완료")

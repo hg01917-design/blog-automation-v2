@@ -141,7 +141,7 @@ def _expand_keyword(keyword: str, on_log=None) -> str:
         return keyword
 
 
-def run(keyword: str = None, on_log=None, on_status=None):
+def run(keyword: str = None, on_log=None, on_status=None, skip_images=False):
     """글 + 이미지 생성 후 파싱된 결과를 반환한다.
 
     blog_id는 "salim1su"으로 고정됩니다.
@@ -258,7 +258,7 @@ def run(keyword: str = None, on_log=None, on_status=None):
         result["body"] = '\n'.join(new_lines)
         log(f"[작성] 이미지 마커 {total_imgs}개 주입 완료")
 
-    if result["images"]:
+    if result["images"] and not skip_images:
         log(f"[작성] 이미지 {len(result['images'])}개 생성 시작 (salim1su: Gemini→Bing→Pollinations)")
         image_paths = _img_router("salim1su", result["images"], skip_webp=True, on_log=log, title=result.get("title", ""))
         log(f"[작성] 이미지 {len(image_paths)}개 생성 완료")
