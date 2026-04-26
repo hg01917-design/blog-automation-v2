@@ -567,6 +567,8 @@ class _SettingsPanel(QWidget):
         ("CLAUDE_API_KEY",      "Claude API Key",          "sk-ant-...",              True),
         ("WP_URL",              "WordPress 사이트 URL",    "https://example.com",     False),
         ("WP_USER",             "WordPress 아이디",         "admin",                   False),
+        ("WP_ADMIN_PASSWORD",   "WordPress 관리자 비밀번호 (baremi542)", "로그인 비밀번호", True),
+        ("TRIPLOG_ADMIN_PASSWORD","WordPress 관리자 비밀번호 (triplog)", "로그인 비밀번호", True),
         ("WP_APP_PASSWORD",     "WordPress 앱 비밀번호",    "xxxx xxxx xxxx xxxx",     True),
         ("TISTORY_URL",         "Tistory 블로그 주소",      "https://xxx.tistory.com", False),
         ("TISTORY_ACCESS_TOKEN","Tistory Access Token",    "abc123...",               True),
@@ -1556,22 +1558,29 @@ class BlogAutomationApp(QMainWindow):
         topbar.addWidget(title_lbl)
         topbar.addStretch()
 
-        # AI 토글 프레임
-        ai_frame = QFrame()
-        ai_frame.setStyleSheet(
-            "background:#1a1d2e;border:1px solid #1e2233;border-radius:6px;")
-        ai_lay = QHBoxLayout(ai_frame)
-        ai_lay.setContentsMargins(2, 2, 2, 2)
-        ai_lay.setSpacing(2)
-        self._ai_claude_btn = QPushButton("Claude")
-        self._ai_claude_btn.setFixedSize(54, 22)
-        self._ai_gemini_btn = QPushButton("Gemini")
-        self._ai_gemini_btn.setFixedSize(54, 22)
-        self._ai_claude_btn.clicked.connect(lambda: self._set_ai_provider("claude"))
-        self._ai_gemini_btn.clicked.connect(lambda: self._set_ai_provider("gemini"))
-        ai_lay.addWidget(self._ai_claude_btn)
-        ai_lay.addWidget(self._ai_gemini_btn)
-        topbar.addWidget(ai_frame)
+        # 모델 선택 드롭다운
+        self._model_combo = QComboBox()
+        self._model_combo.addItems([
+            "Haiku", "Sonnet", "Opus",
+            "Gemini 2.5 Pro", "Gemini 2.5 Flash",
+            "Gemini 2.0 Flash",
+            "Gemini 1.5 Pro", "Gemini 1.5 Flash",
+        ])
+        self._model_combo.setFixedHeight(26)
+        self._model_combo.setMinimumWidth(130)
+        self._model_combo.setStyleSheet(
+            "QComboBox {"
+            "  background:#1a1d2e;color:#e0e0e0;border:1px solid #1e2233;"
+            "  border-radius:5px;padding:2px 6px;font-size:11px;"
+            "}"
+            "QComboBox::drop-down { border:none; width:16px; }"
+            "QComboBox QAbstractItemView {"
+            "  background:#1a1d2e;color:#e0e0e0;selection-background-color:#2563eb;"
+            "  border:1px solid #2d3555;"
+            "}"
+        )
+        self._model_combo.currentTextChanged.connect(self._on_model_changed)
+        topbar.addWidget(self._model_combo)
 
         # ⚙ 설정 버튼
         self._settings_btn = QPushButton("⚙")
@@ -1773,7 +1782,7 @@ class BlogAutomationApp(QMainWindow):
         self._stack.addWidget(settings_wrap)
 
         # 초기화
-        self._set_ai_provider("claude")
+        self._on_model_changed("Haiku")
         self._on_agent_changed(self._agent_combo.currentText())
         self._load_kw_queue()
 
@@ -1863,16 +1872,24 @@ class BlogAutomationApp(QMainWindow):
     def _toggle_settings(self):
         self._stack.setCurrentIndex(1 - self._stack.currentIndex())
 
-    # ── AI 프로바이더 선택 ──
-    def _set_ai_provider(self, provider: str):
-        os.environ["AI_PROVIDER"] = provider
-        act = ("background:#2563eb;color:#fff;border-radius:4px;border:none;"
-               "font-size:11px;font-weight:bold;")
-        inact = ("background:transparent;color:#4a5568;border:none;"
-                 "border-radius:4px;font-size:11px;")
-        self._ai_claude_btn.setStyleSheet(act  if provider == "claude" else inact)
-        self._ai_gemini_btn.setStyleSheet(act  if provider == "gemini" else inact)
-        self.log_box.append(f"[AI] {provider.upper()} 선택됨")
+    # ── 모델 선택 ──
+    _MODEL_KEY_MAP = {
+        "Haiku":            "haiku",
+        "Sonnet":           "sonnet",
+        "Opus":             "opus",
+        "Gemini 2.5 Pro":   "gemini-2.5-pro",
+        "Gemini 2.5 Flash": "gemini-2.5-flash",
+        "Gemini 2.0 Flash": "gemini-2.0-flash",
+        "Gemini 1.5 Pro":   "gemini-1.5-pro",
+        "Gemini 1.5 Flash": "gemini-1.5-flash",
+    }
+
+    def _on_model_changed(self, label: str):
+        key = self._MODEL_KEY_MAP.get(label, "haiku")
+        os.environ["WRITING_MODEL"] = key
+        # 하위 호환 — AI_PROVIDER 도 함께 설정
+        os.environ["AI_PROVIDER"] = "gemini" if key.startswith("gemini") else "claude"
+        self.log_box.append(f"[모델] {label} 선택됨 (key={key})")
 
     # ── 실행 버튼 ──
     def _run_all(self):

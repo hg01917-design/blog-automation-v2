@@ -20,6 +20,24 @@ BASE_DIR = Path(__file__).parent
 INSTR_DIR = BASE_DIR / "project_instructions"
 _TOKEN_CACHE = BASE_DIR / ".claude_token_cache"  # 키체인 잠금 시 폴백용
 
+# ── 모델 설정 ──────────────────────────────────────────────────────────────
+CLAUDE_MODEL_IDS = {
+    "haiku":  "claude-haiku-4-5-20251001",
+    "sonnet": "claude-sonnet-4-6",
+    "opus":   "claude-opus-4-7",
+}
+GEMINI_MODEL_IDS = {
+    "gemini-2.5-pro":   "gemini-2.5-pro",
+    "gemini-2.5-flash": "gemini-2.5-flash",
+    "gemini-2.0-flash": "gemini-2.0-flash",
+    "gemini-1.5-pro":   "gemini-1.5-pro",
+    "gemini-1.5-flash": "gemini-1.5-flash",
+}
+
+def _current_model() -> str:
+    """WRITING_MODEL 환경변수로 선택된 모델 키 반환. 기본값: haiku"""
+    return os.environ.get("WRITING_MODEL", "haiku")
+
 
 def _get_claude_oauth_token() -> str:
     """macOS 키체인에서 Claude Code OAuth 토큰을 읽어 반환.
@@ -283,11 +301,14 @@ _FORMAT_ENFORCE_PREFIX = (
 )
 
 
-def _run_claude(full_prompt: str, on_log=None, timeout: int = 300) -> str:
+def _run_claude(full_prompt: str, on_log=None, timeout: int = 300, model_key: str = None) -> str:
     """Claude CLI subprocess 호출. 성공 시 stdout 반환, 실패 시 빈 문자열."""
     def log(msg):
         if on_log:
             on_log(msg)
+
+    key = model_key or _current_model()
+    model_id = CLAUDE_MODEL_IDS.get(key, CLAUDE_MODEL_IDS["haiku"])
 
     _REMOVE = {"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT",
                "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_IDE_PORT", "CLAUDE_CODE_IDE_SELECTION_OFFSET",
@@ -301,7 +322,7 @@ def _run_claude(full_prompt: str, on_log=None, timeout: int = 300) -> str:
 
     try:
         result = subprocess.run(
-            [str(CLAUDE_BIN), "--dangerously-skip-permissions", "--print", "--model", "claude-haiku-4-5-20251001"],
+            [str(CLAUDE_BIN), "--dangerously-skip-permissions", "--print", "--model", model_id],
             input=_FORMAT_ENFORCE_PREFIX + full_prompt,
             capture_output=True,
             text=True,
@@ -319,6 +340,42 @@ def _run_claude(full_prompt: str, on_log=None, timeout: int = 300) -> str:
         return ""
     except Exception as e:
         log(f"[Direct] 오류: {e}")
+        return ""
+
+
+def _run_gemini(full_prompt: str, on_log=None, timeout: int = 300, model_key: str = None) -> str:
+    """Gemini API 호출. 성공 시 텍스트 반환, 실패 시 빈 문자열."""
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        # .env 파일에서 직접 읽기 시도
+        env_path = BASE_DIR / ".env"
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if line.startswith("GEMINI_API_KEY="):
+                    api_key = line.split("=", 1)[1].strip()
+                    break
+    if not api_key:
+        log("[Gemini] GEMINI_API_KEY 없음 — .env에 키를 설정하세요")
+        return ""
+
+    key = model_key or _current_model()
+    model_id = GEMINI_MODEL_IDS.get(key, "gemini-2.0-flash")
+    log(f"[Gemini] 모델: {model_id}")
+
+    try:
+        import google.genai as genai
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=model_id,
+            contents=_FORMAT_ENFORCE_PREFIX + full_prompt,
+        )
+        return (response.text or "").strip()
+    except Exception as e:
+        log(f"[Gemini] 오류: {e}")
         return ""
 
 
@@ -436,32 +493,45 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
                   on_log=None, extra_context: str = None) -> str:
     """블로그 텍스트 2단계 생성.
 
+    WRITING_MODEL 환경변수로 모델 선택:
+      Claude: haiku / sonnet / opus
+      Gemini: gemini-2.5-pro / gemini-2.5-flash / gemini-2.0-flash / gemini-1.5-pro / gemini-1.5-flash
+
     1단계: 내용 초안 생성
-    2단계: AI 패턴 제거 + 도입부 개선 (polish)
+    2단계: AI 패턴 제거 + 도입부 개선 (polish, Claude haiku 고정)
     """
     def log(msg):
         if on_log:
             on_log(msg)
 
+    model_key = _current_model()
+    is_gemini = model_key in GEMINI_MODEL_IDS
+
     if blog_id and keyword:
         full_prompt = _build_prompt(blog_id, keyword, extra_context)
-        log(f"[Direct] blog={blog_id}, keyword='{keyword}', 프롬프트={len(full_prompt)}자")
+        log(f"[Direct] blog={blog_id}, keyword='{keyword}', 모델={model_key}, 프롬프트={len(full_prompt)}자")
     elif prompt:
         full_prompt = prompt
         if extra_context:
             full_prompt += f"\n\n[참고 자료]\n{extra_context}"
-        log(f"[Direct] 직접 프롬프트 {len(full_prompt)}자")
+        log(f"[Direct] 직접 프롬프트 {len(full_prompt)}자, 모델={model_key}")
     else:
         log("[Direct] 프롬프트 없음 — 스킵")
         return ""
 
+    def _call_model(p):
+        if is_gemini:
+            return _run_gemini(p, on_log=on_log, model_key=model_key)
+        else:
+            return _run_claude(p, on_log=on_log, model_key=model_key)
+
     # ── 1단계: 초안 생성 (최대 3회, 메타 텍스트 감지 시 재시도) ──
-    log("[Direct] 1단계: 초안 생성 중...")
+    log(f"[Direct] 1단계: 초안 생성 중... (모델: {model_key})")
     raw = ""
     for attempt in range(1, 4):
         if attempt > 1:
             log(f"[Direct] 1단계 재시도 {attempt - 1}/2")
-        raw = _run_claude(full_prompt, on_log=on_log)
+        raw = _call_model(full_prompt)
         if not raw or len(raw) < 500:
             log(f"[Direct] 1단계 응답 짧음 ({len(raw)}자) — 재시도")
             continue
@@ -470,7 +540,7 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
             log(f"[Direct] ⛔ 블로그 형식 아님 (메타 텍스트 감지) — 재시도 ({attempt}/3)")
             raw = ""
             continue
-        # 검증 AI (Subagent) — 생성 AI와 분리된 별도 하이쿠 호출
+        # 검증은 항상 Claude haiku로 (비용 효율)
         if not _verify_content(raw, on_log=on_log, blog_id=blog_id):
             log(f"[Direct] ⛔ 검증 AI 불합격 — 재시도 ({attempt}/3)")
             raw = ""
@@ -482,10 +552,10 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
         log("[Direct] 1단계 3회 모두 실패 (짧음 또는 메타 텍스트) — failed 처리")
         return ""
 
-    # ── 2단계: AI 패턴 제거 + 도입부 개선 ──
+    # ── 2단계: AI 패턴 제거 + 도입부 개선 (polish, Claude haiku 고정) ──
     log("[Direct] 2단계: 문체 다듬기 중...")
     polish_prompt = _POLISH_PROMPT.format(draft=raw)
-    polished = _run_claude(polish_prompt, on_log=on_log, timeout=300)
+    polished = _run_claude(polish_prompt, on_log=on_log, timeout=300, model_key="haiku")
 
     if polished and len(polished) >= 500 and _is_valid_blog_content(polished):
         log(f"[Direct] 2단계 완료 ({len(polished)}자) ✅")
