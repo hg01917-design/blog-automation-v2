@@ -945,6 +945,9 @@ def fetch_context_for_blog(blog_id: str, keyword: str, on_log=None) -> str:
                 ctx = fetch_bokjiro_context(keyword, on_log=on_log)
                 return ctx if ctx else fetch_gov_service_context(keyword, on_log=on_log)
             return fetch_gov_service_context(keyword, on_log=on_log)
+    elif blog_id == "goodisak":
+        # IT 블로그: 네이버 쇼핑 API로 실제 제품 정보 수집 (복지 API 제외)
+        return fetch_naver_shopping_context(keyword, on_log=on_log)
     elif blog_id == "phn0502":
         # 영화/드라마 블로그: TMDB 실제 정보 + OTT 시청 가능 플랫폼
         return fetch_tmdb_context(keyword, on_log=on_log)
