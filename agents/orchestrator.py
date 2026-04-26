@@ -387,10 +387,13 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
             return _fail(blog_id, keyword, f"검수 불합격 ({MAX_WRITER_RETRIES}회)", logs)
 
         # ── 3-b. 검수 통과 후 이미지 생성 ──
-        if result and result.get("images"):
-            try:
-                from image_router import generate_images_for_blog as _img_gen, generate_thumbnail
-                _is_naver = blog_id in ("salim1su", "me1091")
+        try:
+            from image_router import generate_images_for_blog as _img_gen, generate_thumbnail
+            _is_naver = blog_id in ("salim1su", "me1091")
+            _img_paths = result.get("image_paths", {})
+
+            # 본문 이미지 생성 (이미지 명세가 있을 때만)
+            if result.get("images"):
                 log(f"[오케스트레이터] 검수 통과 → 이미지 {len(result['images'])}개 생성 시작")
                 _img_paths = _img_gen(
                     blog_id=blog_id,
@@ -399,14 +402,16 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
                     on_log=log,
                     title=result.get("title", ""),
                 )
-                _thumb = generate_thumbnail(blog_id, keyword, result["title"], on_log=log)
-                if _thumb:
-                    _img_paths[0] = _thumb
-                result["image_paths"] = _img_paths
                 log(f"[오케스트레이터] 이미지 {len(_img_paths)}개 생성 완료")
-            except Exception as _ie:
-                log(f"[오케스트레이터] 이미지 생성 오류 (무시): {_ie}")
-                result.setdefault("image_paths", {})
+
+            # 썸네일은 항상 생성 (본문 이미지 유무와 무관)
+            _thumb = generate_thumbnail(blog_id, keyword, result["title"], on_log=log)
+            if _thumb:
+                _img_paths[0] = _thumb
+            result["image_paths"] = _img_paths
+        except Exception as _ie:
+            log(f"[오케스트레이터] 이미지 생성 오류 (무시): {_ie}")
+            result.setdefault("image_paths", {})
 
         # ── 4. 포스팅 (forced_title 지정 시 제목 교체) ──
         if forced_title and result:

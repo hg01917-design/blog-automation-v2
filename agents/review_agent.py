@@ -90,6 +90,11 @@ def run(result: dict, keyword: str, blog_id: str,
     if len(tags) < 10:
         log(f"[검수] ⚠ 태그 경고: {len(tags)}개 (권장 10개 이상)")
 
+    # 2-1. 도입부 없음 체크 — 본문이 소제목(## 또는 [H2])으로 시작하면 불합격
+    body_stripped = body.lstrip()
+    if re.match(r'^(#{1,3}\s|\[H2\])', body_stripped, re.IGNORECASE):
+        issues.append("도입부 없음: 본문이 소제목으로 시작됨 (소제목 앞에 2~3문장 도입부 필요)")
+
     # 3. 제목에 메인키워드가 앞에 위치 (공백 정규화 비교)
     kw_norm = re.sub(r"\s+", "", keyword)   # "마인크래프트서버"
     title_norm = re.sub(r"\s+", "", title)  # "마인크래프트서버열기..."

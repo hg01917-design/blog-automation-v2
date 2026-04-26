@@ -292,17 +292,24 @@ def _body_to_tinymce_html(body_text: str, blog_id: str) -> str:
         text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', text)
         parts.append(f'<p data-ke-size="size19">{text}</p>')
 
-    # H2/H3/이미지/애드센스/버튼 블록 앞뒤에 빈 줄 2칸 삽입
+    # 도입부 없음 보호: 첫 의미있는 요소가 H2/H3이면 p로 강제 변환
+    first_idx = next((i for i, t in enumerate(parts) if t != SP), None)
+    if first_idx is not None and (
+        parts[first_idx].startswith('<h2') or parts[first_idx].startswith('<h3')
+    ):
+        txt = re.sub(r'<[^>]+>', '', parts[first_idx]).strip()
+        parts[first_idx] = f'<p data-ke-size="size19">{txt}</p>'
+
+    # H2/H3/이미지/애드센스/버튼 블록 앞뒤에 빈 줄 1칸 삽입
     spaced = []
     for i, tag in enumerate(parts):
-        prev = parts[i - 1] if i > 0 else None
         nxt = parts[i + 1] if i < len(parts) - 1 else None
         cur_needs = _needs_spacing(tag)
         if cur_needs and spaced and not spaced[-1].startswith(SP):
-            spaced += [SP, SP]
+            spaced += [SP]
         spaced.append(tag)
         if cur_needs and nxt and not nxt.startswith(SP):
-            spaced += [SP, SP]
+            spaced += [SP]
 
     return '\n'.join(spaced)
 
