@@ -351,15 +351,18 @@ def _run_gemini(full_prompt: str, on_log=None, timeout: int = 300, model_key: st
 
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
-        # .env 파일에서 직접 읽기 시도
-        env_path = BASE_DIR / ".env"
-        if env_path.exists():
-            for line in env_path.read_text().splitlines():
-                if line.startswith("GEMINI_API_KEY="):
-                    api_key = line.split("=", 1)[1].strip()
-                    break
+        # .env 파일에서 직접 읽기 (프로젝트 루트 → 부모 디렉터리 순서로 탐색)
+        for env_path in [BASE_DIR / ".env", BASE_DIR.parent / ".env"]:
+            if env_path.exists():
+                for line in env_path.read_text().splitlines():
+                    if line.startswith("GEMINI_API_KEY="):
+                        api_key = line.split("=", 1)[1].strip()
+                        if api_key:
+                            break
+            if api_key:
+                break
     if not api_key:
-        log("[Gemini] GEMINI_API_KEY 없음 — .env에 키를 설정하세요")
+        log("[Gemini] GEMINI_API_KEY 없음 — ⚙ 설정에서 키를 입력하세요")
         return ""
 
     key = model_key or _current_model()

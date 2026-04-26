@@ -565,6 +565,7 @@ class _SettingsPanel(QWidget):
     _FIELDS = [
         # (env_key, 라벨, placeholder, is_pw)
         ("CLAUDE_API_KEY",      "Claude API Key",          "sk-ant-...",              True),
+        ("GEMINI_API_KEY",      "Gemini API Key",          "AIza...",                 True),
         ("WP_URL",              "WordPress 사이트 URL",    "https://example.com",     False),
         ("WP_USER",             "WordPress 아이디",         "admin",                   False),
         ("WP_ADMIN_PASSWORD",   "WordPress 관리자 비밀번호 (baremi542)", "로그인 비밀번호", True),
