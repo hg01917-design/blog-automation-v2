@@ -15,9 +15,9 @@ from image_router import generate_images_for_blog as _img_router
 from overnight_run import _truncate_title
 
 try:
-    from agents import fact_collect as _fact_collect
+    from agents import research_agent as _research
 except ImportError:
-    import fact_collect as _fact_collect
+    import research_agent as _research
 
 BLOG_ID = "baremi542"
 PERSONA_RULE = (
@@ -55,7 +55,7 @@ def run(keyword: str, on_log=None, on_status=None, skip_images=False):
     log(f"[{blog_id}] 페르소나 규칙 적용: {PERSONA_RULE}")
 
     # 1. 사전 팩트 수집
-    fc = _fact_collect.collect(keyword, blog_id, on_log=log)
+    fc = _research.run(keyword, blog_id, on_log=log)
 
     # 2. Claude.ai 글 생성
     log(f"[작성] {blog_id} / '{keyword}' — Claude.ai 글 생성")

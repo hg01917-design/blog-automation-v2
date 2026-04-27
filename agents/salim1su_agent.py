@@ -16,9 +16,9 @@ from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as 
 from keyword_crawler import _is_banned
 
 try:
-    from agents import fact_collect as _fact_collect
+    from agents import research_agent as _research
 except ImportError:
-    import fact_collect as _fact_collect
+    import research_agent as _research
 
 try:
     import coupang_api
@@ -181,7 +181,7 @@ def run(keyword: str = None, on_log=None, on_status=None, skip_images=False):
     actual_keyword = _expand_keyword(keyword, on_log=log)
 
     # 2단계: 사전 팩트 수집
-    fc = _fact_collect.collect(actual_keyword, blog_id, on_log=log)
+    fc = _research.run(actual_keyword, blog_id, on_log=log)
 
     # 3단계: Claude.ai 글 생성 (확장된 키워드로)
     log(f"[작성] {blog_id} / '{actual_keyword}' — Claude.ai 글 생성")

@@ -278,9 +278,13 @@ def _collect_goodisak(keyword: str, on_log=None) -> dict:
             parts.append(shop)
         # IT 제품은 쇼핑 데이터만 사용 — 블로그는 악세서리·무관 글이 섞여 노이즈
     else:
-        # 정보성 키워드만 블로그 수집
-        log(f"[팩트수집] 네이버블로그 최신 정보 조회: '{keyword}'")
-        blog = _naver_blog_facts(keyword, on_log)
+        # 정보성 키워드: 핵심 검색어 추출 후 뉴스 + 블로그 수집
+        info_kw = _info_search_keyword(keyword)
+        log(f"[팩트수집] 정보성 키워드 → 검색어: '{info_kw}' (원본: '{keyword}')")
+        news = _naver_news_facts(info_kw, on_log)
+        if news:
+            parts.append(news)
+        blog = _naver_blog_facts(info_kw, on_log)
         if blog:
             parts.append(blog)
 
@@ -347,6 +351,30 @@ _SHOPPING_NOISE = re.compile(
     r"[A-Za-z가-힣]*\s*좋을까|[A-Za-z가-힣]*\s*할까",
     re.IGNORECASE,
 )
+
+
+def _info_search_keyword(keyword: str) -> str:
+    """정보/방법 의도 키워드에서 '제품명 + 핵심주제' 2~3단어 추출.
+
+    예) '엘지그램 노트북 발열문제 해결방법' → '엘지그램 발열문제'
+        '카카오톡 알림설정 안되는 이유'    → '카카오톡 알림설정'
+        '챗GPT 사용법 초보자'             → '챗GPT 사용법'
+    """
+    # 제거할 SEO/조사 단어
+    _noise = re.compile(
+        r"초보자?|입문|쉽게|간단하게|빠르게|한번에|총정리|완벽|"
+        r"이유|방법|해결|하는법|하는방법|안되는|안될때|안되면|"
+        r"모르는|모르면|알아보기|알려드림|\d{4}|최신|최고|"
+        r"추천|비교|순위|후기|리뷰",
+        re.IGNORECASE,
+    )
+    cleaned = _noise.sub("", keyword)
+    cleaned = re.sub(r"\s+[가-힣]{1,3}\s*$", "", cleaned)  # 조사 제거
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    words = cleaned.split()
+    # 앞 3단어 이내로 제한
+    result = " ".join(words[:3]) if words else keyword.split()[0]
+    return result if len(result) >= 3 else keyword.split()[0]
 
 
 def _shopping_keyword(keyword: str) -> str:
@@ -631,13 +659,13 @@ def collect(keyword: str, blog_id: str, on_log=None) -> dict:
     if ctx["success"]:
         return ctx
 
-    # ── 네이버 뉴스 API (최신 정책·수치 우선) ────────────────────────────────
-    news_kw = _core_keyword(keyword)
-    log(f"[팩트수집] 네이버뉴스 조회: '{news_kw}'")
-    news = _naver_news_facts(news_kw, on_log)
+    # ── 네이버 뉴스 + 블로그 API ─────────────────────────────────────────────
+    # 공공API/쇼핑API 실패 시: 키워드에서 핵심 검색어 추출 후 조회
+    search_kw = _info_search_keyword(keyword)
+    log(f"[팩트수집] 검색어 추출: '{search_kw}' (원본: '{keyword}')")
+    news = _naver_news_facts(search_kw, on_log)
 
-    # ── 네이버 블로그 API (보완) ──────────────────────────────────────────────
-    blog = _naver_blog_facts(news_kw, on_log)
+    blog = _naver_blog_facts(search_kw, on_log)
 
     parts = [p for p in [news, blog] if p]
     if parts:
