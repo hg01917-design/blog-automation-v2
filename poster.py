@@ -639,36 +639,7 @@ def _post_tistory(account, title, body_html, tags=None,
         body_el.click()
         _rand_delay(page, 300, 600)
 
-        # ── 썸네일 별도 업로드 → 대표이미지 설정 → 본문에서 삭제 ──
         blog_id = account.get("blog", "")
-        if thumbnail_path and Path(thumbnail_path).exists():
-            log("[포스팅] 썸네일 업로드 중...")
-            ok_thumb = _tistory_upload_image(page, thumbnail_path, alt="썸네일", on_log=log)
-            if ok_thumb:
-                time.sleep(1)
-                _tistory_set_thumbnail(page, log_fn=log)
-                time.sleep(1)
-                # TinyMCE 본문에서 썸네일 이미지 제거 (대표이미지 슬롯엔 유지됨)
-                page.evaluate("""() => {
-                    const ed = tinymce && tinymce.activeEditor;
-                    if (!ed) return;
-                    const body = ed.getBody();
-                    const imgs = body.querySelectorAll(
-                        'figure.image_type_imageblock, p > img, figure > img, .imageblock, .se-image'
-                    );
-                    if (imgs.length > 0) {
-                        const container = imgs[0].closest('figure, p, div') || imgs[0].parentElement;
-                        if (container && container !== body) {
-                            container.parentElement && container.parentElement.removeChild(container);
-                        } else {
-                            imgs[0].parentElement && imgs[0].parentElement.removeChild(imgs[0]);
-                        }
-                    }
-                }""")
-                time.sleep(0.5)
-                log("[포스팅] 썸네일 설정 완료 (본문에서 제거)")
-            else:
-                log("[포스팅] 썸네일 업로드 실패 — 스킵")
 
         # ── 본문 HTML 변환 후 setContent() 한 번에 삽입 ──
         log("[포스팅] 본문 HTML 변환 중...")
@@ -735,6 +706,11 @@ def _post_tistory(account, title, body_html, tags=None,
             body.querySelectorAll('[data-img-slot]').forEach(p => p.parentNode.removeChild(p));
             ed.fire('change');
         }""")
+
+        # ── 썸네일(index 0)이 업로드됐으면 대표이미지로 설정 ──
+        if 0 in image_paths and Path(image_paths[0]).exists():
+            time.sleep(1)
+            _tistory_set_thumbnail(page, log_fn=log)
 
         # ── 애드센스 placeholder 위치에 서식 삽입 (전체 루프) ──
         adsense_count = page.evaluate("""() => {

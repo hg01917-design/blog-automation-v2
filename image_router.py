@@ -64,6 +64,22 @@ def add_title_overlay(img_path: str, title: str, blog_id: str = "", on_log=None)
                     break
             return r or core[:max_len]
 
+        def _wrap_pixels(draw, text, font, max_px):
+            """픽셀 너비 기준으로 텍스트를 줄 단위로 분리한다."""
+            lines = []
+            current = ""
+            for ch in text:
+                test = current + ch
+                w = draw.textbbox((0, 0), test, font=font)[2]
+                if w > max_px and current:
+                    lines.append(current)
+                    current = ch
+                else:
+                    current = test
+            if current:
+                lines.append(current)
+            return lines or [text]
+
         def _shadow(draw, pos, text, font, fill=(255,255,255,255), shadow=(0,0,0,160)):
             draw.text((pos[0]+2, pos[1]+2), text, font=font, fill=shadow)
             draw.text(pos, text, font=font, fill=fill)
@@ -115,14 +131,14 @@ def add_title_overlay(img_path: str, title: str, blog_id: str = "", on_log=None)
                 _shadow(draw, ((W-lw)//2, y), line, font); y += lh+12
 
         elif blog_id == "goodisak":
-            # 우측 네이비 세로 배너 (IT/금융)
-            font = _font(max(46, int(W * .072)))
+            # 우측 네이비 세로 배너 (IT/금융) — 픽셀 기준 wrapping
             bw = int(W * .40)
+            font = _font(max(36, int(W * .058)))
             ov = Image.new("RGBA", img.size, (0,0,0,0))
             ImageDraw.Draw(ov).rectangle([(W-bw,0),(W,H)], fill=(20,25,55,210))
             merged = Image.alpha_composite(img, ov)
             draw = ImageDraw.Draw(merged)
-            wrapped = textwrap.wrap(_extract_core(title, 14), width=6)[:3]
+            wrapped = _wrap_pixels(draw, _extract_core(title, 14), font, bw - 28)[:3]
             lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
             total_h = sum(lhs)+(len(wrapped)-1)*12; y=(H-total_h)//2
             for line in wrapped:
@@ -131,15 +147,15 @@ def add_title_overlay(img_path: str, title: str, blog_id: str = "", on_log=None)
 
         elif blog_id == "me1091":
             # 중앙 레드 원형 배지 (리뷰)
-            font = _font(max(48, int(W * .074))); sf = _font(max(24, int(W * .034)))
+            r = int(W * .31); cx, cy = W//2, H//2
+            font = _font(max(42, int(W * .066))); sf = _font(max(22, int(W * .032)))
             ov = Image.new("RGBA", img.size, (0,0,0,80))
             merged = Image.alpha_composite(img, ov)
-            r = int(W * .31); cx, cy = W//2, H//2
             badge = Image.new("RGBA", img.size, (0,0,0,0))
             ImageDraw.Draw(badge).ellipse([(cx-r,cy-r),(cx+r,cy+r)], fill=(200,40,20,225))
             merged = Image.alpha_composite(merged, badge)
             draw = ImageDraw.Draw(merged)
-            wrapped = textwrap.wrap(_extract_core(title, 14), width=7)[:2]
+            wrapped = _wrap_pixels(draw, _extract_core(title, 14), font, 2*r - 40)[:2]
             lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
             total_h = sum(lhs)+(len(wrapped)-1)*10; y=cy-total_h//2
             for line in wrapped:
@@ -149,21 +165,21 @@ def add_title_overlay(img_path: str, title: str, blog_id: str = "", on_log=None)
 
         elif blog_id == "nolja100":
             # 하단 퍼플 그라디언트 + #여행일기 태그
-            font = _font(max(52, int(W * .082))); sf = _font(max(24, int(W * .032)), bold=False)
+            font = _font(max(46, int(W * .074))); sf = _font(max(22, int(W * .030)), bold=False)
             ov = Image.new("RGBA", img.size, (0,0,0,0)); d = ImageDraw.Draw(ov)
             for i in range(H//2):
                 d.line([(0,H//2+i),(W,H//2+i)], fill=(30,20,60,int(200*(i/(H//2))**1.5)))
             merged = Image.alpha_composite(img, ov)
             draw = ImageDraw.Draw(merged)
             draw.text((W//2, H-int(H*.20)), "# 여행일기", font=sf, fill=(180,200,255,210), anchor="mm")
-            wrapped = textwrap.wrap(core, width=12)[:2]
+            wrapped = _wrap_pixels(draw, core, font, W - 80)[:2]
             lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
             total_h = sum(lhs)+(len(wrapped)-1)*10; y=H-int(H*.16)-total_h
             _draw_lines(draw, wrapped, font, W, y, gap=10)
 
         elif blog_id == "salim1su":
             # 상단 핑크 리본 + ✨살림정보 태그
-            font = _font(max(52, int(W * .082))); tf = _font(max(24, int(W * .032)))
+            font = _font(max(46, int(W * .074))); tf = _font(max(22, int(W * .030)))
             ov = Image.new("RGBA", img.size, (0,0,0,0))
             rh = int(H * .09)
             ImageDraw.Draw(ov).rectangle([(0,0),(W,rh)], fill=(220,100,110,225))
@@ -172,21 +188,22 @@ def add_title_overlay(img_path: str, title: str, blog_id: str = "", on_log=None)
             merged = Image.alpha_composite(img, ov)
             draw = ImageDraw.Draw(merged)
             draw.text((W//2, rh//2), "✨ 살림정보", font=tf, fill=(255,240,240,255), anchor="mm")
-            wrapped = textwrap.wrap(core, width=12)[:2]
+            wrapped = _wrap_pixels(draw, core, font, W - 80)[:2]
             lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
             total_h = sum(lhs)+(len(wrapped)-1)*10; y=H-int(H*.07)-total_h
             _draw_lines(draw, wrapped, font, W, y, gap=10)
 
         elif blog_id == "woll100":
             # 도로 표지판 스타일 (교통정보)
-            font = _font(max(50, int(W * .078))); sf = _font(max(22, int(W * .030)))
+            font = _font(max(44, int(W * .070))); sf = _font(max(20, int(W * .028)))
             ov = Image.new("RGBA", img.size, (0,0,0,80))
             merged = Image.alpha_composite(img, ov)
             draw = ImageDraw.Draw(merged)
-            wrapped = textwrap.wrap(_extract_core(title, 14), width=10)[:2]
+            sw = int(W * .84)
+            wrapped = _wrap_pixels(draw, _extract_core(title, 14), font, sw - 40)[:2]
             lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
             total_h = sum(lhs)+(len(wrapped)-1)*12
-            sw=int(W*.84); sh=total_h+int(H*.14); sx=(W-sw)//2; sy=(H-sh)//2
+            sh=total_h+int(H*.14); sx=(W-sw)//2; sy=(H-sh)//2
             draw.rectangle([(sx-5,sy-5),(sx+sw+5,sy+sh+5)], fill=(255,255,255,255))
             draw.rectangle([(sx,sy),(sx+sw,sy+sh)], fill=(30,110,50,240))
             y = sy+(sh-total_h)//2
@@ -197,14 +214,14 @@ def add_title_overlay(img_path: str, title: str, blog_id: str = "", on_log=None)
 
         elif blog_id == "phn0502":
             # 영화 포스터 — 클래퍼보드 + 황금 글씨
-            font = _font(max(60, int(W * .092))); sf = _font(max(26, int(W * .034)))
+            font = _font(max(52, int(W * .082))); sf = _font(max(24, int(W * .032)))
             ov = Image.new("RGBA", img.size, (5,5,15,165))
             merged = Image.alpha_composite(img, ov)
             draw = ImageDraw.Draw(merged)
             sh = int(H * .055)
             for i in range(9):
                 draw.rectangle([(i*sh,0),((i+1)*sh,sh)], fill=(0,0,0,235) if i%2==0 else (255,255,255,235))
-            wrapped = textwrap.wrap(_extract_core(title, 16), width=10)[:2]
+            wrapped = _wrap_pixels(draw, _extract_core(title, 16), font, W - 80)[:2]
             lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
             total_h = sum(lhs)+(len(wrapped)-1)*14; y=(H-total_h)//2+int(H*.04)
             for line in wrapped:
@@ -214,16 +231,15 @@ def add_title_overlay(img_path: str, title: str, blog_id: str = "", on_log=None)
 
         else:
             # 기본: 하단 반투명 바 + 흰 글씨
-            font = _font(max(44, int(W * .068)))
-            wrapped = textwrap.wrap(core, width=14)[:2]
+            font = _font(max(40, int(W * .062)))
             pv = int(H * .05)
-            d0 = ImageDraw.Draw(img)
-            lhs = [d0.textbbox((0,0),l,font=font)[3] for l in wrapped]
-            total_h = sum(lhs)+(len(wrapped)-1)*10; bar_h=total_h+pv*2
             ov = Image.new("RGBA", img.size, (0,0,0,0))
-            ImageDraw.Draw(ov).rectangle([(0,H-bar_h),(W,H)], fill=(0,0,0,185))
             merged = Image.alpha_composite(img, ov)
             draw = ImageDraw.Draw(merged)
+            wrapped = _wrap_pixels(draw, core, font, W - 80)[:2]
+            lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
+            total_h = sum(lhs)+(len(wrapped)-1)*10; bar_h=total_h+pv*2
+            ImageDraw.Draw(merged).rectangle([(0,H-bar_h),(W,H)], fill=(0,0,0,185))
             _draw_lines(draw, wrapped, font, W, H-bar_h+pv, gap=10)
 
         # 저장
@@ -686,7 +702,7 @@ def _generate_pillow_thumbnail(blog_id: str, keyword: str, thumb_path: str, on_l
     try:
         from PIL import Image, ImageDraw
 
-        W, H = 1200, 800
+        W, H = 800, 800  # 1:1 정사각형
 
         _PALETTES = {
             "goodisak":  [(8,  12, 35), (18, 35, 80)],    # 딥 네이비 (IT/금융)
