@@ -1,7 +1,10 @@
 """사전 팩트 수집 — 키워드 → 팩트 쿼리 변환 → 공식 페이지 직접 방문 → 수치/조건 추출"""
 import re
 import sys
+import json
+import os
 import urllib.parse
+import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -102,6 +105,162 @@ _OFFICIAL_DOMAINS = [
     "moel.go.kr", "work.go.kr", "gov.kr", "go.kr",
 ]
 
+# ── goodisak IT 전용 ──────────────────────────────────────────────────────
+# 네이버 쇼핑 API 대상 IT 제품 트리거
+_IT_PRODUCT_TRIGGERS = [
+    "노트북", "랩탑", "맥북", "그램", "갤럭시북",
+    "이어폰", "헤드폰", "헤드셋", "에어팟", "버즈", "낫싱이어", "비츠",
+    "스마트폰", "갤럭시", "아이폰", "폴드", "플립",
+    "태블릿", "아이패드",
+    "스마트워치", "갤럭시워치", "애플워치",
+    "모니터", "키보드", "마우스",
+    "SSD", "ssd", "메모리", "램", "그래픽카드",
+    "로봇청소기", "공기청정기", "청소기",
+    "TV", "OLED", "QLED", "냉장고", "세탁기", "건조기",
+    "카메라", "미러리스", "블루투스", "스피커", "충전기",
+    "프리티케어", "다이슨", "샤오미", "드론",
+]
+
+def _is_it_product(keyword: str) -> bool:
+    kw = keyword.lower()
+    return any(t.lower() in kw for t in _IT_PRODUCT_TRIGGERS)
+
+
+def _naver_api(endpoint: str, query: str, display: int = 5,
+               extra_params: str = "", on_log=None) -> list:
+    """네이버 검색 Open API 공통 호출. 결과 items 리스트 반환."""
+    client_id = os.environ.get("NAVER_SEARCH_CLIENT_ID", "")
+    client_secret = os.environ.get("NAVER_SEARCH_CLIENT_SECRET", "")
+    if not client_id:
+        return []
+    encoded = urllib.parse.quote(query)
+    url = (f"https://openapi.naver.com/v1/search/{endpoint}.json"
+           f"?query={encoded}&display={display}&start=1{extra_params}")
+    req = urllib.request.Request(url, headers={
+        "X-Naver-Client-Id": client_id,
+        "X-Naver-Client-Secret": client_secret,
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=10) as res:
+            return json.loads(res.read().decode("utf-8")).get("items", [])
+    except Exception as e:
+        if on_log:
+            on_log(f"[팩트수집] 네이버 API({endpoint}) 오류: {e}")
+        return []
+
+
+def _naver_shopping_facts(keyword: str, on_log=None) -> str:
+    """네이버 쇼핑 API → 실제 가격·브랜드·카테고리 데이터."""
+    def log(msg):
+        if on_log: on_log(msg)
+
+    items = _naver_api("shop", keyword, display=5, extra_params="&sort=sim", on_log=on_log)
+    if not items:
+        log(f"[팩트수집] 네이버쇼핑 결과 없음: '{keyword}'")
+        return ""
+
+    lines = [f"## 네이버쇼핑 실제 가격 데이터 (키워드: {keyword})"]
+    price_list = []
+    for item in items:
+        title = re.sub(r"<[^>]+>", "", item.get("title", "")).strip()
+        lprice = item.get("lprice", "")
+        hprice = item.get("hprice", "")
+        brand  = item.get("brand", "") or item.get("maker", "")
+        cat    = item.get("category3", "") or item.get("category2", "") or item.get("category1", "")
+        mall   = item.get("mallName", "")
+
+        if lprice:
+            price_list.append(int(lprice))
+
+        line = f"- {title}"
+        if brand:
+            line += f" | 브랜드: {brand}"
+        if lprice:
+            price_str = f"{int(lprice):,}원"
+            if hprice and hprice != lprice:
+                price_str += f" ~ {int(hprice):,}원"
+            line += f" | 가격: {price_str}"
+        if cat:
+            line += f" | 분류: {cat}"
+        if mall:
+            line += f" | 판매처: {mall}"
+        lines.append(line)
+
+    # 가격 범위 요약
+    if price_list:
+        lines.append(f"\n[가격 범위] 최저 {min(price_list):,}원 ~ 최고 {max(price_list):,}원"
+                     f" (평균 {sum(price_list)//len(price_list):,}원)")
+
+    log(f"[팩트수집] 네이버쇼핑 {len(items)}개 수집 완료")
+    return "\n".join(lines)
+
+
+def _naver_blog_facts(keyword: str, on_log=None) -> str:
+    """네이버 블로그 검색 API → 최신 리뷰·정보 요약 (제목+내용 발췌)."""
+    def log(msg):
+        if on_log: on_log(msg)
+
+    items = _naver_api("blog", keyword, display=5, extra_params="&sort=date", on_log=on_log)
+    if not items:
+        log(f"[팩트수집] 네이버블로그 결과 없음: '{keyword}'")
+        return ""
+
+    lines = [f"## 네이버 블로그 최신 정보 (키워드: {keyword})"]
+    for item in items[:4]:
+        title   = re.sub(r"<[^>]+>", "", item.get("title", "")).strip()
+        desc    = re.sub(r"<[^>]+>", "", item.get("description", "")).strip()
+        date    = item.get("postdate", "")
+        if title:
+            lines.append(f"\n### {title} ({date})")
+        if desc:
+            lines.append(desc[:300])
+
+    log(f"[팩트수집] 네이버블로그 {len(items)}개 수집 완료")
+    return "\n".join(lines)
+
+
+def _collect_goodisak(keyword: str, on_log=None) -> dict:
+    """goodisak IT 블로그 전용 팩트 수집.
+    - IT 제품 키워드 → 네이버쇼핑 API (실제 가격·스펙)
+    - 정보성 키워드 → 네이버블로그 API (최신 리뷰·방법)
+    - 둘 다 실패 → 기존 Google+공식페이지 방식
+    """
+    def log(msg):
+        if on_log: on_log(msg)
+
+    parts = []
+    is_product = _is_it_product(keyword)
+
+    if is_product:
+        log(f"[팩트수집] IT 제품 키워드 감지 → 네이버쇼핑 API 조회: '{keyword}'")
+        shop = _naver_shopping_facts(keyword, on_log)
+        if shop:
+            parts.append(shop)
+
+    # 정보성 여부 무관하게 블로그 최신 글도 수집 (리뷰·방법·설정 등)
+    log(f"[팩트수집] 네이버블로그 최신 정보 조회: '{keyword}'")
+    blog = _naver_blog_facts(keyword, on_log)
+    if blog:
+        parts.append(blog)
+
+    if not parts:
+        log("[팩트수집] 네이버 API 결과 없음 — 기존 방식으로 폴백")
+        # 기존 Google+공식페이지 방식
+        fact_query = _derive_fact_query_legacy(keyword)
+        if not fact_query:
+            return {"context": "", "success": False}
+        return _collect_via_browser(keyword, fact_query, on_log, blog_id="goodisak")
+
+    context = (
+        f"## '{keyword}' 관련 실시간 데이터 (네이버 API)\n"
+        f"아래 수치/가격/정보를 글 작성에 활용하세요. "
+        f"가격은 반드시 여기 제시된 실제 데이터 기준으로 작성하세요.\n\n"
+        + "\n\n".join(parts)
+    )
+    log(f"[팩트수집] ✓ goodisak 팩트 수집 완료 ({len(context)}자)")
+    return {"context": context, "success": True}
+
+
 _SEO_STRIP = re.compile(
     r"(서류\s*준비\s*없이|빠르게|쉽게|간단하게|한번에|"
     r"신청하는\s*법|신청\s*방법|조건\s*금액|신청\s*자격|"
@@ -127,9 +286,10 @@ def _core_keyword(keyword: str) -> str:
     return " ".join(words[:3]) if words else keyword[:20]
 
 
-def _derive_fact_query(keyword: str, blog_id: str) -> str:
+def _derive_fact_query_legacy(keyword: str, blog_id: str = "") -> str:
     """키워드에서 팩트 수집에 최적화된 검색 쿼리 도출.
-    수치/조건 데이터가 없는 카테고리는 빈 문자열 반환 → 팩트 수집 건너뜀."""
+    수치/조건 데이터가 없는 카테고리는 빈 문자열 반환 → 팩트 수집 건너뜀.
+    goodisak는 _collect_goodisak()에서 처리하므로 여기서 제외."""
 
     # baremi542/salim1su: 키워드 자체로 직접 검색 (고정 쿼리보다 정확)
     if blog_id in ("baremi542", "salim1su"):
@@ -147,11 +307,7 @@ def _derive_fact_query(keyword: str, blog_id: str) -> str:
             return keyword + " 입장료 운영시간 주차 공식"
         return ""  # 일반 여행 키워드는 팩트 수집 생략
 
-    # 매칭 없으면 키워드 + 블로그별 보조어
-    suffix = {
-        "goodisak":  " 스펙 가격 공식",
-    }.get(blog_id, " 공식 정보")
-    return keyword + suffix
+    return keyword + " 공식 정보"
 
 
 def _clean(text: str) -> str:
@@ -318,28 +474,12 @@ def _fallback_public_api(keyword: str, blog_id: str, on_log=None) -> dict:
     return {"context": "", "success": False}
 
 
-def collect(keyword: str, blog_id: str, on_log=None) -> dict:
-    """글 생성 전 키워드 관련 팩트를 공식 페이지에서 수집.
-
-    흐름:
-      1. 키워드 → 팩트 조회에 최적화된 검색 쿼리 변환
-      2. 네이버 검색 → 공식 도메인(.go.kr/.or.kr 등) URL 추출
-      3. 해당 페이지로 직접 이동 → 표/수치/조건 추출
-      4. 유효한 수치 데이터가 있을 때만 Claude에 전달
-
-    Returns:
-        {"context": str, "success": bool}
-    """
+def _collect_via_browser(keyword: str, fact_query: str,
+                         on_log=None, blog_id: str = "") -> dict:
+    """Google 검색 → 공식 페이지 방문 → 팩트 추출 (기존 브라우저 방식)."""
     def log(msg):
         if on_log:
             on_log(msg)
-
-    fact_query = _derive_fact_query(keyword, blog_id)
-    log(f"[팩트수집] 키워드: '{keyword}'")
-    if not fact_query:
-        log("[팩트수집] 해당 키워드는 공식 수치 데이터 불필요 — 건너뜀")
-        return {"context": "", "success": False}
-    log(f"[팩트수집] 팩트 쿼리: '{fact_query}'")
 
     try:
         pw, browser = connect_cdp(on_log)
@@ -347,21 +487,18 @@ def collect(keyword: str, blog_id: str, on_log=None) -> dict:
         log(f"[팩트수집] CDP 연결 실패: {e} — 공공API 폴백 시도")
         return _fallback_public_api(keyword, blog_id, on_log)
 
+    facts = ""
+    official_url = ""
     try:
-        context = browser.contexts[0] if browser.contexts else browser.new_context()
-        page = context.new_page()
+        ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+        page = ctx.new_page()
         try:
-            # 1. 검색 → 공식 페이지 URL 획득
             official_url = _search_and_get_official_url(page, fact_query, blog_id, on_log)
-
             if not official_url:
                 log("[팩트수집] 공식 페이지 URL 없음 — 공공API 폴백 시도")
                 return _fallback_public_api(keyword, blog_id, on_log)
-
-            # 2. 공식 페이지 직접 방문 → 내용 추출
             log(f"[팩트수집] 공식 페이지 방문: {official_url[:80]}")
             facts = _extract_page_facts(page, official_url, on_log)
-
         finally:
             try:
                 page.close()
@@ -386,6 +523,32 @@ def collect(keyword: str, blog_id: str, on_log=None) -> dict:
         f"아래 수치/조건만 사용하세요. 여기 없는 수치는 '확인 필요'로 표기하세요.\n\n"
         f"{facts[:3000]}"
     )
-
     log(f"[팩트수집] ✓ 공식 데이터 {len(facts)}자 수집 완료")
     return {"context": context_text, "success": True}
+
+
+def collect(keyword: str, blog_id: str, on_log=None) -> dict:
+    """글 생성 전 키워드 관련 팩트를 공식 페이지에서 수집.
+
+    흐름:
+      - goodisak: 네이버 쇼핑/블로그 API → 실패 시 브라우저 폴백
+      - 기타: 키워드 → 팩트 쿼리 → Google 공식 페이지 방문 → 수치 추출
+
+    Returns:
+        {"context": str, "success": bool}
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    if blog_id == "goodisak":
+        return _collect_goodisak(keyword, on_log)
+
+    fact_query = _derive_fact_query_legacy(keyword, blog_id)
+    log(f"[팩트수집] 키워드: '{keyword}'")
+    if not fact_query:
+        log("[팩트수집] 해당 키워드는 공식 수치 데이터 불필요 — 건너뜀")
+        return {"context": "", "success": False}
+    log(f"[팩트수집] 팩트 쿼리: '{fact_query}'")
+
+    return _collect_via_browser(keyword, fact_query, on_log, blog_id=blog_id)
