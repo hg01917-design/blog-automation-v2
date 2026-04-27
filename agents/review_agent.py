@@ -29,14 +29,10 @@ NAVER_RESTRICTED = {
 }
 
 # AI가 쓴 티 나는 표현 패턴 (본문 전체 대상)
-AI_PATTERNS = [
-    "물론입니다",
+# 경고만 (발행 계속)
+AI_PATTERNS_WARN = [
     "당연히",
     "주목해야",
-    "살펴보겠습니다",
-    "알아보겠습니다",
-    "정리해보겠습니다",
-    "해드리겠습니다",
     "첫째,",
     "둘째,",
     "셋째,",
@@ -46,6 +42,26 @@ AI_PATTERNS = [
     "ChatGPT",
     "LLM",
 ]
+
+# 불합격 처리 (repair_text로 수정 요청)
+AI_PATTERNS_FAIL = [
+    "물론입니다",
+    "살펴보겠습니다",
+    "알아보겠습니다",
+    "정리해보겠습니다",
+    "정리해봤습니다",
+    "알려드리겠습니다",
+    "알려드릴게요",
+    "해드리겠습니다",
+    "소개해드리겠습니다",
+    "설명해드리겠습니다",
+    "확인해보겠습니다",
+    "살펴볼게요",
+    "알아볼게요",
+]
+
+# 하위 호환 (외부에서 참조 시)
+AI_PATTERNS = AI_PATTERNS_WARN + AI_PATTERNS_FAIL
 
 IMAGES_DIR = Path(__file__).parent.parent / "images"
 
@@ -149,8 +165,11 @@ def run(result: dict, keyword: str, blog_id: str,
         elif not os.path.exists(filepath):
             issues.append(f"이미지 {idx} 파일 없음: {filepath}")
 
-    # 6-2. AI 패턴 체크 (본문 전체) — 경고만, 불합격 처리 안 함
-    for pattern in AI_PATTERNS:
+    # 6-2. AI 패턴 체크 — FAIL 목록은 불합격, WARN 목록은 경고만
+    for pattern in AI_PATTERNS_FAIL:
+        if pattern in body:
+            issues.append(f"AI 패턴 금지어: '{pattern}' — 자연스러운 구어체로 교체 필요")
+    for pattern in AI_PATTERNS_WARN:
         if pattern in body:
             log(f"[검수] ⚠ AI 패턴 경고: '{pattern}' (발행은 계속 진행)")
 

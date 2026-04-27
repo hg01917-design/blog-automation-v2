@@ -28,8 +28,12 @@ def run(result: dict, blog_id: str, keyword: str, page_id: str,
     tags = result["tags"]
     image_paths = result.get("image_paths", {})
     images = result.get("images", [])
+    # index 0 = 썸네일 (generate_thumbnail이 저장하는 위치)
+    thumbnail_path = image_paths.get(0) if image_paths else None
 
     log(f"[포스팅] {blog_id} 발행 시작: \"{title}\"")
+    if thumbnail_path:
+        log(f"[포스팅] 썸네일: {thumbnail_path}")
 
     try:
         ok = post_single(
@@ -40,6 +44,7 @@ def run(result: dict, blog_id: str, keyword: str, page_id: str,
             image_paths=image_paths,
             image_infos=images,
             keyword=keyword,
+            thumbnail_path=thumbnail_path,
             on_log=log,
         )
     except Exception as e:
