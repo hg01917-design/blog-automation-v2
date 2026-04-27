@@ -261,13 +261,13 @@ def _collect_goodisak(keyword: str, on_log=None) -> dict:
         shop = _naver_shopping_facts(shop_kw, on_log)
         if shop:
             parts.append(shop)
-
-    # 정보성 여부 무관하게 블로그 최신 글도 수집 (리뷰·방법·설정 등)
-    blog_kw = _shopping_keyword(keyword) if is_product else keyword
-    log(f"[팩트수집] 네이버블로그 최신 정보 조회: '{blog_kw}'")
-    blog = _naver_blog_facts(blog_kw, on_log)
-    if blog:
-        parts.append(blog)
+        # IT 제품은 쇼핑 데이터만 사용 — 블로그는 악세서리·무관 글이 섞여 노이즈
+    else:
+        # 정보성 키워드만 블로그 수집
+        log(f"[팩트수집] 네이버블로그 최신 정보 조회: '{keyword}'")
+        blog = _naver_blog_facts(keyword, on_log)
+        if blog:
+            parts.append(blog)
 
     if not parts:
         log("[팩트수집] 네이버 API 결과 없음 — 기존 방식으로 폴백")
@@ -278,9 +278,9 @@ def _collect_goodisak(keyword: str, on_log=None) -> dict:
         return _collect_via_browser(keyword, fact_query, on_log, blog_id="goodisak")
 
     context = (
-        f"## '{keyword}' 관련 실시간 데이터 (네이버 API)\n"
-        f"아래 수치/가격/정보를 글 작성에 활용하세요. "
-        f"가격은 반드시 여기 제시된 실제 데이터 기준으로 작성하세요.\n\n"
+        f"## '{keyword}' 관련 실시간 데이터 (네이버 쇼핑 API)\n"
+        f"⚠️ 가격은 반드시 아래 실제 데이터 범위 내에서만 작성하세요. "
+        f"여기 없는 가격을 임의로 만들지 마세요.\n\n"
         + "\n\n".join(parts)
     )
     log(f"[팩트수집] ✓ goodisak 팩트 수집 완료 ({len(context)}자)")
