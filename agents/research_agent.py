@@ -28,59 +28,86 @@ _BLOG_DESC = {
 _RESEARCH_PROMPT = """블로그 글 키워드: "{keyword}"
 블로그 유형: {blog_desc}
 
-이 키워드로 정확하고 유용한 블로그 글을 쓰려면 어떤 정보를 찾아야 할까요?
-네이버에서 실제로 검색할 검색어를 1~2개만 알려주세요.
+이 키워드로 정확하고 유용한 블로그 글을 쓰려면 어떤 정보를, 어디서 찾아야 할까요?
+검색어와 검색 소스를 1~3개 알려주세요.
 
-규칙:
-- 검색어는 짧고 명확하게 (2~4단어)
-- SEO 수식어 제거 (추천, 방법, 총정리, 2026 등 빼기)
-- 실제로 검색창에 입력할 단어만
-- 가격/스펙 필요 시 → 제품명만
-- 방법/설정/문제 필요 시 → 제품명+핵심주제
-- 정책/지원금 필요 시 → 제도명
+사용 가능한 검색 소스:
+- 네이버뉴스: 최신 뉴스·정책 발표·사건사고
+- 네이버블로그: 개인 후기·사용 경험·실용 팁
+- 네이버쇼핑: 가격·스펙·모델 비교·최저가
+- 공공API: 정부지원금·복지정책·국내 관광지 공식정보
+
+소스 선택 기준:
+- 가격·스펙·구매 → 네이버쇼핑
+- 최신 뉴스·정책 발표 → 네이버뉴스
+- 사용법·후기·방법·설정·문제해결 → 네이버블로그
+- 정부지원금·복지·여행지 공식정보 → 공공API
+- 여러 소스 동시 사용 가능 (더 풍부한 정보)
+
+검색어 규칙:
+- 짧고 명확하게 (2~4단어)
+- SEO 수식어 제거 (추천, 총정리, 2026 등)
+- 실제 검색창에 입력할 단어만
 
 아래 형식으로만 답하세요 (다른 설명 없이):
-검색1: [검색어]
-검색2: [검색어]"""
+검색1: [검색어] | [소스]
+검색2: [검색어] | [소스]
+검색3: [검색어] | [소스]"""
+
+# 소스 이름 → 내부 키 매핑
+_SOURCE_MAP = {
+    "네이버쇼핑": "shopping", "쇼핑": "shopping",
+    "네이버뉴스": "news",     "뉴스": "news",
+    "네이버블로그": "blog",   "블로그": "blog",
+    "공공api": "public",      "공공API": "public", "공공": "public",
+}
 
 
-def _ask_claude_for_queries(keyword: str, blog_id: str, on_log=None) -> list[str]:
-    """Claude CLI에 검색어를 물어보고 리스트로 반환."""
+def _ask_claude_for_plan(keyword: str, blog_id: str, on_log=None) -> list[tuple[str, str]]:
+    """Claude CLI에 '무엇을 어디서 검색할지' 물어보고 (query, source) 리스트로 반환."""
     def log(msg):
         if on_log: on_log(msg)
 
     try:
         from claude_direct import _run_claude
     except ImportError:
-        return [_fc._info_search_keyword(keyword)]
+        return [(_fc._info_search_keyword(keyword), "news")]
 
     blog_desc = _BLOG_DESC.get(blog_id, "블로그")
     prompt = _RESEARCH_PROMPT.format(keyword=keyword, blog_desc=blog_desc)
 
-    log(f"[리서치] Claude에 검색어 요청 중...")
+    log("[리서치] Claude에 검색 계획 요청 중...")
     raw = _run_claude(prompt, on_log=None, timeout=30, model_key="haiku")
 
-    queries = []
+    plan = []
+    for line in raw.splitlines():
+        # "검색1: 엘지그램 발열 | 네이버블로그" 형태 파싱
+        m = re.match(r"검색\d\s*:\s*(.+?)\s*\|\s*(.+)", line.strip())
+        if m:
+            q = m.group(1).strip()
+            src_raw = m.group(2).strip()
+            src = _SOURCE_MAP.get(src_raw, _SOURCE_MAP.get(src_raw.replace(" ", ""), "news"))
+            if 2 <= len(q) <= 30:
+                plan.append((q, src))
+
+    if plan:
+        log(f"[리서치] Claude 검색 계획: {[(q, s) for q, s in plan]}")
+        return plan
+
+    # 파싱 실패 — | 없이 검색어만 있는 경우도 처리
+    fallback = []
     for line in raw.splitlines():
         m = re.match(r"검색\d\s*:\s*(.+)", line.strip())
         if m:
-            q = m.group(1).strip()
+            q = m.group(1).strip().split("|")[0].strip()
             if 2 <= len(q) <= 30:
-                queries.append(q)
+                fallback.append((q, "news"))
+    if fallback:
+        log(f"[리서치] 소스 파싱 실패 — 뉴스 기본값 적용: {[q for q, _ in fallback]}")
+        return fallback
 
-    if queries:
-        log(f"[리서치] Claude 제안 검색어: {queries}")
-        return queries
-
-    # Claude 응답 파싱 실패 시 폴백
-    log(f"[리서치] 파싱 실패 — 키워드 자동 추출 사용")
-    return [_fc._info_search_keyword(keyword)]
-
-
-def _is_price_query(query: str) -> bool:
-    """가격/스펙 조회가 필요한 검색어인지 판단."""
-    price_hints = ["가격", "얼마", "스펙", "사양", "구매", "최저가"]
-    return any(h in query for h in price_hints) or _fc._is_it_product(query)
+    log("[리서치] 파싱 실패 — 키워드 자동 추출 사용")
+    return [(_fc._info_search_keyword(keyword), "news")]
 
 
 def run(keyword: str, blog_id: str, on_log=None) -> dict:
@@ -94,45 +121,59 @@ def run(keyword: str, blog_id: str, on_log=None) -> dict:
 
     log(f"[리서치] 시작: blog={blog_id}, keyword='{keyword}'")
 
-    # 1. Claude에게 검색어 물어보기
-    queries = _ask_claude_for_queries(keyword, blog_id, on_log)
+    # 1. Claude에게 검색어 + 소스 물어보기
+    plan = _ask_claude_for_plan(keyword, blog_id, on_log)
+    query_names = [q for q, _ in plan]
 
-    # 2. 각 검색어로 API 호출
+    # 2. Claude 계획대로 API 호출
     parts = []
-    for q in queries:
-        log(f"[리서치] 검색 실행: '{q}'")
+    public_done = False
 
-        if _is_price_query(q):
-            # 가격/스펙 → 쇼핑 API
+    for q, src in plan:
+        log(f"[리서치] 검색: '{q}' → {src}")
+
+        if src == "shopping":
             shop_kw = _fc._shopping_keyword(q)
             result = _fc._naver_shopping_facts(shop_kw, on_log)
             if result:
                 parts.append(result)
-                continue
 
-        # 정보성 → 뉴스 우선, 블로그 보완
-        news = _fc._naver_news_facts(q, on_log)
-        if news:
-            parts.append(news)
+        elif src == "news":
+            result = _fc._naver_news_facts(q, on_log)
+            if result:
+                parts.append(result)
 
-        blog = _fc._naver_blog_facts(q, on_log)
-        if blog:
-            parts.append(blog)
+        elif src == "blog":
+            result = _fc._naver_blog_facts(q, on_log)
+            if result:
+                parts.append(result)
 
-    # 3. 공공API도 병행 (복지/여행 블로그)
-    from public_api import fetch_context_for_blog
-    api_kw = _fc._core_keyword(keyword)
-    pub = fetch_context_for_blog(blog_id, api_kw, on_log=on_log)
-    if pub and len(pub) > 50:
-        parts.insert(0, pub)  # 공공API 결과를 앞에 배치 (신뢰도 높음)
+        elif src == "public":
+            if not public_done:
+                from public_api import fetch_context_for_blog
+                result = fetch_context_for_blog(blog_id, q, on_log=on_log)
+                if result and len(result) > 50:
+                    parts.insert(0, result)
+                    public_done = True
+
+    # 3. 공공API 자동 보완 — Claude가 요청 안 했어도 복지/여행 블로그는 항상 시도
+    if not public_done and blog_id in ("baremi542", "nolja100", "triplog",
+                                        "blogspot_travel", "salim1su", "woll100"):
+        from public_api import fetch_context_for_blog
+        api_kw = _fc._core_keyword(keyword)
+        pub = fetch_context_for_blog(blog_id, api_kw, on_log=on_log)
+        if pub and len(pub) > 50:
+            parts.insert(0, pub)
+            log("[리서치] 공공API 자동 보완 완료")
 
     if not parts:
         log("[리서치] 수집 실패 — 컨텍스트 없음")
-        return {"context": "", "success": False, "queries": queries}
+        return {"context": "", "success": False, "queries": query_names}
 
+    src_summary = ", ".join(f"{q}({s})" for q, s in plan)
     context = (
         f"## '{keyword}' 관련 수집 정보\n"
-        f"검색어: {', '.join(queries)}\n"
+        f"검색: {src_summary}\n"
         f"아래 내용을 참고해 글을 작성하세요. "
         f"수치·사실만 추출해 자신의 문체로 재작성하고, 내용을 그대로 옮기지 마세요.\n"
         f"⚠️ 가격이 있으면 반드시 아래 데이터 범위 내에서만 작성하세요.\n\n"
@@ -140,4 +181,4 @@ def run(keyword: str, blog_id: str, on_log=None) -> dict:
     )
 
     log(f"[리서치] ✓ 완료 — {len(parts)}개 소스, {len(context)}자")
-    return {"context": context, "success": True, "queries": queries}
+    return {"context": context, "success": True, "queries": query_names}
