@@ -121,9 +121,24 @@ _IT_PRODUCT_TRIGGERS = [
     "프리티케어", "다이슨", "샤오미", "드론",
 ]
 
+# 정보/방법 의도 키워드 — 제품명이 있어도 쇼핑이 아닌 정보 검색이 필요한 경우
+_INFO_INTENT = [
+    "방법", "설정", "사용법", "사용방법", "해결", "문제", "오류", "안됨", "안되는",
+    "연결", "초기화", "삭제", "복구", "업데이트", "설치", "제거", "확인",
+    "차이", "비교", "추천이유", "장단점", "단점", "장점", "후기", "리뷰",
+    "발열", "배터리", "소음", "속도", "느려", "렉", "버그",
+    "알림", "알람", "백업", "동기화", "공유", "전송",
+]
+
 def _is_it_product(keyword: str) -> bool:
+    """IT 제품 키워드이고, 정보/방법 의도가 아닌 경우만 True (쇼핑 API 대상)."""
     kw = keyword.lower()
-    return any(t.lower() in kw for t in _IT_PRODUCT_TRIGGERS)
+    if not any(t.lower() in kw for t in _IT_PRODUCT_TRIGGERS):
+        return False
+    # 정보/방법 의도면 쇼핑 API 불필요
+    if any(i in kw for i in _INFO_INTENT):
+        return False
+    return True
 
 
 def _naver_api(endpoint: str, query: str, display: int = 5,
