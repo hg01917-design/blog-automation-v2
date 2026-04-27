@@ -720,24 +720,33 @@ def _post_tistory(account, title, body_html, tags=None,
                     _diag(f"[포스팅] 이미지 {idx} 업로드 실패 — 스킵")
             else:
                 _diag(f"[포스팅] 이미지 {idx} placeholder 없음 — {placed}")
-                # 썸네일(0번)은 placeholder 없어도 본문 맨 앞에 강제 삽입
+                # 썸네일(0번)은 placeholder 없어도 본문 맨 앞에 강제 삽입 (재시도 3회)
                 if idx == 0:
-                    _diag("[포스팅] 썸네일 slot 0 미탐지 — 본문 첫 번째 단락 앞에 강제 삽입")
-                    page.evaluate("""() => {
-                        const ed = tinymce.activeEditor;
-                        const body = ed.getBody();
-                        const first = body.firstElementChild;
-                        if (!first) return;
-                        const range = ed.getDoc().createRange();
-                        range.setStart(first, 0);
-                        range.collapse(true);
-                        ed.selection.setRng(range);
-                        ed.focus();
-                    }""")
-                    ok = _tistory_upload_image(page, img_path, alt, on_log=log)
-                    if ok:
-                        _diag("[포스팅] 썸네일 강제 삽입 완료")
-                        _thumb_uploaded = True
+                    _diag("[포스팅] 썸네일 slot 0 미탐지 — 본문 맨 앞에 강제 삽입 시도")
+                    for _try in range(3):
+                        try:
+                            page.evaluate("""() => {
+                                const ed = tinymce.activeEditor;
+                                const body = ed.getBody();
+                                // 본문 맨 앞에 빈 단락 추가 후 커서 이동
+                                const p = ed.getDoc().createElement('p');
+                                p.setAttribute('data-ke-size', 'size19');
+                                p.innerHTML = '<br data-mce-bogus="1">';
+                                body.insertBefore(p, body.firstChild);
+                                const range = ed.getDoc().createRange();
+                                range.setStart(p, 0);
+                                range.collapse(true);
+                                ed.selection.setRng(range);
+                                ed.focus();
+                            }""")
+                            time.sleep(0.3)
+                            ok = _tistory_upload_image(page, img_path, alt, on_log=log)
+                            if ok:
+                                _diag(f"[포스팅] 썸네일 강제 삽입 완료 (시도 {_try+1})")
+                                _thumb_uploaded = True
+                                break
+                        except Exception as _fe:
+                            _diag(f"[포스팅] 썸네일 강제 삽입 시도 {_try+1} 실패: {_fe}")
 
         # ── 채워지지 않은 이미지 placeholder 제거 ──
         page.evaluate("""() => {
