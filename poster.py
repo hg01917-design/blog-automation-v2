@@ -655,14 +655,26 @@ def _post_tistory(account, title, body_html, tags=None,
         log("[포스팅] 본문 setContent 완료")
 
         # ── 이미지 placeholder 위치에 업로드 ──
-        log(f"[포스팅] image_paths {len(image_paths)}개: keys={sorted(image_paths.keys())}")
+        _diag_path = "/tmp/blogauto_img_diag.log"
+        def _diag(msg):
+            log(msg)
+            try:
+                from datetime import datetime as _dt
+                with open(_diag_path, "a") as _f:
+                    _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
+            except Exception:
+                pass
+
+        _diag(f"[포스팅] image_paths {len(image_paths)}개: keys={sorted(image_paths.keys())}")
         _slot_debug = page.evaluate("""() => {
             const ed = window.tinymce && tinymce.activeEditor;
             if (!ed) return 'editor_not_found';
             const slots = ed.getBody().querySelectorAll('[data-img-slot]');
             return [...slots].map(s => s.getAttribute('data-img-slot')).join(',') || 'no_slots';
         }""")
-        log(f"[포스팅] TinyMCE data-img-slot 현황: {_slot_debug}")
+        _diag(f"[포스팅] TinyMCE data-img-slot 현황: {_slot_debug}")
+
+        _thumb_uploaded = False
         for idx in sorted(image_paths.keys()):
             img_path = image_paths[idx]
             alt = next((info.get("alt", "") for info in image_infos if info["index"] == idx), "")
@@ -682,10 +694,12 @@ def _post_tistory(account, title, body_html, tags=None,
                 return true;
             }}""")
             if placed is True or placed == True:
-                log(f"[포스팅] 이미지 {idx} 업로드: {Path(img_path).name}")
+                _diag(f"[포스팅] 이미지 {idx} 업로드: {Path(img_path).name}")
                 ok = _tistory_upload_image(page, img_path, alt, on_log=log)
                 if ok:
-                    log(f"[포스팅] 이미지 {idx} 업로드 완료")
+                    _diag(f"[포스팅] 이미지 {idx} 업로드 완료")
+                    if idx == 0:
+                        _thumb_uploaded = True
                     # 커서를 본문 끝으로 복구
                     page.evaluate("""() => {
                         const ed = tinymce.activeEditor;
@@ -703,9 +717,9 @@ def _post_tistory(account, title, body_html, tags=None,
                     }""")
                     time.sleep(0.3)
                 else:
-                    log(f"[포스팅] 이미지 {idx} 업로드 실패 — 스킵")
+                    _diag(f"[포스팅] 이미지 {idx} 업로드 실패 — 스킵")
             else:
-                log(f"[포스팅] 이미지 {idx} placeholder 없음 — {placed}")
+                _diag(f"[포스팅] 이미지 {idx} placeholder 없음 — {placed}")
 
         # ── 채워지지 않은 이미지 placeholder 제거 ──
         page.evaluate("""() => {
@@ -716,8 +730,10 @@ def _post_tistory(account, title, body_html, tags=None,
             ed.fire('change');
         }""")
 
-        # ── 썸네일(index 0)이 업로드됐으면 대표이미지로 설정 ──
-        if 0 in image_paths and Path(image_paths[0]).exists():
+        # ── 썸네일(index 0) 대표이미지 설정 ──
+        # 업로드 성공 시 파일이 삭제되므로 exists() 체크 대신 업로드 성공 플래그 사용
+        if _thumb_uploaded:
+            _diag("[포스팅] 썸네일 대표이미지 설정 시작")
             time.sleep(1)
             _tistory_set_thumbnail(page, log_fn=log)
 
