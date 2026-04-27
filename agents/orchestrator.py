@@ -414,7 +414,8 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
                 # 도입부 끝(첫 번째 소제목 앞)에 {{이미지0}} 삽입 — 본문에 썸네일 표시
                 _body = result.get("body", "")
                 if _body and "{{이미지0}}" not in _body:
-                    _h2 = re.search(r'^\s*#{1,3}\s|\[H2\]', _body, re.MULTILINE)
+                    # [이미지N] 블록 안의 [H2]를 잡지 않도록 줄 시작(^) 앵커 필수
+                    _h2 = re.search(r'^\s*(#{1,3}\s|\[H2\])', _body, re.MULTILINE)
                     _ins = _h2.start() if _h2 else len(_body)
                     result["body"] = (
                         _body[:_ins].rstrip() + "\n\n{{이미지0}}\n\n" + _body[_ins:].lstrip()
