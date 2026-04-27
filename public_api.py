@@ -358,12 +358,25 @@ def fetch_bokjiro_context(keyword: str, on_log=None) -> str:
              "얼마", "몇", "어떤", "누구", "언제", "어디", "왜", "어떻게",
              "받을", "받나", "있나", "있어", "있는", "수", "되나", "되는",
              "하는", "하나", "인지", "인가", "할까", "해야", "인데", "이고"}
-    # 복지 용어 단축 정규화 (API 제목 검색 호환)
+    # 복지 용어 정규화 — API 서비스명과 일치하는 검색어로 변환
     _welfare_norm = {
-        "차상위계층": "차상위", "기초생활수급자": "기초수급", "기초수급자": "기초수급",
-        "의료급여수급자": "의료급여", "장애인복지": "장애인", "노인복지": "노인",
+        # 기초생활 관련: API에 "생계급여"로 등록돼 있음
+        "기초생활수급자": "생계급여", "기초수급자": "생계급여", "기초생활": "생계급여",
+        "기초수급": "생계급여",
+        # 차상위
+        "차상위계층": "차상위",
+        # 급여 유형 (그대로 사용해도 검색됨)
+        "의료급여수급자": "의료급여",
+        # 기타 대상 그룹
+        "장애인복지": "장애인", "노인복지": "노인",
         "한부모가족": "한부모", "다문화가족": "다문화", "청소년복지": "청소년",
     }
+
+    # 실업급여·고용보험 계열은 복지로가 아닌 고용24 영역 → 빈 문자열 반환
+    _employment_keywords = ["실업급여", "구직급여", "고용보험", "실업인정"]
+    if any(ek in keyword for ek in _employment_keywords):
+        log(f"[복지로API] '{keyword}' — 고용보험 영역, 복지로 API 스킵")
+        return ""
 
     cleaned = _strip.sub("", keyword).strip()
     words = [w for w in cleaned.split() if len(w) >= 2 and w not in _stop]
@@ -937,13 +950,16 @@ def fetch_context_for_blog(blog_id: str, keyword: str, on_log=None) -> str:
     if blog_id in {"nolja100", "triplog"}:
         # 여행 블로그: 관광지 + 숙박 + 음식점 + 축제 통합 정보
         return fetch_travel_context(keyword, on_log=on_log)
-    elif blog_id in {"baremi542", "salim1su"}:
+    elif blog_id == "baremi542":
+        # 정부지원 전용 블로그 — 항상 복지로 API 시도, 실패 시 정부24 폴백
+        if BOKJIRO_KEY:
+            ctx = fetch_bokjiro_context(keyword, on_log=on_log)
+            if ctx:
+                return ctx
+        return fetch_gov_service_context(keyword, on_log=on_log)
+    elif blog_id == "salim1su":
         welfare_hints = ["지원", "혜택", "신청", "급여", "보조", "복지", "정책", "수당", "바우처"]
         if any(h in keyword for h in welfare_hints):
-            if blog_id == "baremi542" and BOKJIRO_KEY:
-                # baremi542: 복지로 API 우선 (지역 복지 포함), 실패 시 정부24 폴백
-                ctx = fetch_bokjiro_context(keyword, on_log=on_log)
-                return ctx if ctx else fetch_gov_service_context(keyword, on_log=on_log)
             return fetch_gov_service_context(keyword, on_log=on_log)
     elif blog_id == "goodisak":
         # IT 블로그: 네이버 쇼핑 API로 실제 제품 정보 수집 (복지 API 제외)

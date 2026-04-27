@@ -759,14 +759,13 @@ def _generate_pillow_thumbnail(blog_id: str, keyword: str, thumb_path: str, on_l
 
 
 def generate_thumbnail(blog_id: str, keyword: str, title: str, on_log=None) -> str | None:
-    """썸네일 1장 별도 생성 + 제목 오버레이 적용. 성공 시 파일 경로 반환."""
+    """썸네일 1장 별도 생성 + 제목 오버레이 적용. 성공 시 파일 경로 반환.
+
+    Pillow 그라디언트 배경을 기본으로 사용. AI 이미지 생성 없음.
+    """
     def log(msg):
         if on_log:
             on_log(msg)
-
-    style = _get_prompt_style(blog_id, keyword)
-    composition = _COMPOSITION_VARIANTS[0]  # 썸네일은 wide shot 고정
-    thumb_prompt = f"{keyword} representative thumbnail image, {composition}, {style}"
 
     output_dir = IMAGES_DIR / blog_id
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -775,55 +774,7 @@ def generate_thumbnail(blog_id: str, keyword: str, title: str, on_log=None) -> s
     thumb_filename = f"thumb-{safe_kw}-{int(time.time()) % 100000}.jpg"
     thumb_path = str(output_dir / thumb_filename)
 
-    is_gemini_only = blog_id in ("salim1su", "me1091")
-    success = False
-
-    if is_gemini_only:
-        try:
-            from gemini_image import generate_images as _gemini_gen
-            thumb_infos = [{"index": 1, "prompt": thumb_prompt, "filename": thumb_filename, "alt": keyword}]
-            res = _gemini_gen(thumb_infos, on_log=log, skip_webp=True, output_dir=output_dir)
-            if res and 1 in res:
-                thumb_path = res[1]
-                success = True
-                log(f"[썸네일] Gemini 생성 완료")
-        except Exception as e:
-            log(f"[썸네일] Gemini 실패: {e}")
-
-    if not success:
-        try:
-            from bing_image import generate_images_bing as _bing_gen
-            thumb_infos = [{"index": 1, "prompt": thumb_prompt, "filename": thumb_filename, "alt": keyword}]
-            res = _bing_gen(thumb_infos, on_log=log, output_dir=output_dir)
-            if res and 1 in res:
-                thumb_path = res[1]
-                success = True
-                log(f"[썸네일] Bing 생성 완료")
-        except Exception as e:
-            log(f"[썸네일] Bing 실패: {e}")
-
-    if not success:
-        success = _pollinations_image(thumb_prompt, thumb_path, on_log=log)
-        if success:
-            log(f"[썸네일] Pollinations 생성 완료")
-
-    if not success:
-        try:
-            from gemini_image import generate_images as _gemini_gen
-            thumb_infos = [{"index": 1, "prompt": thumb_prompt, "filename": thumb_filename, "alt": keyword}]
-            res = _gemini_gen(thumb_infos, on_log=log, skip_webp=False, output_dir=output_dir)
-            if res and 1 in res:
-                thumb_path = res[1]
-                success = True
-                log(f"[썸네일] Gemini 폴백 생성 완료")
-        except Exception as e:
-            log(f"[썸네일] Gemini 폴백 실패: {e}")
-
-    # 최후 폴백: Pillow 그라디언트 배경 (네트워크 불필요)
-    if not success:
-        success = _generate_pillow_thumbnail(blog_id, keyword, thumb_path, on_log=log)
-        if success:
-            log(f"[썸네일] Pillow 로컬 생성 완료")
+    success = _generate_pillow_thumbnail(blog_id, keyword, thumb_path, on_log=log)
 
     if success and Path(thumb_path).exists():
         add_title_overlay(thumb_path, title, blog_id=blog_id, on_log=log)

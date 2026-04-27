@@ -334,7 +334,45 @@ def _apply_corrections(body: str, corrections: list) -> str:
     return body
 
 
-# ── 5. 메인 진입점 ───────────────────────────────────────────────────────────
+# ── 5. 제품명 추출 ──────────────────────────────────────────────────────────
+
+# 알려진 제품 브랜드·모델 패턴 (순서 중요: 구체적인 것 먼저)
+_PRODUCT_PATTERNS = [
+    # 모델명 포함 (브랜드 + 모델)
+    r'(LG\s*그램\s*\d+(?:인치|형)?)',
+    r'(갤럭시\s*북\s*\S+)',
+    r'(갤럭시\s*[A-Z]\d+[^\s,。\.]*)',
+    r'(아이폰\s*\d+\s*(?:프로\s*맥스|프로|플러스)?)',
+    r'(맥북\s*(?:프로|에어)\s*\d+(?:인치|형)?)',
+    r'(아이패드\s*\S+)',
+    r'(에어팟\s*\S+)',
+    r'(삼성\s*\S+\s*(?:노트북|모니터|TV|냉장고|세탁기))',
+    r'(LG\s*\S+\s*(?:TV|모니터|냉장고|세탁기|스타일러))',
+    # 일반 제품 카테고리
+    r'([가-힣A-Za-z0-9]+\s*(?:노트북|랩탑|스마트폰|태블릿|이어폰|헤드폰|스피커|청소기|모니터|TV))',
+]
+_PRODUCT_RE = [re.compile(p, re.IGNORECASE) for p in _PRODUCT_PATTERNS]
+
+# 포맷 마커 제거용
+_FORMAT_RE = re.compile(r'\[/?[A-Za-z]+\]|\w*\]|\[.*|\*{1,3}|^#{1,6}\s*', re.MULTILINE)
+
+
+def _extract_product_name(ctx_text: str, keyword: str) -> str:
+    """컨텍스트 텍스트에서 제품명 패턴을 추출. 없으면 keyword 반환."""
+    clean = _FORMAT_RE.sub('', ctx_text).strip()
+    for pat in _PRODUCT_RE:
+        m = pat.search(clean)
+        if m:
+            name = m.group(1).strip()
+            if 3 < len(name) < 30:
+                return name
+    # 패턴 없음 → 메인 키워드의 핵심 단어만 사용
+    # keyword에서 조사/접미사 제거 후 반환
+    core = re.sub(r'\s*(가격|비용|요금|구매|후기|추천|비교|정보|종류|특징)\s*$', '', keyword).strip()
+    return core if core else keyword
+
+
+# ── 6. 메인 진입점 ───────────────────────────────────────────────────────────
 
 def run(body: str, keyword: str, blog_name: str = "", on_log=None) -> dict:
     """팩트체크 실행.
@@ -373,26 +411,13 @@ def run(body: str, keyword: str, blog_name: str = "", on_log=None) -> dict:
     corrections = []
     try:
         for claim in price_claims[:3]:  # 최대 3건 (시간 제한)
-            # 가격 앞 80자 컨텍스트에서 제품명 추출
-            ctx_start = max(0, claim["start"] - 80)
-            ctx_text = body[ctx_start:claim["start"]].strip()
-            # 마지막 문장 단위로 자르기 (쉼표/마침표/줄바꿈 기준)
-            product_query = re.split(r"[,\.。\n]", ctx_text)[-1].strip()
-            # 포맷 마커 제거: [BOLD], [/BOLD], 잘린 태그(D] 등), **bold**, ## heading
-            product_query = re.sub(r'\[/?[A-Za-z]+\]', '', product_query)  # 완전한 태그
-            product_query = re.sub(r'\w*\]', '', product_query)             # 잘린 태그 끝부분
-            product_query = re.sub(r'\[.*', '', product_query)              # 잘린 태그 시작부분
-            product_query = re.sub(r'\*{1,3}', '', product_query)
-            product_query = re.sub(r'^#{1,6}\s*', '', product_query)
-            product_query = product_query.strip()
-            # 한국어 문법 조사·어미 제거 (예: "렌탈은 월", "가격이", "비용은")
-            product_query = re.sub(
-                r'\s+\S*(은|는|이|가|을|를|의|에서|에|로|렌탈은?|월|가격은?|비용은?|요금은?|구입은?)\s*$',
-                '', product_query
-            ).strip()
-            # 제품명으로 너무 짧거나 오염된 경우 keyword 사용
-            search_query = product_query if len(product_query) > 3 else keyword
-            log(f"[팩트체크] 검색어: '{search_query}' (원문: '{ctx_text[-20:]}')")
+            # 가격 앞뒤 120자에서 제품명 패턴으로 추출
+            ctx_start = max(0, claim["start"] - 120)
+            ctx_end = min(len(body), claim["start"] + 30)
+            ctx_text = body[ctx_start:ctx_end]
+
+            search_query = _extract_product_name(ctx_text, keyword)
+            log(f"[팩트체크] 검색어: '{search_query}' (원문: '{ctx_text[-30:]}')")
 
             actual_prices = _fetch_actual_prices(browser, search_query, blog_name, keyword, on_log, claim_value=claim["value"])
 
