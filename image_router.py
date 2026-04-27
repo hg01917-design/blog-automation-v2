@@ -131,14 +131,28 @@ def add_title_overlay(img_path: str, title: str, blog_id: str = "", on_log=None)
                 _shadow(draw, ((W-lw)//2, y), line, font); y += lh+12
 
         elif blog_id == "goodisak":
-            # 우측 네이비 세로 배너 (IT/금융) — 픽셀 기준 wrapping
+            # 우측 네이비 세로 배너 (IT/금융)
             bw = int(W * .40)
             font = _font(max(36, int(W * .058)))
             ov = Image.new("RGBA", img.size, (0,0,0,0))
             ImageDraw.Draw(ov).rectangle([(W-bw,0),(W,H)], fill=(20,25,55,210))
             merged = Image.alpha_composite(img, ov)
             draw = ImageDraw.Draw(merged)
-            wrapped = _wrap_pixels(draw, _extract_core(title, 14), font, bw - 28)[:3]
+            # 단어 단위 줄바꿈: 공백으로 split → 첫 3단어 각각 한 줄
+            # (픽셀 단위 split은 공백이 줄 끝에 남아 어색한 배치 발생)
+            _core = _extract_core(title, 15)
+            _words = _core.split()[:3]
+            if len(_words) >= 2:
+                # 단어별로 한 줄 (각 단어가 배너 폭보다 길면 픽셀 split 폴백)
+                wrapped = []
+                for w in _words:
+                    if draw.textbbox((0,0), w, font=font)[2] <= bw - 28:
+                        wrapped.append(w)
+                    else:
+                        wrapped.extend(_wrap_pixels(draw, w, font, bw - 28)[:2])
+                wrapped = wrapped[:3]
+            else:
+                wrapped = _wrap_pixels(draw, _words[0] if _words else _core, font, bw - 28)[:3]
             lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
             total_h = sum(lhs)+(len(wrapped)-1)*12; y=(H-total_h)//2
             for line in wrapped:
