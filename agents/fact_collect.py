@@ -235,26 +235,42 @@ def _naver_news_facts(keyword: str, on_log=None) -> str:
 
 
 def _naver_blog_facts(keyword: str, on_log=None) -> str:
-    """네이버 블로그 검색 API → 최신 리뷰·정보 요약 (제목+내용 발췌)."""
+    """네이버 블로그 검색 API → 유사도순 정렬, 키워드 관련 글만 필터링."""
     def log(msg):
         if on_log: on_log(msg)
 
-    items = _naver_api("blog", keyword, display=5, extra_params="&sort=date", on_log=on_log)
+    # sort=sim: 유사도 정렬 (관련성 높은 순) — date는 스팸 광고 글이 최상위에 뜸
+    items = _naver_api("blog", keyword, display=10, extra_params="&sort=sim", on_log=on_log)
     if not items:
         log(f"[팩트수집] 네이버블로그 결과 없음: '{keyword}'")
         return ""
 
-    lines = [f"## 네이버 블로그 최신 정보 (키워드: {keyword})"]
-    for item in items[:4]:
-        title   = re.sub(r"<[^>]+>", "", item.get("title", "")).strip()
-        desc    = re.sub(r"<[^>]+>", "", item.get("description", "")).strip()
-        date    = item.get("postdate", "")
+    # 검색 핵심어 추출 (2글자 이상 단어)
+    core_words = [w for w in re.split(r"\s+", keyword) if len(w) >= 2]
+
+    filtered = []
+    for item in items:
+        title = re.sub(r"<[^>]+>", "", item.get("title", "")).strip()
+        desc  = re.sub(r"<[^>]+>", "", item.get("description", "")).strip()
+        combined = title + " " + desc
+        # 핵심어 중 하나라도 제목+본문에 포함된 것만 사용
+        if any(w in combined for w in core_words):
+            filtered.append((title, desc, item.get("postdate", "")))
+        if len(filtered) >= 4:
+            break
+
+    if not filtered:
+        log(f"[팩트수집] 네이버블로그 관련 글 없음: '{keyword}'")
+        return ""
+
+    lines = [f"## 네이버 블로그 정보 (키워드: {keyword})"]
+    for title, desc, date in filtered:
         if title:
             lines.append(f"\n### {title} ({date})")
         if desc:
             lines.append(desc[:300])
 
-    log(f"[팩트수집] 네이버블로그 {len(items)}개 수집 완료")
+    log(f"[팩트수집] 네이버블로그 {len(filtered)}개 수집 완료")
     return "\n".join(lines)
 
 
