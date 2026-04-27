@@ -655,6 +655,14 @@ def _post_tistory(account, title, body_html, tags=None,
         log("[포스팅] 본문 setContent 완료")
 
         # ── 이미지 placeholder 위치에 업로드 ──
+        log(f"[포스팅] image_paths {len(image_paths)}개: keys={sorted(image_paths.keys())}")
+        _slot_debug = page.evaluate("""() => {
+            const ed = window.tinymce && tinymce.activeEditor;
+            if (!ed) return 'editor_not_found';
+            const slots = ed.getBody().querySelectorAll('[data-img-slot]');
+            return [...slots].map(s => s.getAttribute('data-img-slot')).join(',') || 'no_slots';
+        }""")
+        log(f"[포스팅] TinyMCE data-img-slot 현황: {_slot_debug}")
         for idx in sorted(image_paths.keys()):
             img_path = image_paths[idx]
             alt = next((info.get("alt", "") for info in image_infos if info["index"] == idx), "")
@@ -662,8 +670,9 @@ def _post_tistory(account, title, body_html, tags=None,
             placed = page.evaluate(f"""() => {{
                 const ed = tinymce.activeEditor;
                 const body = ed.getBody();
+                const allSlots = [...body.querySelectorAll('[data-img-slot]')].map(s=>s.getAttribute('data-img-slot')).join(',');
                 const p = body.querySelector('[data-img-slot="{idx}"]');
-                if (!p) return false;
+                if (!p) return 'missing:slots=[' + allSlots + ']';
                 const range = ed.getDoc().createRange();
                 range.selectNode(p);
                 ed.selection.setRng(range);
@@ -672,7 +681,7 @@ def _post_tistory(account, title, body_html, tags=None,
                 ed.fire('change');
                 return true;
             }}""")
-            if placed:
+            if placed is True or placed == True:
                 log(f"[포스팅] 이미지 {idx} 업로드: {Path(img_path).name}")
                 ok = _tistory_upload_image(page, img_path, alt, on_log=log)
                 if ok:
@@ -696,7 +705,7 @@ def _post_tistory(account, title, body_html, tags=None,
                 else:
                     log(f"[포스팅] 이미지 {idx} 업로드 실패 — 스킵")
             else:
-                log(f"[포스팅] 이미지 {idx} placeholder 없음 — 스킵")
+                log(f"[포스팅] 이미지 {idx} placeholder 없음 — {placed}")
 
         # ── 채워지지 않은 이미지 placeholder 제거 ──
         page.evaluate("""() => {
