@@ -53,6 +53,8 @@ def add_title_overlay(img_path: str, title: str, blog_id: str = "", on_log=None)
 
         def _extract_core(t, max_len=18):
             core = re.split(r'[—·｜]', t)[0].strip()
+            # 해시태그 기호 제거 (#단어 → 단어)
+            core = re.sub(r'#\s*', '', core).strip()
             if len(core) <= max_len:
                 return core
             words = core.split()
@@ -185,11 +187,14 @@ def add_title_overlay(img_path: str, title: str, blog_id: str = "", on_log=None)
                 d.line([(0,H//2+i),(W,H//2+i)], fill=(30,20,60,int(200*(i/(H//2))**1.5)))
             merged = Image.alpha_composite(img, ov)
             draw = ImageDraw.Draw(merged)
-            draw.text((W//2, H-int(H*.20)), "# 여행일기", font=sf, fill=(180,200,255,210), anchor="mm")
+            # 메인 텍스트 먼저 계산해서 태그가 겹치지 않게 배치
             wrapped = _wrap_pixels(draw, core, font, W - 80)[:2]
             lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
-            total_h = sum(lhs)+(len(wrapped)-1)*10; y=H-int(H*.16)-total_h
-            _draw_lines(draw, wrapped, font, W, y, gap=10)
+            total_h = sum(lhs)+(len(wrapped)-1)*10
+            text_top = H - int(H*.08) - total_h
+            # #여행일기 태그는 메인 텍스트 위에 20px 간격
+            draw.text((W//2, text_top - 30), "# 여행일기", font=sf, fill=(180,200,255,200), anchor="mm")
+            _draw_lines(draw, wrapped, font, W, text_top, gap=10)
 
         elif blog_id == "salim1su":
             # 상단 핑크 리본 + ✨살림정보 태그
@@ -739,14 +744,14 @@ def _generate_pillow_thumbnail(blog_id: str, keyword: str, thumb_path: str, on_l
             b = int(c1[2] + (c2[2] - c1[2]) * t)
             draw.line([(0, y), (W, y)], fill=(r, g, b))
 
-        # 글로우 효과 (좌상단 + 우하단 보케)
+        # 글로우 효과 (좌상단 + 우하단 보케) — 은은하게 처리
         ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         d = ImageDraw.Draw(ov)
-        rg = int(W * 0.55)
-        gc = tuple(min(255, v + 45) for v in c2) + (55,)
-        d.ellipse([(-rg // 2, -rg // 2), (rg, rg)], fill=gc)
-        r2 = int(W * 0.38)
-        sc = tuple(min(255, v + 25) for v in c1) + (38,)
+        rg = int(W * 0.45)
+        gc = tuple(min(255, v + 35) for v in c2) + (35,)
+        d.ellipse([(-rg // 3, -rg // 3), (rg, rg)], fill=gc)
+        r2 = int(W * 0.30)
+        sc = tuple(min(255, v + 20) for v in c1) + (28,)
         d.ellipse([(W - r2, H - r2), (W + r2 // 2, H + r2 // 2)], fill=sc)
 
         img_final = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
