@@ -45,7 +45,7 @@ DEFAULT_BLOG_ORDER = [
     "blogspot_travel", "blogspot_it", "blogspot_daily",
 ]
 
-MAX_WRITER_RETRIES = 1      # 검수 불합격 시 재생성 (1=재생성 없이 바로 발행)
+MAX_WRITER_RETRIES = 2      # 검수 불합격 시 재생성 횟수
 
 # 블로그 ID → 전용 에이전트 모듈명 매핑
 BLOG_AGENT_MAP = {
@@ -331,6 +331,12 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
                 break
 
             issues = review["issues"]
+
+            # 주제 불일치(키워드 없음)는 패치 불가 — 다음 루프에서 재생성
+            if any("메인키워드" in i for i in issues):
+                log(f"[오케스트레이터] 주제 불일치 감지 — 재생성 시도")
+                result = None
+                continue
 
             # 1차 수정: 단순 패턴 치환 (빠름)
             fixed = fix_agent.run(review["result"], issues, blog_id, on_log=log)
