@@ -26,7 +26,6 @@ REPLACEMENTS = {
     "ChatGPT": "챗GPT",
     "LLM": "대형 언어 모델",
     "AI": "인공지능",
-    # 최종 검토 에이전트(Claude.ai)가 거부하는 AI 패턴 추가
     "결론적으로": "결국",
     "종합적으로": "전반적으로 보면",
     "다양한 측면에서": "여러 면에서",
@@ -38,7 +37,31 @@ REPLACEMENTS = {
     "설명해드리겠습니다": "설명할게요",
     "도움이 되셨으면 합니다": "도움이 됐으면 해요",
     "도움이 되길 바랍니다": "도움이 됐으면 해요",
+    # 강조 남발 패턴
+    "가장 중요해요": "중요해요",
+    "가장 중요합니다": "중요합니다",
+    "정말 중요해요": "중요해요",
+    "정말 중요합니다": "중요합니다",
+    "매우 중요해요": "중요해요",
+    "매우 중요합니다": "중요합니다",
+    # 설명조 어미
+    "충분히 합리적이에요": "합리적이에요",
+    "충분히 합리적입니다": "합리적입니다",
+    "충분히 만족스러워요": "만족스러워요",
+    "충분히 만족스럽습니다": "만족스럽습니다",
+    "라고 할 수 있어요": "예요",
+    "라고 할 수 있습니다": "입니다",
+    "인 셈이에요": "예요",
+    "인 셈입니다": "입니다",
+    # 살펴보는 → 비교하는
+    "살펴보는 습관": "비교하는 습관",
 }
+
+# 제목에서 제거할 금지 패턴
+_TITLE_BANNED = [
+    "완전 정리", "완전정리", "완벽 정리", "완벽정리",
+    "총정리", "완벽 가이드", "완벽가이드",
+]
 
 
 def pre_clean(result: dict, blog_id: str, on_log=None) -> dict:
@@ -49,8 +72,10 @@ def pre_clean(result: dict, blog_id: str, on_log=None) -> dict:
 
     whitelist = BLOG_WHITELIST.get(blog_id, set())
     body = result["body"]
+    title = result.get("title", "")
     fixed_count = 0
 
+    # 본문 패턴 치환
     for pattern, replacement in REPLACEMENTS.items():
         if pattern in whitelist:
             continue
@@ -58,10 +83,18 @@ def pre_clean(result: dict, blog_id: str, on_log=None) -> dict:
             body = body.replace(pattern, replacement)
             fixed_count += 1
 
+    # 제목 금지 패턴 제거
+    for banned in _TITLE_BANNED:
+        if banned in title:
+            title = title.replace(banned, "").strip(" -·|/").strip()
+            fixed_count += 1
+            log(f"[fix] 제목에서 금지 패턴 제거: '{banned}'")
+
     if fixed_count > 0:
-        log(f"[fix] 사전 정제: {fixed_count}개 AI 패턴 치환 완료")
+        log(f"[fix] 사전 정제: {fixed_count}개 패턴 치환 완료")
         result = dict(result)
         result["body"] = body
+        result["title"] = title
 
     return result
 
