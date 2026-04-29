@@ -117,18 +117,25 @@ def _expand_keyword(keyword: str, on_log=None) -> str:
 
     expand_prompt = (
         f"키워드: {keyword}\n"
-        "이 키워드로 네이버 블로그에 쓸 수 있는 세부 롱테일 키워드 5개 뽑아줘.\n"
-        "조건: 실제 검색할 것 같은 표현, 중복 의미 없이, 번호 없이 한 줄에 하나씩만"
+        "이 키워드로 네이버 블로그에 쓸 수 있는 세부 롱테일 키워드 5개만 뽑아줘.\n"
+        "조건: 실제 검색할 것 같은 자연스러운 표현, 번호 없이 한 줄에 하나씩만, 다른 설명 없이 키워드만"
     )
 
     try:
-        response = generate_text(expand_prompt, blog_id=BLOG_ID, keyword=keyword, on_log=log)
-        if not response or "추출 실패" in response:
+        from claude_direct import _run_claude
+        response = _run_claude(expand_prompt, timeout=30, model_key="haiku")
+        if not response:
             log(f"[키워드확장] 응답 없음 — 원본 키워드 사용")
             return keyword
 
-        # 응답에서 첫 번째 비어있지 않은 줄 선택
-        lines = [line.strip() for line in response.strip().splitlines() if line.strip()]
+        # 응답에서 첫 번째 유효한 줄 선택 (=== 마커, 번호, 빈 줄 제외)
+        lines = [
+            line.strip() for line in response.strip().splitlines()
+            if line.strip()
+            and "===" not in line
+            and not line.strip()[0].isdigit()
+            and len(line.strip()) >= 5
+        ]
         if lines:
             expanded = lines[0]
             log(f"[키워드확장] '{keyword}' → '{expanded}'")
