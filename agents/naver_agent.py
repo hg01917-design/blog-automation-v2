@@ -121,9 +121,34 @@ def _parse_raw(raw, keyword, log):
             if len(tags) >= 10:
                 break
 
-    # 이미지 정보
+    # 이미지 정보 — ===이미지=== 섹션 또는 본문 내 [이미지N]...[/이미지N] 블록 모두 파싱
     images = []
-    if img_m:
+    # 본문 안의 [이미지N]...[/이미지N] 블록 우선 추출 (Claude Code CLI 인라인 형식)
+    _inline_imgs = re.findall(
+        r'\[(이미지(\d+)|썸네일)\](.*?)\[/(?:이미지\d+|썸네일)\]',
+        body, re.DOTALL
+    )
+    if _inline_imgs:
+        for full_match, digit_part, block in _inline_imgs:
+            idx = int(digit_part) if digit_part else 0
+            prompt = re.search(r'(?:Gemini|Ideogram|이미지|image|프롬프트)\s*프롬프트\s*[:：]\s*(.+)|프롬프트\s*[:：]\s*(.+)', block, re.IGNORECASE)
+            fname  = re.search(r'파일명\s*[:：]\s*(.+)', block)
+            alt_m2 = re.search(r'\balt\s*[:：]\s*(.+)', block, re.IGNORECASE)
+            if prompt:
+                p_text = (prompt.group(1) or prompt.group(2) or "").strip()
+                images.append({
+                    "index": idx if idx > 0 else (len(images) + 1),
+                    "prompt": p_text,
+                    "filename": fname.group(1).strip() if fname else f"img_{idx:02d}.jpg",
+                    "alt": alt_m2.group(1).strip() if alt_m2 else "",
+                })
+        # 본문에서 [이미지N]...[/이미지N] 블록 제거 (마커만 남김)
+        body = re.sub(
+            r'\[(이미지(\d+)|썸네일)\].*?\[/(?:이미지\d+|썸네일)\]',
+            lambda m: f'{{{{이미지{m.group(2) or "1"}}}}}',
+            body, flags=re.DOTALL
+        )
+    elif img_m:
         img_block = img_m.group(1)
         # [이미지N] 또는 [썸네일] 단위로 분할
         # [썸네일]은 index=0으로, [이미지N]은 N으로 처리

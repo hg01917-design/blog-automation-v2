@@ -250,15 +250,21 @@ def run(keyword: str = None, on_log=None, on_status=None, skip_images=False):
     # Gemini 이미지 생성 — H2 소제목 개수 + 썸네일 1개 기준으로 이미지 수 보정
     image_paths = {}
 
-    # H2 소제목(## 로 시작하는 줄) 개수 계산
-    h2_count = sum(1 for line in result["body"].splitlines() if line.startswith("## "))
+    # H2 소제목 개수 계산 — ## 마크다운 또는 [H2]...[/H2] 마커 모두 지원
+    _body_txt = result["body"]
+    h2_md = sum(1 for line in _body_txt.splitlines() if line.startswith("## "))
+    h2_tag = len(re.findall(r'\[H2\]', _body_txt))
+    h2_count = max(h2_md, h2_tag)
     required_count = h2_count + 1  # H2 개수 + 썸네일 1개
-    log(f"[작성] H2 소제목 {h2_count}개 감지 → 이미지 {required_count}개 필요")
+    log(f"[작성] H2 소제목 {h2_count}개 감지 (## {h2_md}개 / [H2] {h2_tag}개) → 이미지 {required_count}개 필요")
 
     # 파싱된 이미지 목록이 부족하면 H2 소제목 기반 프롬프트로 채우기
     if len(result["images"]) < required_count:
         shortage = required_count - len(result["images"])
-        h2_lines = [l.lstrip('#').strip() for l in result["body"].splitlines() if l.startswith("## ")]
+        # ## 또는 [H2] 소제목 텍스트 추출
+        h2_lines = [l.lstrip('#').strip() for l in _body_txt.splitlines() if l.startswith("## ")]
+        if not h2_lines:
+            h2_lines = re.findall(r'\[H2\](.*?)\[/H2\]', _body_txt)
         log(f"[작성] 이미지 프롬프트 부족 ({len(result['images'])}개) → {shortage}개 H2 기반 프롬프트 생성")
         for i in range(shortage):
             idx = len(result["images"]) + 1
