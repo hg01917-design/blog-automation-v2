@@ -299,6 +299,15 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
                 page.wait_for_load_state("networkidle", timeout=8000)
             except Exception:
                 page.wait_for_timeout(3000)
+            # 스크롤로 lazy-load 강제 완료 — 이전 세션 이미지가 뒤늦게 로드되어
+            # _dl_btn_count_before 스냅샷에 포함되지 않는 버그 방지
+            try:
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                page.wait_for_timeout(2000)
+                page.evaluate("window.scrollTo(0, 0)")
+                page.wait_for_timeout(1000)
+            except Exception:
+                pass
             log("[이미지] Gemini 새 세션 로드 완료")
         except Exception as e:
             log(f"[이미지] Gemini 페이지 이동 실패 ({e}) — 새 채팅 버튼 시도")
