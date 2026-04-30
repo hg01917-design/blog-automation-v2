@@ -348,28 +348,46 @@ _PRODUCT_PATTERNS = [
     r'(에어팟\s*\S+)',
     r'(삼성\s*\S+\s*(?:노트북|모니터|TV|냉장고|세탁기))',
     r'(LG\s*\S+\s*(?:TV|모니터|냉장고|세탁기|스타일러))',
-    # 일반 제품 카테고리
+    # 가전/IT 일반
     r'([가-힣A-Za-z0-9]+\s*(?:노트북|랩탑|스마트폰|태블릿|이어폰|헤드폰|스피커|청소기|모니터|TV))',
+    # 생활/살림 제품 (구연산, 베이킹소다 등)
+    r'(구연산(?:\s*\d+(?:g|kg|ml))?)',
+    r'(베이킹\s*소다(?:\s*\d+(?:g|kg))?)',
+    r'(과탄산\s*소다(?:\s*\d+(?:g|kg))?)',
+    r'(세탁\s*소다)',
+    r'(구연산\s*나트륨)',
+    r'([가-힣A-Za-z0-9]{2,8}\s*(?:세제|섬유유연제|방향제|탈취제|소독제|세정제))',
+    r'([가-힣A-Za-z0-9]{2,6}\s*\d+(?:g|kg|ml|L|리터))',  # 수량 표기 제품 (예: 구연산 500g)
 ]
 _PRODUCT_RE = [re.compile(p, re.IGNORECASE) for p in _PRODUCT_PATTERNS]
+
+# 쇼핑 검색어로 쓰기 부적합한 단어 (키워드 뒷부분 제거용)
+_SEARCH_STRIP_WORDS = {
+    "가격", "비용", "요금", "구매", "후기", "추천", "비교", "정보",
+    "종류", "특징", "방법", "하는법", "용도", "정리", "효과", "사용법",
+    "청소", "절약", "팁", "꿀팁", "총정리", "완벽", "알아보기",
+}
 
 # 포맷 마커 제거용
 _FORMAT_RE = re.compile(r'\[/?[A-Za-z]+\]|\w*\]|\[.*|\*{1,3}|^#{1,6}\s*', re.MULTILINE)
 
 
 def _extract_product_name(ctx_text: str, keyword: str) -> str:
-    """컨텍스트 텍스트에서 제품명 패턴을 추출. 없으면 keyword 반환."""
+    """컨텍스트 텍스트에서 제품명 패턴을 추출. 없으면 keyword 핵심어 반환."""
     clean = _FORMAT_RE.sub('', ctx_text).strip()
     for pat in _PRODUCT_RE:
         m = pat.search(clean)
         if m:
             name = m.group(1).strip()
-            if 3 < len(name) < 30:
+            if 2 < len(name) < 30:
                 return name
-    # 패턴 없음 → 메인 키워드의 핵심 단어만 사용
-    # keyword에서 조사/접미사 제거 후 반환
-    core = re.sub(r'\s*(가격|비용|요금|구매|후기|추천|비교|정보|종류|특징)\s*$', '', keyword).strip()
-    return core if core else keyword
+    # 패턴 미매칭 → 키워드에서 비검색 단어 제거 후 마지막 의미 단어 사용
+    words = keyword.split()
+    product_words = [w for w in words if w not in _SEARCH_STRIP_WORDS]
+    if product_words:
+        # 마지막 1~2단어 (구체적 상품명)
+        return " ".join(product_words[-2:]) if len(product_words) >= 2 else product_words[-1]
+    return words[0] if words else keyword
 
 
 # ── 6. 메인 진입점 ───────────────────────────────────────────────────────────
@@ -423,7 +441,8 @@ def run(body: str, keyword: str, blog_name: str = "", on_log=None) -> dict:
             actual_prices = _fetch_actual_prices(browser, search_query, blog_name, keyword, on_log, claim_value=claim["value"])
 
             # 결과 없으면 앞 2글자(지역명) 제거 후 재시도 — '성남에어컨청소' → '에어컨청소'
-            if not actual_prices and len(search_query) >= 5:
+            # 공백 없는 합성어에만 적용 (공백 있으면 이미 정제된 상품명)
+            if not actual_prices and ' ' not in search_query and len(search_query) >= 5:
                 fallback_query = search_query[2:]
                 if len(fallback_query) >= 3:
                     log(f"[팩트체크] 지역명 제거 재시도: '{fallback_query}'")
