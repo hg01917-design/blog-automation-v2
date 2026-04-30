@@ -294,6 +294,11 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
         try:
             page.goto(GEMINI_URL, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_timeout(3000)
+            # 채팅 히스토리 이미지가 모두 로드된 뒤 리스너를 달기 위해 networkidle 대기
+            try:
+                page.wait_for_load_state("networkidle", timeout=8000)
+            except Exception:
+                page.wait_for_timeout(3000)
             log("[이미지] Gemini 새 세션 로드 완료")
         except Exception as e:
             log(f"[이미지] Gemini 페이지 이동 실패 ({e}) — 새 채팅 버튼 시도")
@@ -393,6 +398,18 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     _SKIP_URL_TOKENS = ["favicon", "/icon-", "avatar", "/a/", "logo", "profile",
                         "sprite", "badge", "emoji"]
 
+    # 리스너 등록 전 현재 페이지에 이미 로드된 이미지 URL 기록
+    # (채팅 복원 시 이전 이미지 lazy-load가 _captured에 섞이지 않도록)
+    _preloaded_urls: set[str] = set()
+    try:
+        _preloaded_urls = set(page.evaluate("""() => {
+            return Array.from(document.querySelectorAll('img'))
+                .map(img => img.currentSrc || img.src)
+                .filter(Boolean);
+        }""") or [])
+    except Exception:
+        pass
+
     def _on_response(resp):
         if not _sent_at[0]:
             return
@@ -405,6 +422,10 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
                 return
             url = resp.url
             if any(t in url for t in _SKIP_URL_TOKENS):
+                return
+            # 이미 페이지에 로드된 이미지 URL은 채팅 히스토리 lazy-load → 무시
+            if url in _preloaded_urls:
+                log(f"[이미지] 기존 URL 스킵 (채팅 히스토리): {url[:60]}")
                 return
             body = resp.body()
             if len(body) < 10_000:   # 10KB 미만 아이콘·썸네일 제외
@@ -585,7 +606,8 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
 
     # ── 2차 폴백: 네트워크 캡처 이미지 저장 ──
     if not saved and _captured:
-        body, ct = _captured[-1]
+        # 캡처된 이미지 중 가장 큰 것 사용 (생성 이미지 > 채팅 히스토리 썸네일)
+        body, ct = max(_captured, key=lambda x: len(x[0]))
         try:
             img = Image.open(io.BytesIO(body))
             w, h = img.size
