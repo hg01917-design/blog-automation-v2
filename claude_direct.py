@@ -35,8 +35,8 @@ GEMINI_MODEL_IDS = {
 }
 
 def _current_model() -> str:
-    """WRITING_MODEL 환경변수로 선택된 모델 키 반환. 기본값: haiku"""
-    return os.environ.get("WRITING_MODEL", "haiku")
+    """WRITING_MODEL 환경변수로 선택된 모델 키 반환. 기본값: sonnet"""
+    return os.environ.get("WRITING_MODEL", "sonnet")
 
 
 def _get_claude_oauth_token() -> str:
