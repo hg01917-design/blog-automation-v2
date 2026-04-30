@@ -153,21 +153,32 @@ _NON_PRODUCT_WORDS = {
 
 
 def _extract_product_keyword(keyword: str) -> str:
-    """블로그 긴 키워드에서 쿠팡/네이버쇼핑 검색에 적합한 핵심 상품어를 추출.
+    """Claude AI가 블로그 키워드에서 쿠팡 쇼핑 검색에 맞는 핵심 상품어를 자율 판단.
 
     예: '욕실 물때 제거 베이킹소다' → '베이킹소다'
-        '세탁기 청소 세제'         → '세제'
-        '냉장고 정리 밀폐용기'     → '밀폐용기'
+    AI 실패 시 규칙 기반 폴백(마지막 1단어).
     """
+    # AI 자율 추출 시도
+    try:
+        from claude_direct import _run_claude
+        prompt = (
+            f"블로그 키워드 '{keyword}'에서 쿠팡 쇼핑 검색창에 입력할 핵심 상품명만 추출해줘.\n"
+            f"검색창에 실제로 입력할 단어 1~2개만 출력. 설명·번호·따옴표 없이 단어만."
+        )
+        result = _run_claude(prompt, timeout=30, model_key="haiku")
+        if result:
+            extracted = result.strip().splitlines()[0].strip().strip("'\"")
+            if extracted and len(extracted) >= 2:
+                return extracted
+    except Exception:
+        pass
+
+    # 폴백: 규칙 기반 (마지막 비동작어 단어)
     words = keyword.split()
     if len(words) <= 1:
         return keyword
-    # 비상품 동작어/형용사 제거
     product_words = [w for w in words if w not in _NON_PRODUCT_WORDS]
-    if not product_words:
-        product_words = words
-    # 마지막 1단어 (한국어 명사구는 끝 단어가 핵심 상품명)
-    return product_words[-1]
+    return (product_words or words)[-1]
 
 
 def get_affiliate_block(keyword: str, blog_id: str) -> str:
