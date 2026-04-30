@@ -555,8 +555,11 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
                 pass
             dl_btns = page.locator('[data-test-id="download-generated-image-button"]')
             total_dl = dl_btns.count()
-            # _dl_btn_count_before 이후에 추가된 첫 번째 버튼 클릭
-            new_btn_idx = _dl_btn_count_before if total_dl > _dl_btn_count_before else (total_dl - 1 if total_dl > 0 else 0)
+            # 새로 추가된 버튼이 없으면 이전 이미지 버튼 재클릭 방지 — 바로 네트워크 캡처 폴백
+            if total_dl <= _dl_btn_count_before:
+                log("[이미지] 새 다운로드 버튼 미생성 — 네트워크 캡처 폴백으로 전환")
+                raise Exception("no_new_button")
+            new_btn_idx = _dl_btn_count_before  # 새로 추가된 첫 번째 버튼
             dl_btn = dl_btns.nth(new_btn_idx)
             if dl_btn.is_visible(timeout=3000):
                 with page.expect_download(timeout=30000) as dl_info:

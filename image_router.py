@@ -839,10 +839,15 @@ def _naver_pillow_fallback(image_infos: list, output_dir, log) -> dict:
     except ImportError:
         log("[Router] Pillow 없음 — 폴백 불가")
         return {}
-    # 살림 블로그: 로즈핑크 그라디언트
-    c1, c2 = (100, 35, 45), (175, 75, 90)
+    # 살림 블로그: 인덱스별로 다른 색상 (동일 이미지 중복 방지)
+    _palettes = [
+        ((100, 35, 45), (175, 75, 90)),   # 로즈핑크
+        ((35, 60, 100), (75, 110, 175)),  # 스카이블루
+        ((50, 100, 55), (95, 160, 95)),   # 민트그린
+    ]
     for info in image_infos:
         idx = info["index"]
+        c1, c2 = _palettes[idx % len(_palettes)]
         filename = info.get("filename", f"img_{idx:02d}.jpg")
         filename = re.sub(r'[^\w\-.]', '-', filename)
         if not filename.endswith(".jpg"):
