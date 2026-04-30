@@ -372,8 +372,13 @@ _SEARCH_STRIP_WORDS = {
 _FORMAT_RE = re.compile(r'\[/?[A-Za-z]+\]|\w*\]|\[.*|\*{1,3}|^#{1,6}\s*', re.MULTILINE)
 
 
-def _extract_product_name(ctx_text: str, keyword: str) -> str:
-    """컨텍스트 텍스트에서 제품명 패턴을 추출. 없으면 keyword 핵심어 반환."""
+def _extract_product_name(ctx_text: str, keyword: str):
+    """컨텍스트 텍스트에서 제품명 추출. 상품이 없으면 None 반환 (팩트체크 스킵).
+
+    1단계: 정규식 패턴 매칭
+    2단계: Claude Haiku로 컨텍스트에서 상품명 자율 추출
+    3단계: 모두 실패 → None (이 가격 클레임은 스킵)
+    """
     clean = _FORMAT_RE.sub('', ctx_text).strip()
     for pat in _PRODUCT_RE:
         m = pat.search(clean)
@@ -381,13 +386,25 @@ def _extract_product_name(ctx_text: str, keyword: str) -> str:
             name = m.group(1).strip()
             if 2 < len(name) < 30:
                 return name
-    # 패턴 미매칭 → 키워드에서 비검색 단어 제거 후 마지막 의미 단어 사용
-    words = keyword.split()
-    product_words = [w for w in words if w not in _SEARCH_STRIP_WORDS]
-    if product_words:
-        # 마지막 1~2단어 (구체적 상품명)
-        return " ".join(product_words[-2:]) if len(product_words) >= 2 else product_words[-1]
-    return words[0] if words else keyword
+
+    # Claude Haiku로 컨텍스트에서 상품명 자율 추출
+    try:
+        from claude_direct import _run_claude
+        prompt = (
+            f"아래 블로그 문장에서 가격이 붙어있는 구체적인 상품명만 추출해줘.\n"
+            f"문장: '{clean[-120:]}'\n"
+            f"규칙: 상품명 1~3단어만 출력. 상품이 없거나 가격이 막연한 느낌·분위기 묘사면 'NONE'. "
+            f"설명·번호·따옴표 없이 단어만."
+        )
+        result = _run_claude(prompt, timeout=20, model_key="haiku")
+        if result:
+            extracted = result.strip().splitlines()[0].strip().strip("'\"")
+            if extracted and extracted.upper() != "NONE" and len(extracted) >= 2:
+                return extracted
+    except Exception:
+        pass
+
+    return None  # 상품명 미감지 → 이 가격 클레임 스킵
 
 
 # ── 6. 메인 진입점 ───────────────────────────────────────────────────────────
@@ -436,6 +453,9 @@ def run(body: str, keyword: str, blog_name: str = "", on_log=None) -> dict:
             ctx_text = body[ctx_start:ctx_end]
 
             search_query = _extract_product_name(ctx_text, keyword)
+            if search_query is None:
+                log(f"[팩트체크] 상품명 미감지 — 건너뜀 (원문: '{ctx_text[-30:]}')")
+                continue
             log(f"[팩트체크] 검색어: '{search_query}' (원문: '{ctx_text[-30:]}')")
 
             actual_prices = _fetch_actual_prices(browser, search_query, blog_name, keyword, on_log, claim_value=claim["value"])
