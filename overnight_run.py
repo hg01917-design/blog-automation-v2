@@ -1395,6 +1395,12 @@ def _run_image_and_post(blog_id, keyword, title, body, tags, images):
     if thumb_path:
         image_paths[0] = thumb_path
         log(f"[파이프라인] 썸네일 준비 완료: {thumb_path}")
+        # 본문 첫 번째 소제목 앞에 {{이미지0}} 삽입 (Naver 에디터에서 썸네일 업로드 위치)
+        if "{{이미지0}}" not in body:
+            _h2 = re.search(r'^\s*(#{1,3}\s|\[H2\])', body, re.MULTILINE)
+            _ins = _h2.start() if _h2 else len(body)
+            body = body[:_ins].rstrip() + "\n\n{{이미지0}}\n\n" + body[_ins:].lstrip()
+            log(f"[파이프라인] {{이미지0}} 삽입 완료 (첫 소제목 앞)")
 
     # 네이버 블로그 첫 500자 내 키워드 확인 (제목+본문 초반에 포함 여부만 체크, 강제삽입 없음)
     if blog_id in ("salim1su", "me1091"):

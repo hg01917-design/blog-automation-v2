@@ -206,7 +206,7 @@ def add_title_overlay(img_path: str, title: str, blog_id: str = "", on_log=None)
                 ImageDraw.Draw(ov).line([(0,H-H//3+i),(W,H-H//3+i)], fill=(120,40,50,int(170*(i/(H//3))**1.2)))
             merged = Image.alpha_composite(img, ov)
             draw = ImageDraw.Draw(merged)
-            draw.text((W//2, rh//2), "✨ 살림정보", font=tf, fill=(255,240,240,255), anchor="mm")
+            draw.text((W//2, rh//2), "★ 살림정보", font=tf, fill=(255,240,240,255), anchor="mm")
             wrapped = _wrap_pixels(draw, core, font, W - 80)[:2]
             lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
             total_h = sum(lhs)+(len(wrapped)-1)*10; y=H-int(H*.07)-total_h
