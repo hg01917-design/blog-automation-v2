@@ -224,10 +224,9 @@ BANNED_WORDS = {
         "장려금", "지원금", "실업급여",
     ],
     "salim1su": [
-        # 에어컨 관련 전체 차단 (셀프청소 포함 — 살림 블로그 주제 아님)
+        # 에어컨 청소/설치/수리 관련 차단 (전기요금은 허용)
         "에어컨청소", "에어컨 청소", "에어컨 필터", "에어컨 셀프",
         "에어컨 분해", "에어컨설치", "에어컨이전", "에어컨배관",
-        "에어컨 관리", "에어컨 냄새", "에어컨 작동", "에어컨 전기",
         "에어컨실외기청소", "시스템에어컨청소", "천장형에어컨청소",
         "에어컨분해청소", "벽걸이에어컨셀프청소",
         # 세탁기/보일러 서비스
@@ -327,8 +326,23 @@ def _is_allowed(keyword: str, blog_id: str) -> bool:
     return False
 
 
+_SALIM_ACBLOCK_ALLOW = {"에어컨 전기요금", "에어컨 전기세", "에어컨 전기"}  # 허용 예외
+
 def _is_banned(keyword: str, blog_id: str) -> bool:
     """키워드가 해당 블로그의 금지 단어를 포함하는지 확인"""
+    # salim1su: 에어컨+청소/설치/이전/분해/관리 조합을 정규식으로 차단
+    if blog_id == "salim1su":
+        kw_no_space = keyword.replace(" ", "")
+        if "에어컨" in keyword and keyword not in _SALIM_ACBLOCK_ALLOW:
+            import re as _re
+            if _re.search(r'에어컨.{0,15}(청소|설치|이전|분해|관리|냄새|필터|셀프)', keyword):
+                return True
+            if kw_no_space.startswith("에어컨") and len(kw_no_space) > 4:
+                # 에어컨+단순설명(전기요금 제외) 차단
+                if not any(exc in keyword for exc in _SALIM_ACBLOCK_ALLOW):
+                    if _re.search(r'에어컨.{0,10}(청소|설치|분해|냄새|필터|수리|이전|배관)', kw_no_space):
+                        return True
+
     banned = BANNED_WORDS.get(blog_id, [])
     for word in banned:
         if word in keyword:

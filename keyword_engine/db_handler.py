@@ -456,19 +456,20 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
 
 
 def get_published_keywords(blog_id: str = None) -> list:
-    """상태가 published인 키워드 목록 반환 (중복 체크용).
+    """발행/임시저장/진행중 키워드 목록 반환 (중복 체크용).
 
-    blog_id 지정 시: 해당 블로그에서 발행된 키워드만 반환.
+    draft_saved·in_progress도 포함 — 이미 쓴 글이 DB에 있으면 재사용 방지.
     """
     with _conn() as db:
         if blog_id:
             rows = db.execute(
-                "SELECT keyword FROM keyword_blog_status WHERE blog_id = ? AND status = 'published'",
+                "SELECT keyword FROM keyword_blog_status "
+                "WHERE blog_id = ? AND status IN ('published', 'draft_saved', 'in_progress')",
                 (blog_id,),
             ).fetchall()
         else:
             rows = db.execute(
-                "SELECT keyword FROM keywords WHERE status = 'published'"
+                "SELECT keyword FROM keywords WHERE status IN ('published', 'draft_saved', 'in_progress')"
             ).fetchall()
     return [r["keyword"] for r in rows]
 
