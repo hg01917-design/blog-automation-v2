@@ -26,8 +26,8 @@ def run(blog_id: str, on_log=None, on_status=None):
 
     published = set(db_handler.get_published_keywords(blog_id))
 
-    # 최대 10개 키워드를 시도 (필터에 걸릴 수 있으므로)
-    for attempt in range(10):
+    # 최대 30개 키워드를 시도 (필터에 걸릴 수 있으므로)
+    for attempt in range(30):
         kw = db_handler.fetch_next_pending(blog_id)
 
         if not kw:
@@ -71,7 +71,7 @@ def run(blog_id: str, on_log=None, on_status=None):
             on_status("keyword", "done")
         return {"keyword": kw, "page_id": ""}
 
-    log(f"[키워드] {blog_id} 유효한 키워드를 찾지 못함 (10회 시도)")
+    log(f"[키워드] {blog_id} 유효한 키워드를 찾지 못함 (30회 시도)")
     if on_status:
         on_status("keyword", "failed")
     return None
