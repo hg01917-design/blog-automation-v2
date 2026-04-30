@@ -148,7 +148,7 @@ def _generate_agent_template(blog_id: str, module_name: str, category: str):
 
         sys.path.insert(0, str(Path(__file__).parent.parent))
 
-        from claude_playwright import generate_text_with_fallback as generate_text
+        from claude_direct import generate_text
         from image_router import generate_images_for_blog as _img_router
         from overnight_run import _truncate_title
 
@@ -356,7 +356,7 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
                 review.get("reason", "AI 패턴 및 자연스럽지 않은 문체 수정 필요")
             ]
             log(f"[오케스트레이터] 부분 수정 시도 ({len(issues_for_repair)}건)...")
-            from claude_playwright import repair_text
+            from claude_direct import repair_text
             # raw 없으면 원본 result에서 폴백
             raw_to_fix = (
                 (fixed or review["result"]).get("raw", "")

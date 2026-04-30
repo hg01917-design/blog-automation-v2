@@ -35,8 +35,8 @@ GEMINI_MODEL_IDS = {
 }
 
 def _current_model() -> str:
-    """WRITING_MODEL 환경변수로 선택된 모델 키 반환. 기본값: sonnet"""
-    return os.environ.get("WRITING_MODEL", "sonnet")
+    """WRITING_MODEL 환경변수로 선택된 모델 키 반환. 기본값: haiku"""
+    return os.environ.get("WRITING_MODEL", "haiku")
 
 
 def _get_claude_oauth_token() -> str:
@@ -526,6 +526,40 @@ def _is_valid_blog_content(text: str, blog_id: str = None) -> bool:
         return False
 
     return True
+
+
+def repair_text(raw: str, issues: list, on_log=None) -> str:
+    """검수 실패한 글을 Claude Code CLI로 부분 수정.
+
+    claude_playwright.repair_text 대체 — claude.ai 웹 의존 없음.
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    issues_str = "\n".join(f"- {i}" for i in issues)
+    repair_prompt = f"""아래 블로그 글에서 검수 실패한 부분만 수정해줘.
+수정 후 동일한 ===섹션=== 형식 그대로 전체 글을 다시 출력해줘.
+
+【수정해야 할 문제점】
+{issues_str}
+
+【수정 규칙】
+- 문제가 없는 부분은 절대 바꾸지 말 것
+- AI 패턴(당연히/살펴보겠습니다 등)은 자연스러운 구어체로 교체
+- 제목에 직장인/주부 등 대상이 있으면 제거하고 검색 의도만 남길 것
+- 형식(===제목===, ===본문===, ===태그===, ===이미지===)은 그대로 유지
+
+【원본 글】
+{raw}"""
+
+    log("[repair] 부분 수정 요청 중 (Claude Code)...")
+    result = _run_claude(repair_prompt, on_log=on_log, timeout=300, model_key=_current_model())
+    if result and len(result) > 200 and "===제목===" in result:
+        log("[repair] ✓ 부분 수정 완료")
+        return result
+    log("[repair] 부분 수정 실패")
+    return None
 
 
 def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
