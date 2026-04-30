@@ -155,18 +155,19 @@ _NON_PRODUCT_WORDS = {
 def _extract_product_keyword(keyword: str) -> str:
     """블로그 긴 키워드에서 쿠팡/네이버쇼핑 검색에 적합한 핵심 상품어를 추출.
 
-    예: '욕실 물때 제거 베이킹소다' → '물때 베이킹소다'
-        '세탁기 청소 세제'         → '세탁기 세제'
+    예: '욕실 물때 제거 베이킹소다' → '베이킹소다'
+        '세탁기 청소 세제'         → '세제'
+        '냉장고 정리 밀폐용기'     → '밀폐용기'
     """
     words = keyword.split()
-    if len(words) <= 2:
+    if len(words) <= 1:
         return keyword
     # 비상품 동작어/형용사 제거
     product_words = [w for w in words if w not in _NON_PRODUCT_WORDS]
     if not product_words:
         product_words = words
-    # 마지막 2단어 (구체적 상품명은 보통 키워드 끝에 위치)
-    return " ".join(product_words[-2:])
+    # 마지막 1단어 (한국어 명사구는 끝 단어가 핵심 상품명)
+    return product_words[-1]
 
 
 def get_affiliate_block(keyword: str, blog_id: str) -> str:
