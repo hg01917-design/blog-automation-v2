@@ -87,6 +87,29 @@ def _collect_keyword(on_log=None):
         _db_set_status(keyword, "failed", blog_id=BLOG_ID)
         return None
 
+    # salim1su 주제 필터: 지역명+업종 서비스 키워드 차단 → 기타로 이동
+    _LOCAL_SERVICE_PATTERNS = [
+        r'.{1,5}(에어컨|세탁기|보일러)(청소|분해|설치|이전|수리)',
+        r'.{1,5}청소업체',
+        r'(에어컨|세탁기|보일러)(청소|분해|설치|이전)(비용|가격|업체)',
+        r'^(군포|시흥|수원|부천|인천|대전|대구|부산|광주|울산|천안|청주|전주)',
+    ]
+    import re as _re
+    if any(_re.search(p, keyword) for p in _LOCAL_SERVICE_PATTERNS):
+        log(f"[키워드수집] '{keyword}' — 살림 블로그 주제 부적합 (지역서비스), 기타로 이동")
+        _db_set_status(keyword, "failed", blog_id=BLOG_ID)
+        try:
+            import sqlite3 as _sqlite3
+            _db_path = Path(__file__).parent.parent / "keyword_engine" / "engine.db"
+            with _sqlite3.connect(str(_db_path)) as _conn:
+                _conn.execute(
+                    "INSERT OR IGNORE INTO keyword_blog_status (keyword, blog_id, status, updated_at) VALUES (?, '기타', 'pending', datetime('now'))",
+                    (keyword,)
+                )
+        except Exception:
+            pass
+        return None
+
     is_dup, matched = check_duplicate_post(BLOG_ID, keyword, on_log=log)
     if is_dup:
         log(f"[키워드수집] '{keyword}' — 중복 발행 ('{matched}'), 건너뜀")
