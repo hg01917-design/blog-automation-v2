@@ -142,6 +142,7 @@ def _build_prompt(blog_id: str, keyword: str, extra_context: str = None) -> str:
         "② 제목·소제목에 '완전 정리', '완벽 정리', '총정리', '완벽 가이드' 금지\n"
         "③ 과장 표현 금지: 완벽, 궁극, Ultimate, Perfect, 완전히, 확실히\n"
         "④ AI 문구 절대 금지: '알아보겠습니다', '살펴보겠습니다', '소개하겠습니다',\n"
+        "   '알려드릴게요', '알려드리겠습니다', '설명드리겠습니다',\n"
         "   '이번 포스팅에서는', '오늘은 ~에 대해', '함께 알아볼게요',\n"
         "   '~해보도록 하겠습니다', '정리해드릴게요', '종합적으로', '결론적으로',\n"
         "   '다양한 측면에서', '물론입니다', '당연히', '첫째/둘째/셋째 나열'\n"
@@ -149,6 +150,8 @@ def _build_prompt(blog_id: str, keyword: str, extra_context: str = None) -> str:
         "   → 강조는 1번만, 구체적 근거와 함께 쓸 것\n"
         "⑥ 설명조 어미 남발 금지: '충분히 ~에요', '~라고 할 수 있어요', '~인 셈이에요'\n"
         "⑦ 마무리에 '도움이 되셨으면', '유익한 정보였으면' 류 금지\n"
+        "⑧ 본문 첫 줄 소제목 절대 금지: 반드시 도입부 텍스트 2~3문장 먼저 작성 후 첫 소제목 시작.\n"
+        "   소제목(## / [H2])으로 바로 시작하면 글 전체 재작성 기준임.\n"
     )
 
     if _is_naver:
@@ -166,12 +169,33 @@ def _build_prompt(blog_id: str, keyword: str, extra_context: str = None) -> str:
             "⑥ 소제목과 이미지·텍스트 사이 빈 줄 2칸.\n"
         )
 
+    # ── 블로그별 페르소나 규칙 ─────────────────────────────────────────
+    _PERSONA_RULE = ""
+    if blog_id == "salim1su":
+        _PERSONA_RULE = (
+            f"\n\n[작성자 설정 — 살림 블로그 페르소나]\n"
+            f"이 블로그는 30~40대 주부가 운영하는 살림·절약 네이버 블로그야.\n"
+            f"말투: 따뜻하고 친근한 해요체. '~해봤어요', '~더라고요', '~하더라고요', '~해요' 위주.\n"
+            f"독자를 '여러분'으로 호칭. 딱딱한 설명조(~입니다, ~합니다) 최소화.\n"
+            f"⚠️ 반드시 '{keyword}' 주제만 작성. 다른 주제 절대 금지.\n"
+            f"'{keyword}'에 관한 살림 방법·절약 팁·생활 정보를 단계별로 구체적으로 작성해.\n"
+            f"글은 반드시 도입부 텍스트 2~3문장으로 시작 (소제목·[H2]로 바로 시작 절대 금지).\n"
+            f"폰트 크기: 본문은 기본 크기(15pt 기준). 소제목은 [H2] 마커 사용.\n"
+        )
+    elif blog_id == "me1091":
+        _PERSONA_RULE = (
+            "\n\n[작성자 설정 — 리뷰 블로그 페르소나]\n"
+            "실제로 구매·사용해본 30대 생활 블로거 톤.\n"
+            "말투: '~했어요', '~좋더라고요', '~써봤는데' 등 자연스러운 구어체.\n"
+        )
+
     # ── 플랫폼별 출력 형식 ──────────────────────────────────────────────
     if is_wordpress:
         _SECTION_FORMAT = (
             "\n\n아래 형식으로만 출력해줘 (다른 형식 절대 금지):\n"
             "===제목===\n(SEO 최적화된 롱테일 제목)\n===제목끝===\n\n"
             "===본문===\n"
+            "(도입부 2~3문장 — 독자 상황 공감으로 시작, 소제목 없이 텍스트만. 소제목으로 바로 시작 절대 금지)\n\n"
             "## 소제목1\n"
             "[이미지1]\n"
             "프롬프트: (영어 장면 묘사)\n"
@@ -257,13 +281,13 @@ def _build_prompt(blog_id: str, keyword: str, extra_context: str = None) -> str:
         )
 
     if instructions:
-        prompt = f"{instructions}\n\n[작성 키워드]\n{keyword}{_SEO_TITLE_RULE}{_DEPTH_RULE}{_BANNED_EXPRESSIONS}{_SECTION_FORMAT}{_IMAGE_RULE}{_ADSENSE_RULE}"
+        prompt = f"{instructions}\n\n[작성 키워드]\n{keyword}{_PERSONA_RULE}{_SEO_TITLE_RULE}{_DEPTH_RULE}{_BANNED_EXPRESSIONS}{_SECTION_FORMAT}{_IMAGE_RULE}{_ADSENSE_RULE}"
     else:
         prompt = (
             f"키워드: {keyword}\n\n"
             "위 키워드로 순수 텍스트 3000자 블로그 포스팅을 작성해줘.\n"
             "소제목 4~5개, 존댓말(해요체), 구체적 수치·날짜 포함.\n"
-            f"{_SEO_TITLE_RULE}{_DEPTH_RULE}{_BANNED_EXPRESSIONS}{_SECTION_FORMAT}{_IMAGE_RULE}{_ADSENSE_RULE}"
+            f"{_PERSONA_RULE}{_SEO_TITLE_RULE}{_DEPTH_RULE}{_BANNED_EXPRESSIONS}{_SECTION_FORMAT}{_IMAGE_RULE}{_ADSENSE_RULE}"
         )
 
     if extra_context:

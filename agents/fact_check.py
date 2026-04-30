@@ -409,6 +409,7 @@ def run(body: str, keyword: str, blog_name: str = "", on_log=None) -> dict:
         return FALLBACK
 
     corrections = []
+    verified_count = 0
     try:
         for claim in price_claims[:3]:  # 최대 3건 (시간 제한)
             # 가격 앞뒤 120자에서 제품명 패턴으로 추출
@@ -421,10 +422,18 @@ def run(body: str, keyword: str, blog_name: str = "", on_log=None) -> dict:
 
             actual_prices = _fetch_actual_prices(browser, search_query, blog_name, keyword, on_log, claim_value=claim["value"])
 
+            # 결과 없으면 앞 2글자(지역명) 제거 후 재시도 — '성남에어컨청소' → '에어컨청소'
+            if not actual_prices and len(search_query) >= 5:
+                fallback_query = search_query[2:]
+                if len(fallback_query) >= 3:
+                    log(f"[팩트체크] 지역명 제거 재시도: '{fallback_query}'")
+                    actual_prices = _fetch_actual_prices(browser, fallback_query, blog_name, keyword, on_log, claim_value=claim["value"])
+
             if not actual_prices:
                 log(f"[팩트체크] '{search_query}' 가격 조회 실패 — 건너뜀")
                 continue
 
+            verified_count += 1
             actual_median = _median(actual_prices)
             actual_min = min(actual_prices)
             actual_max = max(actual_prices)
@@ -463,7 +472,9 @@ def run(body: str, keyword: str, blog_name: str = "", on_log=None) -> dict:
     corrected_body = _apply_corrections(body, corrections) if corrections else body
     if corrections:
         log(f"[팩트체크] {len(corrections)}건 수정 완료")
+    elif verified_count > 0:
+        log(f"[팩트체크] ✓ 검증 {verified_count}건 모두 정상")
     else:
-        log("[팩트체크] ✓ 모든 가격 정상")
+        log("[팩트체크] ⚠ 가격 검증 불가 (검색 결과 없음) — 원본 유지")
 
     return {"body": corrected_body, "corrections": corrections, "checked": True}

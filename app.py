@@ -1924,7 +1924,8 @@ class BlogAutomationApp(QMainWindow):
                 [python_bin, str(script), "--skip-crawl"],
                 cwd=str(project_dir),
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                env=env, text=True, bufsize=1
+                env=env, text=True, bufsize=1,
+                start_new_session=True,  # 프로세스 그룹 생성 → 정지 시 전체 kill 가능
             )
         except Exception as e:
             self.log_box.append(f"[전체실행] 프로세스 시작 실패: {e}")
@@ -1972,7 +1973,8 @@ class BlogAutomationApp(QMainWindow):
                 [python_bin, str(script), f"--group={group}", "--skip-crawl"],
                 cwd=str(project_dir),
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                env=env, text=True, bufsize=1
+                env=env, text=True, bufsize=1,
+                start_new_session=True,  # 프로세스 그룹 생성 → 정지 시 전체 kill 가능
             )
         except Exception as e:
             self.log_box.append(f"[파이프라인] 프로세스 시작 실패: {e}")
@@ -2040,6 +2042,7 @@ class BlogAutomationApp(QMainWindow):
             self._append_log("[전체실행] 완료")
 
     def _stop_worker(self):
+        import os, signal
         if self.sched_worker and self.sched_worker.isRunning():
             self.sched_worker.stop()
         if self._single_worker and self._single_worker.isRunning():
@@ -2047,9 +2050,15 @@ class BlogAutomationApp(QMainWindow):
         if hasattr(self, '_all_proc') and self._all_proc and self._all_proc.poll() is None:
             if hasattr(self, '_all_stop'):
                 self._all_stop.set()
-            self._all_proc.terminate()
+            try:
+                # 프로세스 그룹 전체 SIGKILL — 자식 프로세스(Claude CLI, Playwright 등) 포함
+                pgid = os.getpgid(self._all_proc.pid)
+                os.killpg(pgid, signal.SIGKILL)
+            except Exception:
+                self._all_proc.kill()
             self.run_all_btn.setEnabled(True)
             self.run_btn.setEnabled(True)
+            self.log_box.append("[정지] 프로세스 그룹 강제 종료 완료")
         self.pause_btn.setEnabled(False)
         self.run_btn.setEnabled(True)
 

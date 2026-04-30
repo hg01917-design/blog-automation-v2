@@ -99,9 +99,10 @@ def _collect_keyword(on_log=None):
 
 
 def _expand_keyword(keyword: str, on_log=None) -> str:
-    """단어 1개(띄어쓰기 없음)인 키워드를 세부 롱테일로 확장.
+    """키워드를 살림이 블로그에 맞는 롱테일로 스마트 확장.
 
-    claude.ai에 세부 롱테일 키워드 5개를 요청하고 첫 번째 줄을 반환.
+    단순 나열 요청이 아닌, 키워드 의도(DIY/서비스/절약/정보)를 판단해서
+    살림이 독자가 실제로 검색할 법한 롱테일 1개를 선택.
     확장 실패 시 원본 키워드 반환.
     """
     def log(msg):
@@ -113,32 +114,36 @@ def _expand_keyword(keyword: str, on_log=None) -> str:
         log(f"[키워드확장] '{keyword}' — 이미 롱테일, 확장 생략")
         return keyword
 
-    log(f"[키워드확장] '{keyword}' — 세부 롱테일 확장 시작")
+    log(f"[키워드확장] '{keyword}' — 스마트 롱테일 확장 시작")
 
     expand_prompt = (
-        f"키워드: {keyword}\n"
-        "이 키워드로 네이버 블로그에 쓸 수 있는 세부 롱테일 키워드 5개만 뽑아줘.\n"
-        "조건: 실제 검색할 것 같은 자연스러운 표현, 번호 없이 한 줄에 하나씩만, 다른 설명 없이 키워드만"
+        "살림이(salim1su)는 30~40대 주부가 운영하는 네이버 살림 블로그야.\n"
+        "살림·청소·절약·생활정보·정부혜택을 다루고, 독자도 비슷한 주부층이야.\n\n"
+        f"키워드 '{keyword}'를 이 블로그 독자가 실제로 네이버에서 검색할 법한 "
+        f"구체적인 롱테일 키워드 5개로 확장해줘.\n\n"
+        "키워드만 한 줄에 하나씩. 번호·설명·이유 없이."
     )
 
     try:
         from claude_direct import _run_claude
-        response = _run_claude(expand_prompt, timeout=30, model_key="haiku")
+        response = _run_claude(expand_prompt, timeout=60, model_key="sonnet")
         if not response:
             log(f"[키워드확장] 응답 없음 — 원본 키워드 사용")
             return keyword
 
-        # 응답에서 첫 번째 유효한 줄 선택 (=== 마커, 번호, 빈 줄 제외)
+        # 응답에서 첫 번째 유효한 줄 선택
         lines = [
             line.strip() for line in response.strip().splitlines()
             if line.strip()
             and "===" not in line
             and not line.strip()[0].isdigit()
             and len(line.strip()) >= 5
+            and "예시" not in line
+            and "키워드" not in line
         ]
         if lines:
             expanded = lines[0]
-            log(f"[키워드확장] '{keyword}' → '{expanded}'")
+            log(f"[키워드확장] '{keyword}' → '{expanded}' (sonnet 판단)")
             return expanded
         else:
             log(f"[키워드확장] 파싱 실패 — 원본 키워드 사용")

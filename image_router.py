@@ -825,8 +825,45 @@ def _generate_naver(image_infos: list, skip_webp: bool, log, reference_images: l
             if attempt < 3:
                 _t.sleep(30)
 
-    log("[Router] Naver: Gemini 3회 모두 실패 — 이미지 없이 진행 불가")
-    return {}
+    log("[Router] Naver: Gemini 3회 모두 실패 — Pillow 폴백 이미지 생성")
+    return _naver_pillow_fallback(image_infos, output_dir, log)
+
+
+def _naver_pillow_fallback(image_infos: list, output_dir, log) -> dict:
+    """Gemini 완전 실패 시 Pillow 그라디언트 이미지로 대체 (salim1su용)."""
+    results = {}
+    save_dir = Path(output_dir) if output_dir else IMAGES_DIR
+    save_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        log("[Router] Pillow 없음 — 폴백 불가")
+        return {}
+    # 살림 블로그: 로즈핑크 그라디언트
+    c1, c2 = (100, 35, 45), (175, 75, 90)
+    for info in image_infos:
+        idx = info["index"]
+        filename = info.get("filename", f"img_{idx:02d}.jpg")
+        filename = re.sub(r'[^\w\-.]', '-', filename)
+        if not filename.endswith(".jpg"):
+            filename = filename.rsplit(".", 1)[0] + ".jpg"
+        filepath = str(save_dir / filename)
+        try:
+            W, H = 1024, 768
+            img = Image.new("RGB", (W, H))
+            draw = ImageDraw.Draw(img)
+            for y in range(H):
+                t = y / H
+                r = int(c1[0] + (c2[0] - c1[0]) * t)
+                g = int(c1[1] + (c2[1] - c1[1]) * t)
+                b = int(c1[2] + (c2[2] - c1[2]) * t)
+                draw.line([(0, y), (W, y)], fill=(r, g, b))
+            img.save(filepath, "JPEG", quality=88)
+            results[idx] = filepath
+            log(f"[Router] Pillow 폴백 이미지 {idx} 저장: {filepath}")
+        except Exception as e:
+            log(f"[Router] Pillow 폴백 이미지 {idx} 실패: {e}")
+    return results
 
 
 def _loremflickr_image(prompt: str, filepath: str, on_log=None) -> bool:

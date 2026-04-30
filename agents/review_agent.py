@@ -2,6 +2,7 @@
 import re
 import os
 import sys
+import difflib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -117,9 +118,29 @@ def run(result: dict, keyword: str, blog_id: str,
     kw_words = keyword.split()
     first_word = kw_words[0] if kw_words else keyword
     first_word_norm = re.sub(r"\s+", "", first_word)
+
+    def _fuzzy_kw_in_title(kw: str, t: str) -> bool:
+        """오탈자 1~2자 허용 유사도 매칭 (SequenceMatcher 0.82 이상)."""
+        window = t[:len(kw) + 6]
+        ratio = difflib.SequenceMatcher(None, kw, window[:len(kw)]).ratio()
+        return ratio >= 0.82
+
+    def _subsequence_in_title(kw: str, t: str) -> bool:
+        """키워드 글자가 제목에 순서대로 모두 포함되는지 확인.
+        '아기방인테리어' → 제목에 '아기방 셀프 인테리어'처럼 분리돼 있어도 통과."""
+        it = iter(t)
+        return all(c in it for c in kw)
+
     if first_word_norm not in title_norm[:len(first_word_norm) + 5]:
         if kw_norm not in title_norm:
-            issues.append(f"제목에 메인키워드 없음: '{keyword}'")
+            # 1) 오탈자 유사도 체크
+            # 2) 서브시퀀스 체크 — '아기방인테리어' → '아기방 셀프 인테리어' 같은 분리형 통과
+            if _fuzzy_kw_in_title(kw_norm, title_norm):
+                log(f"[검수] ℹ 키워드 유사도 통과 (오탈자 허용): '{keyword}' ≈ 제목")
+            elif _subsequence_in_title(kw_norm, title_norm):
+                log(f"[검수] ℹ 키워드 서브시퀀스 통과 (분리형): '{keyword}' ≈ 제목")
+            else:
+                issues.append(f"제목에 메인키워드 없음: '{keyword}'")
         else:
             kw_pos = title_norm.index(kw_norm)
             if kw_pos > 5:

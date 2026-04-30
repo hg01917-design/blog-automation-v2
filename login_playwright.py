@@ -407,8 +407,51 @@ def login_naver(naver_id=None, on_log=None, page=None):
                 _rand_delay(page, 800, 1200)
 
             log(f"[3/5] 로그인 버튼 클릭... (시도 {_attempt+1}/2)")
-            login_btn = page.locator('#log\\.login, button.btn_login, button[type="submit"]').first
-            login_btn.click(timeout=5000)
+            # 여러 셀렉터 순서대로 시도 (네이버 로그인 버튼 HTML이 변경될 수 있음)
+            _login_btn_selectors = [
+                '#log\\.login',
+                'button.btn_login',
+                'button.btn_global',
+                'button[type="submit"]',
+                'input[type="submit"]',
+            ]
+            _clicked = False
+            for _sel in _login_btn_selectors:
+                try:
+                    _btn = page.locator(_sel).first
+                    if _btn.is_visible(timeout=2000):
+                        _btn.click(timeout=5000)
+                        log(f"[3/5] 로그인 버튼 클릭 완료 (selector: {_sel})")
+                        _clicked = True
+                        break
+                except Exception:
+                    continue
+
+            # JS 폴백: id="log.login" 직접 클릭 시도
+            if not _clicked:
+                try:
+                    _clicked = page.evaluate("""
+                        () => {
+                            const candidates = [
+                                document.getElementById('log.login'),
+                                document.querySelector('button.btn_login'),
+                                document.querySelector('button.btn_global'),
+                                document.querySelector('button[type="submit"]'),
+                                document.querySelector('input[type="submit"]'),
+                            ];
+                            for (const el of candidates) {
+                                if (el) { el.click(); return true; }
+                            }
+                            return false;
+                        }
+                    """)
+                    if _clicked:
+                        log("[3/5] 로그인 버튼 JS 폴백 클릭 완료")
+                    else:
+                        log("[3/5] ⚠ 로그인 버튼을 찾지 못함 — 계속 대기")
+                except Exception as e:
+                    log(f"[3/5] JS 폴백 오류: {e}")
+
             _rand_delay(page, 3000, 5000)
 
             log("[4/4] 로그인 완료 대기 중...")
