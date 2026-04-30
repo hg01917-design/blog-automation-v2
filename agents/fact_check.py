@@ -396,7 +396,7 @@ def _extract_product_name(ctx_text: str, keyword: str):
             f"규칙: 상품명 1~3단어만 출력. 상품이 없거나 가격이 막연한 느낌·분위기 묘사면 'NONE'. "
             f"설명·번호·따옴표 없이 단어만."
         )
-        result = _run_claude(prompt, timeout=20, model_key="haiku")
+        result = _run_claude(prompt, timeout=20, model_key="sonnet")
         if result:
             extracted = result.strip().splitlines()[0].strip().strip("'\"")
             if extracted and extracted.upper() != "NONE" and len(extracted) >= 2:
@@ -426,6 +426,13 @@ def run(body: str, keyword: str, blog_name: str = "", on_log=None) -> dict:
             on_log(msg)
 
     FALLBACK = {"body": body, "corrections": [], "checked": False}
+
+    # 살림·생활팁 블로그는 팩트체크 불필요 (검증 가능한 가격 정보 없음)
+    _SKIP_BLOGS = {"salim1su", "woll100", "phn0502"}
+    blog_key = (blog_name or "").lower().strip()
+    if any(k in blog_key for k in _SKIP_BLOGS):
+        log(f"[팩트체크] 생활·살림 블로그 — 팩트체크 스킵")
+        return FALLBACK
 
     price_claims = extract_price_claims(body)
     spec_claims = extract_spec_claims(body)
