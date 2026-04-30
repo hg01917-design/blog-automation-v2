@@ -144,6 +144,31 @@ def search_products(keyword: str, category: str = "", limit: int = 3) -> list:
         return DUMMY_PRODUCTS.get(fallback_key, [])[:limit]
 
 
+_NON_PRODUCT_WORDS = {
+    "제거", "방법", "하는법", "팁", "절약", "정리", "청소법", "관리", "관리법",
+    "사용법", "하기", "이유", "효과", "좋은", "집에서", "간단히", "쉽게", "빠르게",
+    "직접", "알아보기", "알아보자", "총정리", "완벽", "비교", "추천", "후기",
+    "리뷰", "정보", "기초", "기본", "쉬운", "초보", "따라하기",
+}
+
+
+def _extract_product_keyword(keyword: str) -> str:
+    """블로그 긴 키워드에서 쿠팡/네이버쇼핑 검색에 적합한 핵심 상품어를 추출.
+
+    예: '욕실 물때 제거 베이킹소다' → '물때 베이킹소다'
+        '세탁기 청소 세제'         → '세탁기 세제'
+    """
+    words = keyword.split()
+    if len(words) <= 2:
+        return keyword
+    # 비상품 동작어/형용사 제거
+    product_words = [w for w in words if w not in _NON_PRODUCT_WORDS]
+    if not product_words:
+        product_words = words
+    # 마지막 2단어 (구체적 상품명은 보통 키워드 끝에 위치)
+    return " ".join(product_words[-2:])
+
+
 def get_affiliate_block(keyword: str, blog_id: str) -> str:
     """blog_id에 맞는 카테고리로 상품을 검색하고 마크다운 링크 블록을 반환한다.
 
@@ -154,7 +179,8 @@ def get_affiliate_block(keyword: str, blog_id: str) -> str:
 
     try:
         category = BLOG_CATEGORY_MAP.get(blog_id, "생활용품")
-        products = search_products(keyword, category=category, limit=3)
+        search_kw = _extract_product_keyword(keyword)
+        products = search_products(search_kw, category=category, limit=3)
 
         if not products:
             return ""
