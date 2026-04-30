@@ -398,8 +398,14 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
         _img_paths = {}
 
         # 본문 이미지 생성 (이미지 명세가 있을 때만)
-        try:
-            if result.get("images"):
+        # 에이전트가 이미 생성한 image_paths가 있으면 재사용 (Gemini 중복 호출 방지)
+        _agent_img_paths = {k: v for k, v in (result.get("image_paths") or {}).items()
+                            if k != 0 and v and __import__('pathlib').Path(v).is_file()}
+        if _agent_img_paths:
+            log(f"[오케스트레이터] 에이전트 생성 이미지 재사용: {sorted(_agent_img_paths.keys())}개")
+            _img_paths = _agent_img_paths
+        elif result.get("images"):
+            try:
                 log(f"[오케스트레이터] 검수 통과 → 이미지 {len(result['images'])}개 생성 시작")
                 _img_paths = _img_gen(
                     blog_id=blog_id,
@@ -409,8 +415,8 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
                     title=result.get("title", ""),
                 )
                 log(f"[오케스트레이터] 이미지 {len(_img_paths)}개 생성 완료 — keys: {sorted(_img_paths.keys())}")
-        except Exception as _ie:
-            log(f"[오케스트레이터] 본문 이미지 생성 오류 (무시): {_ie}")
+            except Exception as _ie:
+                log(f"[오케스트레이터] 본문 이미지 생성 오류 (무시): {_ie}")
 
         # 썸네일은 항상 생성 (본문 이미지 유무와 무관)
         try:
