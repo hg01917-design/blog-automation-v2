@@ -448,7 +448,7 @@ def _verify_content(text: str, on_log=None, blog_id: str = None) -> bool:
     h2_rule = (
         "3. (me1091: 소제목 없는 산문 형태 — 이 항목은 PASS 조건에서 제외)\n"
         if is_prose else
-        "3. 소제목([H2] 또는 <h2>) 2개 이상\n"
+        "3. 소제목([H2] 또는 ## 또는 <h2>) 2개 이상\n"
     )
     adsense_rule = (
         "4. (네이버 블로그: [애드센스] 마커 없어야 정상 — 이 항목은 PASS 조건에서 제외)\n"
@@ -512,14 +512,21 @@ def _is_valid_blog_content(text: str, blog_id: str = None) -> bool:
         body = body_match[:body_match.find("===본문끝===")]
     else:
         body = body_match
+    # me1091: 산문 형태 — 1500자 이상이면 통과
+    if blog_id == "me1091":
+        return len(body.strip()) >= 1500
+
+    # salim1su: 네이버 살림 블로그 — 2000자 이상 + [H2] 소제목 2개 이상 필수
+    if blog_id == "salim1su":
+        if len(body.strip()) < 2000:
+            return False
+        import re as _re
+        h2_count = len(_re.findall(r'\[H2\]|^##\s+', body, _re.IGNORECASE | _re.MULTILINE))
+        return h2_count >= 2
+
+    # 그 외 블로그: 1500자 이상 + 소제목 최소 2개 필수
     if len(body.strip()) < 1500:
         return False  # 본문 1500자 미만 = 메타 텍스트로 간주
-
-    # me1091 / salim1su: 산문 형태(소제목 없음) 또는 네이버 자체광고 → H2 체크 스킵
-    if blog_id in ("me1091", "salim1su"):
-        return True
-
-    # 그 외 블로그: 소제목 최소 2개 필수
     import re as _re
     h2_count = len(_re.findall(r'\[H2\]|<h2\b|^##\s+', body, _re.IGNORECASE | _re.MULTILINE))
     if h2_count < 2:
