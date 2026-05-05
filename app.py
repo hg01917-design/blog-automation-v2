@@ -45,6 +45,24 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import ACCOUNTS, ACCOUNT_MAP
 
+def _load_app_version() -> str:
+    try:
+        if getattr(sys, "frozen", False):
+            import plistlib
+            plist_path = Path(sys.executable).resolve().parent.parent / "Info.plist"
+            with open(plist_path, "rb") as f:
+                info = plistlib.load(f)
+            return str(info.get("CFBundleShortVersionString", "0.0.0"))
+        else:
+            ver_file = Path(__file__).parent / "build_version.txt"
+            major = int(ver_file.read_text(encoding="utf-8").strip())
+            return f"{major}.0.0"
+    except Exception:
+        return "0.0.0"
+
+
+APP_VERSION = _load_app_version()
+
 try:
     _base = Path(sys._MEIPASS)
 except AttributeError:
@@ -1491,10 +1509,9 @@ class BlogAutomationApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Blog Automation v2")
-        self.setFixedWidth(320)
-        self.resize(320, 600)
-        self.setMinimumHeight(400)
+        self.setWindowTitle(f"Blog Automation v{APP_VERSION}")
+        self.resize(1220, 860)
+        self.setMinimumSize(1080, 760)
         self.sched_worker  = None
         self._single_worker = None
         self._selected_keyword = None   # 키워드 큐에서 선택된 키워드 저장
@@ -1717,6 +1734,11 @@ class BlogAutomationApp(QMainWindow):
             "background:#4f8ef7;color:#fff;border:none;border-radius:6px;"
             "font-size:12px;font-weight:bold;min-height:32px;")
         self.run_btn.clicked.connect(self._run_selected)
+        self.crosslink_btn = QPushButton("🔗 링크삽입")
+        self.crosslink_btn.setStyleSheet(
+            "background:#2563eb;color:#fff;border:none;border-radius:6px;"
+            "font-size:12px;font-weight:bold;min-height:32px;")
+        self.crosslink_btn.clicked.connect(self._run_crosslink_insert)
         self.pause_btn = QPushButton("⏸  정지")
         self.pause_btn.setEnabled(False)
         self.pause_btn.setStyleSheet(
@@ -1732,6 +1754,7 @@ class BlogAutomationApp(QMainWindow):
         reset_btn.clicked.connect(self._reset)
         btn_row.addWidget(self.run_all_btn, 2)
         btn_row.addWidget(self.run_btn, 2)
+        btn_row.addWidget(self.crosslink_btn, 2)
         btn_row.addWidget(self.pause_btn, 1)
         btn_row.addWidget(reset_btn, 1)
         ml.addLayout(btn_row)
@@ -1930,6 +1953,7 @@ class BlogAutomationApp(QMainWindow):
         except Exception as e:
             self.log_box.append(f"[전체실행] 프로세스 시작 실패: {e}")
             self.run_all_btn.setEnabled(True)
+
             self.run_btn.setEnabled(True)
             self.pause_btn.setEnabled(False)
             return
@@ -1942,6 +1966,55 @@ class BlogAutomationApp(QMainWindow):
             stopped = self._all_stop.is_set()
             from PyQt5.QtCore import QTimer
             QTimer.singleShot(0, lambda: self._on_all_done(stopped))
+        threading.Thread(target=_stream, daemon=True).start()
+
+    def _run_crosslink_insert(self):
+        if hasattr(self, '_all_proc') and self._all_proc and self._all_proc.poll() is None:
+            self.log_box.append("[링크삽입] 이미 실행 중인 작업이 있어 대기해주세요.")
+            return
+        import subprocess, threading, shutil, os as _os
+        from pathlib import Path
+        project_dir = Path("/Users/hana/Downloads/blog-automation-v2")
+        script = project_dir / "publish_drafts.py"
+        python_bin = shutil.which("python3") or "python3"
+        self.log_box.append(f"[링크삽입] python={python_bin}")
+        self.log_box.append("[링크삽입] publish_drafts.py crosslink 시작...")
+        env = dict(_os.environ)
+        env["ENABLE_CROSSLINK"] = "1"
+        self.run_all_btn.setEnabled(False)
+        self.run_btn.setEnabled(False)
+        self.crosslink_btn.setEnabled(False)
+        self.pause_btn.setEnabled(True)
+        self._all_stop = threading.Event()
+        try:
+            self._all_proc = subprocess.Popen(
+                [python_bin, str(script), "crosslink"],
+                cwd=str(project_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                universal_newlines=True,
+                preexec_fn=getattr(_os, "setsid", None),
+                env=env,
+            )
+        except Exception as e:
+            self.log_box.append(f"[링크삽입] 프로세스 시작 실패: {e}")
+            self.run_all_btn.setEnabled(True)
+            self.run_btn.setEnabled(True)
+            self.crosslink_btn.setEnabled(True)
+            self.pause_btn.setEnabled(False)
+            return
+
+        def _stream():
+            for line in self._all_proc.stdout:
+                if self._all_stop.is_set():
+                    break
+                self._all_log_signal.emit(line.rstrip())
+            self._all_proc.wait()
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(0, lambda: self._on_all_done(False))
+
         threading.Thread(target=_stream, daemon=True).start()
 
     def _run_pipeline(self, group: str):
@@ -2035,6 +2108,7 @@ class BlogAutomationApp(QMainWindow):
     def _on_all_done(self, stopped: bool):
         self.run_all_btn.setEnabled(True)
         self.run_btn.setEnabled(True)
+        self.crosslink_btn.setEnabled(True)
         self.pause_btn.setEnabled(False)
         if stopped:
             self._append_log("[전체실행] 정지됨")
@@ -2058,6 +2132,7 @@ class BlogAutomationApp(QMainWindow):
                 self._all_proc.kill()
             self.run_all_btn.setEnabled(True)
             self.run_btn.setEnabled(True)
+            self.crosslink_btn.setEnabled(True)
             self.log_box.append("[정지] 프로세스 그룹 강제 종료 완료")
         self.pause_btn.setEnabled(False)
         self.run_btn.setEnabled(True)

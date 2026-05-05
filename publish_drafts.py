@@ -44,6 +44,7 @@ from poster import (
 
 IMAGES_DIR = Path(__file__).parent / "images"
 SITE_URL = "https://baremi542.com"
+ENABLE_CROSSLINK = os.environ.get("ENABLE_CROSSLINK", "0").strip().lower() in {"1", "true", "yes", "on"}
 
 # 블로그별 실제 도메인 (GSC 색인 요청용)
 BLOG_DOMAIN = {
@@ -99,25 +100,69 @@ def _inject_backlink(content: str, url: str, anchor: str = "관련 글 보기") 
 
 
 def _patch_blogspot_draft_with_crosslink(keyword: str, url: str, anchor: str, blog_id: str):
-    """키워드와 일치하는 Blogspot 드래프트를 찾아 백링크를 주입하고 PATCH."""
+    """키워드와 일치하는 Blogspot 글(드래프트 우선, 없으면 발행글)에 백링크 주입."""
     try:
-        from blogger_api import find_draft_by_keyword, patch_post_content
+        from blogger_api import find_draft_by_keyword, patch_post_content, list_posts
         draft = find_draft_by_keyword(keyword[:20], blog_id=blog_id)
-        if not draft:
-            _log(f"[crosslink] blogspot 드래프트 없음 (keyword={keyword[:20]})")
+        post = draft
+        if not post:
+            posts = list_posts(blog_id=blog_id, status="live", max_results=20)
+            for p in posts:
+                if keyword[:20] in p.get("title", ""):
+                    post = p
+                    break
+        if not post:
+            _log(f"[crosslink] blogspot 대상 글 없음 (keyword={keyword[:20]})")
             return
-        post_id = draft.get("id", "")
-        content = draft.get("content", "")
+
+        post_id = post.get("id", "")
+        content = post.get("content", "")
         if not post_id or not content:
             return
         updated = _inject_backlink(content, url, anchor)
         ok = patch_post_content(post_id, updated, blog_id=blog_id)
         if ok:
-            _log(f"[crosslink] ✅ blogspot({blog_id}) 드래프트 백링크 주입 완료: {url}")
+            _log(f"[crosslink] ✅ blogspot({blog_id}) 백링크 주입 완료: {url}")
         else:
             _log(f"[crosslink] ⚠ blogspot({blog_id}) PATCH 실패")
     except Exception as e:
         _log(f"[crosslink] blogspot 패치 오류: {e}")
+
+
+def run_crosslink_postprocess() -> bool:
+    """발행 후 수동 실행용: 저장된 crosslink URL을 blogspot 드래프트에 후처리 삽입."""
+    try:
+        if not _CROSSLINK_FILE.exists():
+            _log("[crosslink] 저장된 URL 없음 — 후처리 종료")
+            return False
+        data = json.loads(_CROSSLINK_FILE.read_text())
+    except Exception as e:
+        _log(f"[crosslink] 파일 로드 실패: {e}")
+        return False
+
+    ok_any = False
+    for keyword, entry in data.items():
+        b = (entry.get("baremi542") or {}).get("url", "")
+        t = (entry.get("triplog") or {}).get("url", "")
+        if b:
+            _patch_blogspot_draft_with_crosslink(
+                keyword,
+                b,
+                "관련 정보 보기",
+                blog_id=os.environ.get("BLOGSPOT_IT_BLOG_ID", "5956656339719895415"),
+            )
+            ok_any = True
+        if t:
+            _patch_blogspot_draft_with_crosslink(
+                keyword,
+                t,
+                "travel.baremi542.com 관련 글 보기",
+                blog_id=os.environ.get("BLOGSPOT_TRAVEL_BLOG_ID", "6036713839195958620"),
+            )
+            ok_any = True
+
+    _log("[crosslink] 후처리 완료" if ok_any else "[crosslink] 처리 대상 없음")
+    return ok_any
 
 
 # ─── DB 상태 업데이트 ──────────────────────────
@@ -363,10 +408,16 @@ def publish_wp_draft():
     if new_link and new_status == "publish":
         from gsc_indexing import request_indexing
         request_indexing(new_link)
-        _store_crosslink(title, new_link, tier="baremi542")
-        # blogspot_it 드래프트에 baremi542 백링크 자동 주입
-        _patch_blogspot_draft_with_crosslink(title, new_link, "관련 정보 보기",
-                                             blog_id=os.environ.get("BLOGSPOT_IT_BLOG_ID", "5956656339719895415"))
+        if ENABLE_CROSSLINK:
+            _store_crosslink(title, new_link, tier="baremi542")
+            _patch_blogspot_draft_with_crosslink(
+                title,
+                new_link,
+                "관련 정보 보기",
+                blog_id=os.environ.get("BLOGSPOT_IT_BLOG_ID", "5956656339719895415"),
+            )
+        else:
+            _log("[crosslink] 자동 주입 비활성화 (ENABLE_CROSSLINK=0)")
     return new_status == "publish"
 
 
@@ -1455,11 +1506,16 @@ def publish_triplog_draft() -> bool:
     if new_link and new_status == "publish":
         from gsc_indexing import request_indexing
         request_indexing(new_link)
-        # 링크 피라미드: triplog URL 저장 → nolja100/woll100 발행 시 백링크로 사용
-        _store_crosslink(title, new_link, tier="triplog")
-        # blogspot_travel 드래프트에 triplog 백링크 자동 주입
-        _patch_blogspot_draft_with_crosslink(title, new_link, "travel.baremi542.com 관련 글 보기",
-                                             blog_id=os.environ.get("BLOGSPOT_TRAVEL_BLOG_ID", "6036713839195958620"))
+        if ENABLE_CROSSLINK:
+            _store_crosslink(title, new_link, tier="triplog")
+            _patch_blogspot_draft_with_crosslink(
+                title,
+                new_link,
+                "travel.baremi542.com 관련 글 보기",
+                blog_id=os.environ.get("BLOGSPOT_TRAVEL_BLOG_ID", "6036713839195958620"),
+            )
+        else:
+            _log("[crosslink] 자동 주입 비활성화 (ENABLE_CROSSLINK=0)")
     return new_status == "publish"
 
 
@@ -1734,7 +1790,10 @@ def publish_tistory_draft(blog_id: str) -> bool:
                 _log(f"[goodisak] ✅ IT+금융 주제 확인: {title_val[:40]}")
 
         # 링크 피라미드: 상위 계층 crosslink를 Tistory 본문에 주입
-        _tistory_inject_crosslink(page, blog_id, _draft_title)
+        if ENABLE_CROSSLINK:
+            _tistory_inject_crosslink(page, blog_id, _draft_title)
+        else:
+            _log("[crosslink] Tistory crosslink 주입 비활성화")
 
         # 공개 발행
         ok = _tistory_publish_private(page, blog_id)
@@ -2359,6 +2418,9 @@ if __name__ == "__main__":
         sys.exit(0)
 
     target = sys.argv[1] if len(sys.argv) > 1 else "all"
+    if target == "crosslink":
+        run_crosslink_postprocess()
+        sys.exit(0)
     ROUNDS = 3
     ROUND_GAP_MIN = 12600   # 3.5시간
     ROUND_GAP_MAX = 14400   # 4시간
