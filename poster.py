@@ -4,6 +4,7 @@ import re
 import random
 import base64
 import os
+import json
 from pathlib import Path
 from browser import connect_cdp, get_or_create_page
 from config import ACCOUNTS, ACCOUNT_MAP
@@ -16,33 +17,61 @@ def _rand_delay(page, min_ms=500, max_ms=1500):
 
 
 def _chunked_type(page, text, chunk_size=50, delay_per_char=None):
-    """텍스트를 클립보드 붙여넣기 방식으로 입력한다.
+    """텍스트를 사람처럼 타이핑한다 (붙여넣기 금지)."""
+    if delay_per_char is None:
+        delay_per_char = random.randint(120, 180)
+    chunk_count = 0
+    for i in range(0, len(text), chunk_size):
+        if chunk_count > 0 and chunk_count % 5 == 0:
+            try:
+                body_p = page.query_selector('.se-component.se-text .se-text-paragraph')
+                if body_p:
+                    body_p.click()
+                    time.sleep(0.2)
+            except Exception:
+                pass
+        page.keyboard.type(text[i:i + chunk_size], delay=delay_per_char)
+        chunk_count += 1
+        time.sleep(random.uniform(0.15, 0.35))
 
-    keyboard.type()은 한글 IME 조합 중 글자가 뒤섞이는 문제가 있어
-    클립보드 → Cmd+V 방식으로 교체. 텍스트가 정확하게 입력됨.
-    """
-    import subprocess as _sp
-    try:
-        _sp.run(['pbcopy'], input=text.encode('utf-8'), check=True)
-        page.keyboard.press('Meta+v')
-        time.sleep(random.uniform(0.6, 1.5))
-    except Exception:
-        # pbcopy 실패 시 기존 방식으로 폴백
-        if delay_per_char is None:
-            delay_per_char = random.randint(10, 30)
-        chunk_count = 0
-        for i in range(0, len(text), chunk_size):
-            if chunk_count > 0 and chunk_count % 5 == 0:
-                try:
-                    body_p = page.query_selector('.se-component.se-text .se-text-paragraph')
-                    if body_p:
-                        body_p.click()
-                        time.sleep(0.2)
-                except Exception:
-                    pass
-            page.keyboard.type(text[i:i + chunk_size], delay=delay_per_char)
-            chunk_count += 1
-            time.sleep(0.3)
+
+def _repair_common_korean_typo(text: str) -> str:
+    fixed = text
+    fixed = fixed.replace("방이법", "방법")
+    return fixed
+
+
+def _plain_text_len(content: str) -> int:
+    text = re.sub(r'<[^>]+>', ' ', content or '')
+    text = re.sub(r'\s+', ' ', text).strip()
+    return len(text)
+
+
+def _save_draft_memo(blog_id: str, platform: str, title: str, content: str, on_log=None) -> Path:
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    memo_dir = Path(__file__).parent / "logs" / "draft_memos"
+    memo_dir.mkdir(parents=True, exist_ok=True)
+    ext = "txt" if platform == "naver" else "html"
+    safe_blog = re.sub(r'[^A-Za-z0-9_-]', '_', blog_id)
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    memo_path = memo_dir / f"{ts}_{safe_blog}.{ext}"
+    payload = {
+        "blog_id": blog_id,
+        "platform": platform,
+        "title": title,
+        "content": content,
+    }
+    memo_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    log(f"[메모장] 저장 완료: {memo_path} / 순수텍스트 { _plain_text_len(content) }자")
+    return memo_path
+
+
+def _load_draft_memo(memo_path: Path):
+    raw = json.loads(memo_path.read_text(encoding="utf-8"))
+    return raw.get("title", ""), raw.get("content", "")
 
 
 # .env 로드 (.app 번들 실행 시 프로젝트 루트 우선)
@@ -1388,12 +1417,7 @@ def _naver_type_line_with_links(page, line: str, chunk_size: int = 50):
             # 2) Enter 후 raw URL 붙여넣기 → SE2가 OGP 미리보기로 자동 변환
             page.keyboard.press("Enter")
             time.sleep(0.2)
-            try:
-                _sp.run(['pbcopy'], input=url.encode('utf-8'), check=True)
-                page.keyboard.press("Meta+v")
-                time.sleep(0.3)
-            except Exception:
-                _chunked_type(page, url, chunk_size=chunk_size)
+            _chunked_type(page, url, chunk_size=chunk_size)
             # 3) Enter 한 번 더 → OGP 카드 변환 트리거
             page.keyboard.press("Enter")
             time.sleep(3)  # OGP 로딩 대기
@@ -1447,12 +1471,15 @@ def _parse_naver_sections(content):
             continue
 
         # ## 소제목 또는 [H2]...[/H2] 마커
-        h_match = re.match(r'^#{1,3}\s+(.+)$', stripped) or re.match(r'^\s*\[H2\](.+?)\[/H2\]\s*$', stripped, re.IGNORECASE)
+        h_match = re.match(r'^#{1,3}\s+(.+)$', stripped) or re.match(r'^\s*\[H2\]\s*(.+?)\s*\[/H2\]\s*$', stripped, re.IGNORECASE)
         if h_match:
             flush_text()
             heading = h_match.group(1).strip()
             heading = re.sub(r'<[^>]+>', '', heading).strip()
             sections.append({"type": "heading", "text": heading})
+            continue
+
+        if re.match(r'^\s*\[/?H2\]\s*$', stripped, re.IGNORECASE):
             continue
 
         # {{이미지N}}
@@ -1491,6 +1518,115 @@ def _parse_naver_sections(content):
 
 def _redistribute_images_if_top(sections):
     """Claude 출력 이미지 위치를 그대로 유지한다 (기준 3: 이미지 지시 준수)."""
+    return sections
+
+
+def _dedup_naver_image_sections(sections, image_paths=None, log_fn=None):
+    """네이버 업로드 전 이미지 섹션을 1회씩만 남긴다.
+
+    index 0은 썸네일, index 1+는 본문 이미지다. 같은 마커가 중복되면
+    뒤쪽을 제거해서 같은 파일이 여러 번 업로드되는 것을 막는다.
+    """
+    image_paths = image_paths or {}
+    seen = set()
+    cleaned = []
+    for section in sections:
+        if section.get("type") != "image":
+            cleaned.append(section)
+            continue
+        idx = section.get("index")
+        if idx in seen:
+            if log_fn:
+                log_fn(f"[포스팅] 중복 이미지 마커 제거: 이미지{idx}")
+            continue
+        if idx not in image_paths:
+            if log_fn:
+                log_fn(f"[포스팅] 이미지{idx} 경로 없음 — 마커 제거")
+            continue
+        seen.add(idx)
+        cleaned.append(section)
+    return cleaned
+
+
+def _ensure_naver_thumbnail_section(sections, image_paths=None, log_fn=None):
+    """image_paths[0] 썸네일이 있으면 네이버 본문 앞쪽에 반드시 배치한다."""
+    image_paths = image_paths or {}
+    thumb_path = image_paths.get(0)
+    if not thumb_path:
+        return sections
+    if not Path(str(thumb_path)).is_file():
+        if log_fn:
+            log_fn(f"[포스팅] 썸네일 파일 없음 — 이미지0 스킵: {thumb_path}")
+        return sections
+    if any(s.get("type") == "image" and s.get("index") == 0 for s in sections):
+        if log_fn:
+            log_fn("[포스팅] 썸네일 이미지0 마커 확인")
+        return sections
+
+    thumb_section = {"type": "image", "index": 0}
+    insert_at = 0
+    # 도입부 텍스트가 있으면 도입부 바로 뒤, 첫 소제목 앞에 배치한다.
+    if sections and sections[0].get("type") == "text":
+        insert_at = 1
+    fixed = sections[:insert_at] + [thumb_section] + sections[insert_at:]
+    if log_fn:
+        log_fn("[포스팅] 썸네일 이미지0 마커 없음 — 도입부 뒤에 강제 배치")
+    return fixed
+
+
+def _format_naver_mobile_text(text: str, max_chars: int = 18) -> str:
+    """네이버 모바일 화면에서 긴 문단이 덩어리로 보이지 않도록 짧은 줄로 나눈다."""
+    formatted = []
+    paragraphs = re.split(r'\n\s*\n', text.strip())
+    for para in paragraphs:
+        lines = []
+        for raw_line in para.split('\n'):
+            line = raw_line.strip()
+            if not line:
+                continue
+            # 링크/표/볼드 마커는 자동 분리하면 형식이 깨질 수 있어 그대로 둔다.
+            if (
+                len(line) <= max_chars
+                or line.startswith('|')
+                or 'http://' in line
+                or 'https://' in line
+                or '[BOLD]' in line
+                or '**' in line
+            ):
+                lines.append(line)
+                continue
+            sentences = re.split(r'(?<=[.!?。！？다요죠까니다])\s+', line)
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                current = ''
+                for word in sentence.split():
+                    candidate = f"{current} {word}".strip()
+                    if len(candidate) > max_chars and current:
+                        lines.append(current)
+                        current = word
+                    else:
+                        current = candidate
+                if current:
+                    lines.append(current)
+        if lines:
+            formatted.append('\n'.join(lines))
+    return '\n\n'.join(formatted) if formatted else text
+
+
+def _format_naver_sections_for_mobile(sections, log_fn=None):
+    changed = 0
+    for section in sections:
+        if section.get("type") != "text":
+            continue
+        before = section.get("body", "")
+        after = _format_naver_mobile_text(before)
+        if after != before:
+            section["body"] = after
+            changed += 1
+    if changed and log_fn:
+        log_fn(f"[포스팅] 네이버 모바일 가독성 줄바꿈 적용: {changed}개 텍스트 구간")
     return sections
 
 
@@ -1584,6 +1720,9 @@ def _post_naver(account, title, content, tags=None,
     # 본문을 섹션으로 파싱 + 이미지 상단 몰림 방지
     sections = _parse_naver_sections(body_text)
     sections = _redistribute_images_if_top(sections)
+    sections = _ensure_naver_thumbnail_section(sections, image_paths=image_paths, log_fn=log)
+    sections = _dedup_naver_image_sections(sections, image_paths=image_paths, log_fn=log)
+    # Claude가 작성한 줄바꿈/문단 구조를 그대로 사용 (추가 모바일 재포맷 비활성화)
 
     pw, browser = connect_cdp(on_log)
     try:
@@ -1688,6 +1827,7 @@ def _post_naver(account, title, content, tags=None,
             time.sleep(0.5)
 
         # ── 섹션별 입력 ──
+        uploaded_image_indices = set()
         for si, section in enumerate(sections):
             stype = section["type"]
 
@@ -1703,7 +1843,7 @@ def _post_naver(account, title, content, tags=None,
                     time.sleep(random.uniform(0.3, 0.7))
 
                 # 텍스트 먼저 입력 → ElementHandle.click()으로 포커스 이동 → 서식 적용
-                _chunked_type(page, heading, chunk_size=50)
+                _chunked_type(page, heading, chunk_size=30)
                 time.sleep(random.uniform(0.5, 1.0))
 
                 # 방금 입력한 소제목 텍스트 paragraph를 ElementHandle.click()으로 클릭
@@ -1738,6 +1878,9 @@ def _post_naver(account, title, content, tags=None,
 
             elif stype == "image":
                 idx = section["index"]
+                if idx in uploaded_image_indices:
+                    log(f"[포스팅] 이미지 {idx} 이미 업로드됨 — 중복 스킵")
+                    continue
                 filepath = image_paths.get(idx)
                 img_alt = next((i.get("alt", "") for i in image_infos if i["index"] == idx), "")
                 if not img_alt:
@@ -1758,7 +1901,21 @@ def _post_naver(account, title, content, tags=None,
                     log(f"[포스팅] 이미지 {idx} 업로드: {Path(filepath).name}")
                     ok = _naver_upload_image(page, filepath, log, alt=img_alt)
                     if ok:
+                        uploaded_image_indices.add(idx)
                         log(f"[포스팅] 이미지 {idx} 완료")
+                        # 이미지 업로드 후 텍스트 포커스 복구 (본문 미입력 방지)
+                        try:
+                            body_ps_after = page.query_selector_all('.se-component.se-text .se-text-paragraph')
+                            if body_ps_after:
+                                body_ps_after[-1].click()
+                            else:
+                                page.click('.se-component.se-text')
+                            time.sleep(random.uniform(0.3, 0.7))
+                            page.keyboard.press("End")
+                            page.keyboard.press("Enter")
+                            time.sleep(random.uniform(0.2, 0.5))
+                        except Exception:
+                            pass
                     else:
                         log(f"[포스팅] 이미지 {idx} 업로드 실패")
                 else:
@@ -1771,6 +1928,23 @@ def _post_naver(account, title, content, tags=None,
                 for pi, para in enumerate(paragraphs):
                     lines = [l for l in para.split('\n') if l.strip()]
                     for li, line in enumerate(lines):
+                        # 줄 단위로 본문 포커스 재확보 (네이버 에디터 포커스 이탈 방지)
+                        try:
+                            active_in_body = page.evaluate("""() => {
+                                const sel = window.getSelection();
+                                const node = sel && sel.focusNode ? sel.focusNode.parentElement : null;
+                                return !!(node && node.closest('.se-component.se-text'));
+                            }""")
+                            if not active_in_body:
+                                body_ps_now = page.query_selector_all('.se-component.se-text .se-text-paragraph')
+                                if body_ps_now:
+                                    body_ps_now[-1].click()
+                                else:
+                                    page.click('.se-component.se-text')
+                                time.sleep(0.15)
+                        except Exception:
+                            pass
+
                         stripped = line.strip()
                         # 리스트 마커(- ) 제거: 네이버 에디터 자동 리스트 변환 방지
                         if stripped.startswith('- '):
@@ -1785,18 +1959,18 @@ def _post_naver(account, title, content, tags=None,
                             continue
                         # [텍스트](URL) 마크다운 링크 → 하이퍼링크 삽입
                         # [BOLD]...[/BOLD] → **...** 변환
-                        stripped = re.sub(r'\[BOLD\](.*?)\[/BOLD\]', r'**\1**', stripped, flags=re.IGNORECASE)
+                        stripped = re.sub(r'\[BOLD\](.*?)\[/BOLD\]', r'**\1**', stripped, flags=re.IGNORECASE | re.DOTALL)
+                        # 줄바꿈 분할 등으로 [BOLD] 짝이 깨진 경우 잔여 태그 제거
+                        stripped = re.sub(r'\[/?BOLD\]', '', stripped, flags=re.IGNORECASE)
                         if re.search(r'\[.+?\]\(https?://[^\)]+\)', stripped):
                             _naver_type_line_with_links(page, stripped)
                         # **볼드** 처리 (Ctrl+B)
                         elif '**' in stripped:
                             _naver_type_line_with_bold(page, stripped)
                         else:
-                            _chunked_type(page, stripped, chunk_size=50)
+                            _chunked_type(page, _repair_common_korean_typo(stripped), chunk_size=30, delay_per_char=145)
                         if li < len(lines) - 1:
-                            # 모바일 가독성: 줄 사이 Enter 두 번 (독립 문단으로 분리)
-                            page.keyboard.press("Enter")
-                            time.sleep(random.uniform(0.2, 0.5))
+                            # 줄 사이 Enter 한 번
                             page.keyboard.press("Enter")
                             time.sleep(random.uniform(0.2, 0.5))
                     # 문단 사이 Enter 두 번
@@ -1805,6 +1979,8 @@ def _post_naver(account, title, content, tags=None,
                         time.sleep(random.uniform(0.3, 0.6))
                         page.keyboard.press("Enter")
                         time.sleep(random.uniform(0.3, 0.6))
+                        # 사람처럼 문단 사이 긴 생각 시간
+                        time.sleep(random.uniform(3.0, 5.0))
                 # 섹션 끝 Enter
                 page.keyboard.press("Enter")
                 time.sleep(random.uniform(0.8, 1.5))
@@ -1812,6 +1988,7 @@ def _post_naver(account, title, content, tags=None,
         _rand_delay(page, 1000, 2000)
 
         # ── 입력 완료 후 에디터 글자수 확인 ──
+        editor_text_len = 0
         try:
             editor_text_len = page.evaluate("""() => {
                 const els = document.querySelectorAll('.se-component.se-text .se-text-paragraph');
@@ -1824,6 +2001,13 @@ def _post_naver(account, title, content, tags=None,
             log(f"[포스팅] 에디터 실제 입력 글자수: {editor_text_len}자")
         except Exception:
             log("[포스팅] 에디터 글자수 확인 실패")
+
+        # 네이버 본문이 비어있는 상태(이미지만 업로드된 경우) 방지
+        min_required_chars = 200
+        if int(editor_text_len or 0) < min_required_chars:
+            log(f"[포스팅] ❌ 본문 입력 글자수 부족 ({editor_text_len}자 < {min_required_chars}자) — 임시저장 중단")
+            return False
+
         log("[포스팅] 본문 입력 완료")
 
         # ── 발행 패널 열기 → 카테고리 + 태그 설정 ──
@@ -2036,7 +2220,14 @@ def _md_to_wp_html(content: str) -> str:
                 html_parts.append('<p>&nbsp;</p>')
             continue
 
-        if stripped.startswith("### "):
+        if re.match(r'^\[H3\].*\[/H3\]$', stripped, re.IGNORECASE):
+            inner = re.sub(r'^\[H3\]|\[/H3\]$', '', stripped, flags=re.IGNORECASE).strip()
+            html_parts.append(f"<h3>{inline(inner)}</h3>")
+        elif re.match(r'^\[H2\].*\[/H2\]$', stripped, re.IGNORECASE):
+            inner = re.sub(r'^\[H2\]|\[/H2\]$', '', stripped, flags=re.IGNORECASE).strip()
+            h2_count[0] += 1
+            html_parts.append(f'<h2 id="section-{h2_count[0]}">{inline(inner)}</h2>')
+        elif stripped.startswith("### "):
             html_parts.append(f"<h3>{inline(stripped[4:])}</h3>")
         elif stripped.startswith("## "):
             h2_count[0] += 1
@@ -2265,11 +2456,25 @@ def _post_wordpress(account, title, content, tags=None,
     # [이미지N] / [/이미지N] 잔재 제거 ({{이미지N}} 플레이스홀더로 치환되지 못한 경우)
     content = re.sub(r'\[/?이미지\s*\d+\]', '', content)
 
-    # [애드센스] 마커 제거 — Ad Inserter 플러그인이 자동 삽입하므로 코드 삽입 불필요
-    content = re.sub(r'\[애드센스\]', '', content)
+    # triplog 여행 블로그: MRT 버튼 링크 보강
+    if account.get("blog") == "triplog":
+        try:
+            from mrt_banner import insert_mrt_banner
+            content = insert_mrt_banner(content, keyword or title, "triplog", on_log=on_log)
+        except Exception as _mrt_err:
+            log(f"[WordPress] MRT 배너 보강 실패(무시): {_mrt_err}")
+
+    # 워드프레스용 애드센스 마커 삽입 (네이버 제외)
+    content = insert_adsense_markers(content, account.get("blog", ""))
 
     # 2. 마크다운 → HTML 변환
     html_content = _md_to_wp_html(content)
+
+    # [애드센스]를 실제 코드로 치환 (WP 임시저장에서도 코드 보이도록)
+    _ad_code = _get_adsense_html()
+    if _ad_code:
+        html_content = html_content.replace("<p>[애드센스]</p>", _ad_code)
+        html_content = html_content.replace("[애드센스]", _ad_code)
 
     # 2. 썸네일(특성 이미지) 업로드 — 본문과 별개
     _featured_media_id = None
@@ -2531,6 +2736,10 @@ def post_single(blog_id: str, title: str, content: str,
     log(f"\n{'='*50}")
     log(f"[순환] {blog_id} ({account['platform']}) 시작")
     log(f"{'='*50}")
+
+    memo_path = _save_draft_memo(blog_id, account["platform"], title, content, on_log)
+    title, content = _load_draft_memo(memo_path)
+    log(f"[메모장] 업로드 원본 로드: {memo_path}")
 
     # WordPress는 REST API 직접 호출 — 로그인/로그아웃 불필요
     if account["platform"] == "wordpress":

@@ -83,6 +83,12 @@ BLOG_CATEGORIES = {
     "blogspot_daily":  "일상",
 }
 
+DEFAULT_BLOG_ORDER = [
+    "goodisak", "nolja100", "salim1su", "baremi542",
+    "woll100", "phn0502", "triplog", "me1091",
+    "blogspot_travel", "blogspot_it", "blogspot_daily",
+]
+
 # 플랫폼 뱃지 정보: blog_id → (플랫폼명, bg, text, border)
 _PLATFORM_INFO = {
     "baremi542":       ("WordPress", "#0073aa22", "#4f8ef7", "#0073aa44"),
@@ -1584,12 +1590,12 @@ class BlogAutomationApp(QMainWindow):
             "Gemini 2.0 Flash",
             "Gemini 1.5 Pro", "Gemini 1.5 Flash",
         ])
-        self._model_combo.setFixedHeight(26)
-        self._model_combo.setMinimumWidth(130)
+        self._model_combo.setFixedHeight(34)
+        self._model_combo.setMinimumWidth(190)
         self._model_combo.setStyleSheet(
             "QComboBox {"
             "  background:#1a1d2e;color:#e0e0e0;border:1px solid #1e2233;"
-            "  border-radius:5px;padding:2px 6px;font-size:11px;"
+            "  border-radius:6px;padding:4px 10px;font-size:13px;"
             "}"
             "QComboBox::drop-down { border:none; width:16px; }"
             "QComboBox QAbstractItemView {"
@@ -1613,15 +1619,35 @@ class BlogAutomationApp(QMainWindow):
         # 2. 에이전트 드롭다운 + 뱃지
         agent_row = QHBoxLayout()
         self._agent_combo = QComboBox()
-        self._agent_combo.addItems([
-            "goodisak", "nolja100", "salim1su", "baremi542",
-            "woll100", "phn0502", "triplog", "me1091",
-            "blogspot_travel", "blogspot_it", "blogspot_daily",
-        ])
+        self._agent_combo.addItems(DEFAULT_BLOG_ORDER)
+        self._agent_combo.setFixedHeight(34)
+        self._agent_combo.setMinimumWidth(280)
+        self._agent_combo.setStyleSheet(
+            "QComboBox {"
+            "  background:#1a1d2e;color:#e0e0e0;border:1px solid #1e2233;"
+            "  border-radius:6px;padding:4px 10px;font-size:13px;"
+            "}"
+            "QComboBox::drop-down { border:none; width:18px; }"
+            "QComboBox QAbstractItemView {"
+            "  background:#1a1d2e;color:#e0e0e0;selection-background-color:#2563eb;"
+            "  border:1px solid #2d3555;"
+            "}"
+        )
         # config_custom.json에 저장된 커스텀 블로그 로드
         self._load_custom_blogs()
         self._agent_combo.currentTextChanged.connect(self._on_agent_changed)
         agent_row.addWidget(self._agent_combo, 1)
+
+        self._order_combo = QComboBox()
+        self._order_combo.addItems(["고정 순서", "랜덤 순서"])
+        self._order_combo.setFixedHeight(34)
+        self._order_combo.setMinimumWidth(130)
+        self._order_combo.setStyleSheet(
+            "QComboBox {background:#1a1d2e;color:#e0e0e0;border:1px solid #1e2233;"
+            "border-radius:6px;padding:4px 10px;font-size:13px;}"
+        )
+        self._order_combo.currentTextChanged.connect(self._on_order_mode_changed)
+        agent_row.addWidget(self._order_combo)
 
         # 블로그 추가 버튼
         self._add_blog_btn = QPushButton("＋")
@@ -1915,6 +1941,11 @@ class BlogAutomationApp(QMainWindow):
         os.environ["AI_PROVIDER"] = "gemini" if key.startswith("gemini") else "claude"
         self.log_box.append(f"[모델] {label} 선택됨 (key={key})")
 
+    def _on_order_mode_changed(self, label: str):
+        mode = "fixed" if label == "고정 순서" else "random"
+        os.environ["PUBLISH_ORDER_MODE"] = mode
+        self.log_box.append(f"[발행순서] {label} 선택됨 (mode={mode})")
+
     # ── 실행 버튼 ──
     def _run_all(self):
         if self._single_worker and self._single_worker.isRunning():
@@ -1930,6 +1961,7 @@ class BlogAutomationApp(QMainWindow):
         # PATH에 /usr/local/bin 명시적 추가 (번들 환경 대비)
         env = _os.environ.copy()
         env["PATH"] = "/usr/local/bin:/usr/bin:/bin:" + env.get("PATH", "")
+        env["PUBLISH_ORDER_MODE"] = os.environ.get("PUBLISH_ORDER_MODE", "fixed")
         python_bin = "/usr/local/bin/python3"
         for candidate in ["/usr/local/bin/python3", "/usr/bin/python3",
                           shutil.which("python3") or ""]:

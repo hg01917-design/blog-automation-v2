@@ -2438,8 +2438,10 @@ if __name__ == "__main__":
     all_results = []
 
     for round_num in range(1, ROUNDS + 1):
-        blog_order = ["baremi542", "goodisak", "nolja100", "salim1su", "me1091", "triplog", "woll100", "phn0502"]
-        random.shuffle(blog_order)
+        blog_order = ["goodisak", "nolja100", "salim1su", "baremi542", "woll100", "phn0502", "triplog", "me1091"]
+        order_mode = os.environ.get("PUBLISH_ORDER_MODE", "fixed").strip().lower()
+        if order_mode == "random":
+            random.shuffle(blog_order)
         _log(f"[라운드 {round_num}] 순서: {blog_order}")
         round_results = {}
 
