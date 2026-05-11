@@ -7,7 +7,7 @@ import os
 import json
 from pathlib import Path
 from browser import connect_cdp, get_or_create_page
-from config import ACCOUNTS, ACCOUNT_MAP
+from config import ACCOUNTS, ACCOUNT_MAP, get_blog_platform
 from login_playwright import login_blog, logout_blog
 from content_builder import insert_adsense_markers
 
@@ -47,7 +47,23 @@ def _plain_text_len(content: str) -> int:
     return len(text)
 
 
-def _save_draft_memo(blog_id: str, platform: str, title: str, content: str, on_log=None) -> Path:
+def _contains_meta_leak(text: str) -> bool:
+    if not text:
+        return False
+    return bool(
+        re.search(r"(?im)^\s*프롬프트\s*:", text)
+        or re.search(r"(?im)^\s*파일명\s*:", text)
+        or re.search(r"(?im)^\s*alt\s*:", text)
+    )
+
+
+def _is_government_topic(text: str, kw: str) -> bool:
+    src = f"{text or ''} {kw or ''}".lower()
+    tokens = ("정부지원", "지원금", "복지", "정부24", "bokjiro", "청년월세", "중위소득", "주민센터", "신청", "급여")
+    return any(t in src for t in tokens)
+
+
+def _save_draft_memo(blog_id: str, platform: str, title: str, content: str, on_log=None, suffix: str = "") -> Path:
     def log(msg):
         if on_log:
             on_log(msg)
@@ -57,7 +73,7 @@ def _save_draft_memo(blog_id: str, platform: str, title: str, content: str, on_l
     ext = "txt" if platform == "naver" else "html"
     safe_blog = re.sub(r'[^A-Za-z0-9_-]', '_', blog_id)
     ts = time.strftime("%Y%m%d_%H%M%S")
-    memo_path = memo_dir / f"{ts}_{safe_blog}.{ext}"
+    memo_path = memo_dir / f"{ts}_{safe_blog}{suffix}.{ext}"
     payload = {
         "blog_id": blog_id,
         "platform": platform,
@@ -252,10 +268,19 @@ def _tistory_upload_image(page, filepath: str, alt: str = "", max_retries: int =
 
 def _body_to_tinymce_html(body_text: str, blog_id: str) -> str:
     """본문 마커를 TinyMCE HTML로 변환. 이미지/애드센스는 placeholder로 처리."""
+    # 이미지는 썸네일 1장만 유지 (2번 이상 플레이스홀더 제거)
+    _img_seen = {"used": False}
+
+    def _keep_first_image_only(m):
+        if _img_seen["used"]:
+            return "\n"
+        _img_seen["used"] = True
+        return f'\n{{{{이미지{m.group(1)}}}}}\n'
+
     # [이미지N]...[/이미지N] → {{이미지N}}
     body = re.sub(
         r'\[이미지\s*(\d+)\][\s\S]*?\[/이미지\s*\1\]',
-        lambda m: f'\n{{{{이미지{m.group(1)}}}}}\n',
+        _keep_first_image_only,
         body_text
     )
     body = re.sub(r'\[/?이미지\s*\d+\]', '', body)
@@ -263,6 +288,137 @@ def _body_to_tinymce_html(body_text: str, blog_id: str) -> str:
     body = insert_adsense_markers(body, blog_id)
 
     SP = '<p data-ke-size="size19">&nbsp;</p>'
+    is_tistory = get_blog_platform(blog_id).lower() == "tistory"
+
+    def _topic_of(src_text: str) -> str:
+        t = (src_text or "").lower()
+        is_travel = any(k in t for k in ("여행", "숙소", "호텔", "항공", "투어", "맛집", "trip", "travel", "flight", "hotel"))
+        is_movie = any(k in t for k in ("영화", "드라마", "ott", "netflix", "디즈니", "쿠키영상", "상영", "배우"))
+        is_it = any(k in t for k in ("it", "앱", "프로그램", "설치", "업데이트", "ios", "android", "윈도우", "mac", "노트북", "스마트폰", "ai", "코딩"))
+        is_gov = any(k in t for k in ("정부지원", "지원금", "신청", "복지", "급여", "대상", "자격", "정부24", "bokjiro", "청년월세", "중위소득", "주민센터", "임대차"))
+        if is_gov:
+            return "gov"
+        if is_travel:
+            return "travel"
+        if is_movie:
+            return "movie"
+        if is_it:
+            return "it"
+        return "default"
+
+    def _travel_more_by_h2(h2_text: str) -> tuple[str, list[str]]:
+        t = (h2_text or "").lower()
+        if any(k in t for k in ("교통", "이동", "동선", "지하철", "버스", "렌트", "택시")):
+            return "이동 전에 확인할 포인트", [
+                "- 이동 시간대에 따라 체감 이동 시간이 크게 달라집니다.",
+                "- 환승 횟수와 도보 구간을 함께 확인해 두세요.",
+                "- 막차·운행 종료 시간을 미리 체크하면 일정이 안정적입니다.",
+            ]
+        if any(k in t for k in ("숙소", "호텔", "체크인", "체크아웃", "예약")):
+            return "숙소 예약 전 체크 항목", [
+                "- 체크인 가능 시간과 추가 요금 여부를 먼저 확인하세요.",
+                "- 환불 가능 기간과 취소 수수료 조건을 꼭 확인하세요.",
+                "- 숙소 주변 이동 편의성(역/정류장 거리)을 체크하세요.",
+            ]
+        if any(k in t for k in ("비용", "예산", "가격", "요금", "경비", "할인")):
+            return "예산 계획할 때 보는 포인트", [
+                "- 성수기/비수기 단가 차이를 먼저 확인하세요.",
+                "- 입장권·교통·식비를 분리해 예산을 잡으면 정확도가 높습니다.",
+                "- 현장결제/사전예약 가격 차이를 비교해보세요.",
+            ]
+        if any(k in t for k in ("맛집", "식당", "웨이팅", "브런치", "카페")):
+            return "방문 전 체크하면 좋은 포인트", [
+                "- 혼잡 시간대를 피하면 대기 시간을 줄일 수 있습니다.",
+                "- 대표 메뉴와 1인 기준 주문량을 미리 확인하세요.",
+                "- 휴무일/브레이크타임은 당일에도 변동될 수 있어요.",
+            ]
+        return "예약 전에 체크할 포인트", [
+            "- 성수기와 비수기 가격 차이를 먼저 확인하세요.",
+            "- 취소/환불 규정을 예약 전에 꼭 체크하세요.",
+            "- 이동 동선 기준으로 출발 시간을 정하면 일정이 편합니다.",
+        ]
+
+    def _tistory_more_block(src_text: str, h2_text: str = "") -> str:
+        topic = _topic_of(src_text)
+
+        if topic == "travel":
+            title, tips = _travel_more_by_h2(h2_text)
+        elif topic == "movie":
+            title = "보기 전에 알고 가면 좋은 포인트"
+            tips = [
+                "- 스포일러 없이 관전 포인트만 먼저 정리해두세요.",
+                "- 러닝타임과 쿠키영상 유무를 미리 확인하면 좋아요.",
+                "- 함께 볼 사람 취향(장르/템포)과 맞는지 체크하세요.",
+            ]
+        elif topic == "it":
+            title = "설치 전에 확인할 체크 항목"
+            tips = [
+                "- 내 기기/OS 버전에서 지원되는지 먼저 확인하세요.",
+                "- 무료와 유료 기능 차이를 설치 전에 비교해두세요.",
+                "- 권한 요청 범위와 개인정보 설정을 꼭 점검하세요.",
+            ]
+        else:
+            title = "먼저 확인하면 좋은 체크 포인트"
+            tips = [
+                "- 핵심 조건과 제한사항을 먼저 확인하세요.",
+                "- 비용과 시간 소요를 미리 계산해두면 좋아요.",
+                "- 내 상황에 맞는 우선순위를 정해두면 편합니다.",
+            ]
+
+        tip_html = "".join([f'<p data-ke-size="size19">{line}</p>' for line in tips])
+        faq_q1 = "이 구간에서 가장 먼저 확인해야 할 건 무엇인가요?"
+        faq_a1 = "일정과 예산에 직접 영향을 주는 조건(시간, 비용, 환불)을 먼저 확인하면 시행착오를 줄일 수 있습니다."
+        faq_q2 = "현장에서 변수 생기면 어떻게 대응하면 좋나요?"
+        faq_a2 = "대체 동선과 예비 시간을 1개씩 미리 정해두면 갑작스러운 지연이나 혼잡에도 일정이 무너지지 않습니다."
+        return (
+            '<details data-ke-type="more" data-ke-style="normal" style="margin:16px 0;border:1px solid #c7d2e3;border-radius:14px;background:#f3f8ff;">'
+            f'<summary style="font-size:17px;font-weight:800;line-height:1.5;padding:14px 16px;color:#0f172a;">{title}</summary>'
+            '<div style="padding:12px 14px 6px;line-height:1.78;color:#1f2937;">'
+            f'{tip_html}'
+            '<div style="margin:12px 0 6px;padding:10px 12px;border:1px solid #d7dee8;border-radius:10px;background:#ffffff;">'
+            '<p data-ke-size="size19" style="margin:0 0 6px;font-weight:700;color:#0f172a;">자주 묻는 질문</p>'
+            f'<p data-ke-size="size19" style="margin:0 0 4px;"><strong>Q1. {faq_q1}</strong></p>'
+            f'<p data-ke-size="size19" style="margin:0 0 10px;">A. {faq_a1}</p>'
+            '<p data-ke-size="size19" data-adsense="1">&nbsp;</p>'
+            f'<p data-ke-size="size19" style="margin:10px 0 4px;"><strong>Q2. {faq_q2}</strong></p>'
+            f'<p data-ke-size="size19" style="margin:0;">A. {faq_a2}</p>'
+            '</div>'
+            '</div>'
+            '</details>'
+        )
+
+    def _magazine_block(src_text: str, h2_text: str = "", idx: int = 0) -> str:
+        topic = _topic_of(src_text)
+        if topic == "travel":
+            title = "여행 핵심 포인트" if idx % 2 == 0 else "일정 최적화 체크"
+            items = ["동선 기준으로 일정 짜기", "성수기 가격 변동 체크", "환불 규정 먼저 확인"] if idx % 2 == 0 else ["혼잡 시간대 피하기", "이동시간 버퍼 확보", "현장 대기시간 고려"]
+        elif topic == "movie":
+            title = "관람 전 체크 포인트" if idx % 2 == 0 else "취향 매칭 포인트"
+            items = ["러닝타임/쿠키영상 확인", "스포 없는 관전 포인트", "취향 맞춤 장르 체크"] if idx % 2 == 0 else ["집중감 높은 구간 확인", "동행 취향과 장르 합의", "관람 시간대 선택"]
+        elif topic == "it":
+            title = "설치 전 핵심 포인트" if idx % 2 == 0 else "실사용 점검 포인트"
+            items = ["기기/OS 호환 확인", "무료·유료 기능 비교", "권한/보안 설정 점검"] if idx % 2 == 0 else ["초기 설정 시간 확인", "데이터 백업 여부 점검", "자동 업데이트 옵션 확인"]
+        else:
+            return ""
+        h2_hint = f'<p style="margin:0 0 8px;color:#64748b;font-size:12px;">{h2_text}</p>' if h2_text else ""
+        li = "".join([f"<li>{x}</li>" for x in items])
+        return (
+            '<div style="margin:14px 0;padding:12px 14px;border:1px solid #cdd8e5;background:#f4f8ff;border-radius:12px;">'
+            f'{h2_hint}'
+            f'<p style="margin:0 0 8px;font-weight:700;color:#0f172a;">{title}</p>'
+            f'<ul style="margin:0;padding-left:18px;line-height:1.75;color:#334155;">{li}</ul>'
+            '</div>'
+        )
+
+    def _gov_support_block() -> str:
+        return (
+            '<div style="margin:16px 0;display:flex;flex-direction:column;gap:8px;">'
+            '<div style="border:1px solid #dbe4ef;background:#f8fbff;border-radius:10px;padding:10px 12px;"><strong>지원 대상</strong><p style="margin:6px 0 0;">연령, 소득, 가구 요건을 먼저 확인하세요.</p></div>'
+            '<div style="border:1px solid #dbe4ef;background:#f8fbff;border-radius:10px;padding:10px 12px;"><strong>지원 금액</strong><p style="margin:6px 0 0;">월/회차 기준 금액과 상한선을 확인하세요.</p></div>'
+            '<div style="border:1px solid #dbe4ef;background:#f8fbff;border-radius:10px;padding:10px 12px;"><strong>신청 기간</strong><p style="margin:6px 0 0;">접수 시작일, 마감일, 예산 소진 여부를 확인하세요.</p></div>'
+            '<div style="border:1px solid #dbe4ef;background:#f8fbff;border-radius:10px;padding:10px 12px;"><strong>신청 방법</strong><p style="margin:6px 0 0;">온라인/방문 신청 경로와 필요 서류를 미리 준비하세요.</p></div>'
+            '</div>'
+        )
 
     def _needs_spacing(html_tag: str) -> bool:
         """H2/H3/이미지/애드센스/버튼 블록 여부"""
@@ -275,6 +431,10 @@ def _body_to_tinymce_html(body_text: str, blog_id: str) -> str:
         )
 
     parts = []
+    topic = _topic_of(body_text)
+    current_h2_text = ""
+    mag_count = 0
+    added_gov = False
     for line in body.split('\n'):
         s = line.strip()
         if not s:
@@ -290,7 +450,14 @@ def _body_to_tinymce_html(body_text: str, blog_id: str) -> str:
         # H2
         h2 = re.match(r'^##\s+(.+)$', s) or re.match(r'^\[H2\](.+?)\[/H2\]$', s, re.IGNORECASE)
         if h2:
-            parts.append(f'<h2 data-ke-size="size26">{re.sub(r"<[^>]+>","",h2.group(1)).strip()}</h2>')
+            current_h2_text = re.sub(r"<[^>]+>","",h2.group(1)).strip()
+            parts.append(f'<h2 data-ke-size="size26">{current_h2_text}</h2>')
+            if topic in ("travel", "movie", "it") and mag_count < 2:
+                parts.append(_magazine_block(body_text, current_h2_text, mag_count))
+                mag_count += 1
+            elif topic == "gov" and not added_gov:
+                parts.append(_gov_support_block())
+                added_gov = True
             continue
         # 이미지 placeholder
         img = re.match(r'\{\{이미지(\d+)\}\}', s)
@@ -299,7 +466,10 @@ def _body_to_tinymce_html(body_text: str, blog_id: str) -> str:
             continue
         # 애드센스 placeholder
         if s in ('[애드센스]', '##AD##'):
-            parts.append('<p data-ke-size="size19" data-adsense="1">&nbsp;</p>')
+            if is_tistory:
+                parts.append(_tistory_more_block(body_text, current_h2_text))
+            else:
+                parts.append('<p data-ke-size="size19" data-adsense="1">&nbsp;</p>')
             continue
         # 꿀팁 박스 / 인용 (> 로 시작)
         if s.startswith('> '):
@@ -2423,6 +2593,59 @@ def _post_wordpress(account, title, content, tags=None,
         if on_log:
             on_log(msg)
 
+    def _mrt_link_count(text: str) -> int:
+        return len(re.findall(r"https?://(?:myrealt\\.rip|www\\.myrealtrip\\.com)/", text or "", flags=re.IGNORECASE))
+
+    def _wp_info_block(src_text: str) -> str:
+        if account.get("blog") == "baremi542":
+            is_travel = is_movie = is_it = False
+        else:
+            is_travel = any(k in (src_text or "").lower() for k in ("여행", "숙소", "호텔", "항공", "투어", "trip", "travel", "flight", "hotel"))
+            is_movie = any(k in (src_text or "").lower() for k in ("영화", "드라마", "ott", "netflix", "쿠키영상", "상영", "배우"))
+            is_it = any(k in (src_text or "").lower() for k in ("it", "앱", "프로그램", "설치", "업데이트", "ios", "android", "윈도우", "mac", "ai", "코딩"))
+        if is_travel:
+            title_txt = "예약 전에 체크할 포인트"
+            tips = [
+                "성수기와 비수기 가격 차이를 먼저 확인하세요.",
+                "취소/환불 규정을 예약 전에 꼭 체크하세요.",
+                "이동 동선 기준으로 출발 시간을 정하면 일정이 편합니다.",
+            ]
+        elif is_movie:
+            title_txt = "보기 전에 알고 가면 좋은 포인트"
+            tips = [
+                "스포일러 없이 관전 포인트만 먼저 정리해두세요.",
+                "러닝타임과 쿠키영상 유무를 미리 확인하면 좋아요.",
+                "함께 볼 사람 취향(장르/템포)과 맞는지 체크하세요.",
+            ]
+        elif is_it:
+            title_txt = "설치 전에 확인할 체크 항목"
+            tips = [
+                "내 기기/OS 버전에서 지원되는지 먼저 확인하세요.",
+                "무료와 유료 기능 차이를 설치 전에 비교해두세요.",
+                "권한 요청 범위와 개인정보 설정을 꼭 점검하세요.",
+            ]
+        elif account.get("blog") == "baremi542":
+            title_txt = "신청 전에 확인할 정부지원 체크 포인트"
+            tips = [
+                "지원 대상·소득·재산 조건을 먼저 확인하세요.",
+                "신청 기간과 마감 시간을 먼저 체크하세요.",
+                "필요 서류와 제출 경로를 미리 준비하세요.",
+            ]
+        else:
+            title_txt = "먼저 확인하면 좋은 체크 포인트"
+            tips = [
+                "핵심 조건과 제한사항을 먼저 확인하세요.",
+                "비용과 시간 소요를 미리 계산해두면 좋아요.",
+                "내 상황에 맞는 우선순위를 정해두면 편합니다.",
+            ]
+        li = "".join([f"<li>{x}</li>" for x in tips])
+        return (
+            f'<div class="wp-info-box" style="border:1px solid #e6e0da;background:#fffaf6;padding:14px 16px;border-radius:10px;margin:18px 0;">'
+            f'<p style="font-weight:700;margin:0 0 8px;">{title_txt}</p>'
+            f'<ul style="margin:0;padding-left:18px;line-height:1.75;">{li}</ul>'
+            f'</div>'
+        )
+
     site_url = account.get("editor_url", "").replace("/wp-admin/post-new.php", "")
     if not site_url:
         site_url = "https://baremi542.com"
@@ -2447,8 +2670,19 @@ def _post_wordpress(account, title, content, tags=None,
     # 0. 제목/본문 정리 — Claude 생성물에 포함된 내부 마커/프롬프트 제거
     title = re.sub(r'^\*\*', '', title).strip()  # 제목 앞 ** 제거
     title = re.sub(r'\*\*$', '', title).strip()  # 제목 뒤 ** 제거
+    if keyword and keyword.strip() and keyword not in title:
+        fallback_title = f"{keyword} 신청 조건과 방법 정리"
+        log(f"[WordPress] 제목 보정: '{title}' -> '{fallback_title}'")
+        title = fallback_title
     # ===이미지=== ... ===이미지끝=== 섹션 (Gemini 프롬프트 포함) 제거
     content = re.sub(r'===이미지===.*?===이미지끝===', '', content, flags=re.DOTALL)
+    # 이미지 생성 메타 라인 제거 (프롬프트/파일명/alt 잔재)
+    content = re.sub(r'(?im)^\s*프롬프트\s*:\s*.*$', '', content)
+    content = re.sub(r'(?im)^\s*파일명\s*:\s*.*$', '', content)
+    content = re.sub(r'(?im)^\s*alt\s*:\s*.*$', '', content)
+    if _contains_meta_leak(content):
+        log("[QA] META_LEAK=FAIL 원문 메타 라인 잔존 — 발행 중단")
+        return False
     # ═══...═══ 품질 체크 블록 제거
     content = re.sub(r'═{3,}.*?═{3,}', '', content, flags=re.DOTALL)
     # {{마이리얼트립링크}} 등 미치환 플레이스홀더 제거 ({{이미지N}}은 나중에 처리하므로 제외)
@@ -2456,13 +2690,39 @@ def _post_wordpress(account, title, content, tags=None,
     # [이미지N] / [/이미지N] 잔재 제거 ({{이미지N}} 플레이스홀더로 치환되지 못한 경우)
     content = re.sub(r'\[/?이미지\s*\d+\]', '', content)
 
+    # 키워드-콘텐츠 불일치 방지: 키워드 핵심어가 제목/본문에 충분히 없으면 발행 중단
+    if keyword:
+        _kw = re.sub(r"\s+", " ", keyword).strip()
+        _kw_tokens = [t for t in _kw.split(" ") if len(t) >= 2]
+        _title_l = title.lower()
+        _content_l = content.lower()
+        _matched = 0
+        for t in _kw_tokens:
+            tl = t.lower()
+            if tl in _title_l or tl in _content_l:
+                _matched += 1
+        need = max(1, len(_kw_tokens) // 2)
+        if _matched < need:
+            log(f"[WordPress] ❌ 키워드-본문 불일치 감지: keyword='{keyword}', matched={_matched}/{len(_kw_tokens)} — 발행 중단")
+            return False
+
+    if account.get("blog") == "baremi542" and not _is_government_topic(content, keyword):
+        log(f"[QA] TOPIC_MATCH=FAIL blog=baremi542 keyword='{keyword}' — 정부지원금 토픽 불일치, 발행 중단")
+        return False
+
     # triplog 여행 블로그: MRT 버튼 링크 보강
     if account.get("blog") == "triplog":
         try:
             from mrt_banner import insert_mrt_banner
             content = insert_mrt_banner(content, keyword or title, "triplog", on_log=on_log)
+            count_after = _mrt_link_count(content)
+            log(f"[WordPress] MRT 링크 개수(삽입 후): {count_after}")
+            if count_after < 1:
+                log("[WordPress] ❌ MRT 링크 누락 감지 — 임시저장 중단")
+                return False
         except Exception as _mrt_err:
             log(f"[WordPress] MRT 배너 보강 실패(무시): {_mrt_err}")
+            return False
 
     # 워드프레스용 애드센스 마커 삽입 (네이버 제외)
     content = insert_adsense_markers(content, account.get("blog", ""))
@@ -2470,11 +2730,34 @@ def _post_wordpress(account, title, content, tags=None,
     # 2. 마크다운 → HTML 변환
     html_content = _md_to_wp_html(content)
 
+    # 최종 업로드 본문(정제 후) 메모 저장
+    try:
+        _save_draft_memo(account.get("blog", "wordpress"), "wordpress", title, html_content, on_log, suffix="_final")
+    except Exception:
+        pass
+
+    # 정보 밀도 보강: 본문 상단 정보 박스 삽입
+    info_block = _wp_info_block(content)
+    if "wp-info-box" not in html_content:
+        html_content = info_block + html_content
+
     # [애드센스]를 실제 코드로 치환 (WP 임시저장에서도 코드 보이도록)
     _ad_code = _get_adsense_html()
     if _ad_code:
         html_content = html_content.replace("<p>[애드센스]</p>", _ad_code)
         html_content = html_content.replace("[애드센스]", _ad_code)
+    if _contains_meta_leak(html_content):
+        log("[QA] META_LEAK=FAIL 최종 본문 메타 라인 잔존 — 발행 중단")
+        return False
+
+    _ad_markers = [
+        "adsbygoogle",
+        "data-ad-client",
+        "[adsense]",
+        "<!-- wp:html -->",
+    ]
+    _ad_detected = any(m in html_content.lower() for m in _ad_markers)
+    log(f"[WordPress] 본문 광고 코드 감지: {_ad_detected}")
 
     # 2. 썸네일(특성 이미지) 업로드 — 본문과 별개
     _featured_media_id = None
@@ -2643,6 +2926,31 @@ def _post_wordpress(account, title, content, tags=None,
         resp = json.loads(_urlopen(req, timeout=30).read())
         post_id = resp.get("id")
         post_url = resp.get("link", "")
+        post_status = resp.get("status", "")
+        post_type = resp.get("type", "")
+        post_title = ((resp.get("title") or {}).get("rendered") or title)
+        log(f"[WordPress] 생성 응답: site={site_url}, id={post_id}, status={post_status}, type={post_type}, link={post_url}")
+
+        if not post_id:
+            log("[WordPress] ❌ post_id 없음 — 임시저장 실패 처리")
+            return False
+
+        verify_req = urllib.request.Request(
+            f"{site_url}/wp-json/wp/v2/posts/{post_id}?context=edit",
+            headers=headers,
+        )
+        verify_resp = json.loads(_urlopen(verify_req, timeout=15).read())
+        v_status = verify_resp.get("status", "")
+        v_type = verify_resp.get("type", "")
+        v_link = verify_resp.get("link", "")
+        v_title = ((verify_resp.get("title") or {}).get("rendered") or "").strip()
+        log(f"[WordPress] 저장 검증: id={post_id}, status={v_status}, type={v_type}, title={v_title}, link={v_link}")
+        if v_status != "draft":
+            log(f"[WordPress] ❌ draft 저장 검증 실패: status={v_status}")
+            return False
+        if title.strip() and v_title and title.strip() != v_title:
+            log(f"[WordPress] ⚠ 제목 불일치: req='{title.strip()}' / saved='{v_title}'")
+
         log(f"[WordPress] ✓ 임시저장 완료: {post_url}")
 
         # Rank Math updateMeta — REST API meta 필드가 비활성화된 경우 전용 엔드포인트 사용
@@ -2740,6 +3048,30 @@ def post_single(blog_id: str, title: str, content: str,
     memo_path = _save_draft_memo(blog_id, account["platform"], title, content, on_log)
     title, content = _load_draft_memo(memo_path)
     log(f"[메모장] 업로드 원본 로드: {memo_path}")
+
+    if blog_id == "salim1su":
+        original_title = title
+        cleaned_title = re.sub(r"\s+", " ", (title or "").replace("\n", " ")).strip()
+        cleaned_title = re.sub(r"^\*+|\*+$", "", cleaned_title).strip()
+        if cleaned_title != original_title:
+            log(f"[제목검증] salim1su 제목 정리: '{original_title}' -> '{cleaned_title}'")
+        else:
+            log(f"[제목검증] salim1su 제목 유지: '{cleaned_title}'")
+        title = cleaned_title
+
+    if blog_id == "nolja100":
+        try:
+            from mrt_banner import insert_mrt_banner
+            before_count = len(re.findall(r"https?://(?:myrealt\\.rip|www\\.myrealtrip\\.com)/", content or "", flags=re.IGNORECASE))
+            content = insert_mrt_banner(content, keyword or title, "nolja100", on_log=on_log)
+            after_count = len(re.findall(r"https?://(?:myrealt\\.rip|www\\.myrealtrip\\.com)/", content or "", flags=re.IGNORECASE))
+            log(f"[MRT] nolja100 링크 개수: before={before_count}, after={after_count}")
+            if after_count < 1:
+                log("[MRT] ❌ nolja100 본문에 제휴 링크 없음 — 포스팅 중단")
+                return False
+        except Exception as e:
+            log(f"[MRT] ❌ nolja100 링크 보강 실패: {e}")
+            return False
 
     # WordPress는 REST API 직접 호출 — 로그인/로그아웃 불필요
     if account["platform"] == "wordpress":
