@@ -197,20 +197,47 @@ def add_title_overlay(img_path: str, title: str, blog_id: str = "", on_log=None)
             _draw_lines(draw, wrapped, font, W, text_top, gap=10)
 
         elif blog_id == "salim1su":
-            # 상단 핑크 리본 + ✨살림정보 태그
-            font = _font(max(46, int(W * .074))); tf = _font(max(22, int(W * .030)))
+            # 중앙 고정 대형 텍스트. 모바일 목록에서도 한눈에 보이도록 글자 크기와 대비를 최우선으로 둔다.
+            font = _font(max(92, int(W * .142))); tf = _font(max(32, int(W * .045)))
             ov = Image.new("RGBA", img.size, (0,0,0,0))
-            rh = int(H * .09)
-            ImageDraw.Draw(ov).rectangle([(0,0),(W,rh)], fill=(220,100,110,225))
-            for i in range(H//3):
-                ImageDraw.Draw(ov).line([(0,H-H//3+i),(W,H-H//3+i)], fill=(120,40,50,int(170*(i/(H//3))**1.2)))
+            rh = int(H * .105)
+            ImageDraw.Draw(ov).rectangle([(0,0),(W,rh)], fill=(216,74,92,238))
+            for i in range(H):
+                alpha = int(135 + 80 * (i / H))
+                ImageDraw.Draw(ov).line([(0,i),(W,i)], fill=(35,15,20,alpha))
             merged = Image.alpha_composite(img, ov)
             draw = ImageDraw.Draw(merged)
             draw.text((W//2, rh//2), "★ 살림정보", font=tf, fill=(255,240,240,255), anchor="mm")
-            wrapped = _wrap_pixels(draw, core, font, W - 80)[:2]
-            lhs = [draw.textbbox((0,0),l,font=font)[3] for l in wrapped]
-            total_h = sum(lhs)+(len(wrapped)-1)*10; y=H-int(H*.07)-total_h
-            _draw_lines(draw, wrapped, font, W, y, gap=10)
+            salim_core = _extract_core(title, 10)
+            wrapped = _wrap_pixels(draw, salim_core, font, W - 110)[:2]
+            line_heights = []
+            line_widths = []
+            for line in wrapped:
+                bb = draw.textbbox((0, 0), line, font=font)
+                line_widths.append(bb[2] - bb[0])
+                line_heights.append(bb[3] - bb[1])
+            total_h = sum(line_heights) + (len(wrapped) - 1) * 20
+            card_w = min(W - 40, max(line_widths or [0]) + 110)
+            card_h = max(int(H * .34), total_h + 95)
+            card_x = (W - card_w) // 2
+            card_y = (H - card_h) // 2
+            try:
+                draw.rounded_rectangle(
+                    [(card_x, card_y), (card_x + card_w, card_y + card_h)],
+                    radius=34,
+                    fill=(0, 0, 0, 218),
+                    outline=(255, 255, 255, 230),
+                    width=5,
+                )
+            except Exception:
+                draw.rectangle([(card_x, card_y), (card_x + card_w, card_y + card_h)], fill=(0, 0, 0, 218))
+            y = card_y + (card_h - total_h) // 2
+            for line in wrapped:
+                bb = draw.textbbox((0, 0), line, font=font)
+                lw = bb[2] - bb[0]
+                lh = bb[3] - bb[1]
+                _shadow(draw, ((W - lw) // 2, y), line, font, fill=(255,255,255,255), shadow=(0,0,0,255))
+                y += lh + 20
 
         elif blog_id == "woll100":
             # 도로 표지판 스타일 (교통정보)
@@ -724,16 +751,16 @@ def _generate_pillow_thumbnail(blog_id: str, keyword: str, thumb_path: str, on_l
         W, H = 800, 800  # 1:1 정사각형
 
         _PALETTES = {
-            "goodisak":  [(8,  12, 35), (18, 35, 80)],    # 딥 네이비 (IT/금융)
-            "nolja100":  [(12,  6, 35), (45, 15, 95)],    # 딥 퍼플 (여행)
-            "salim1su":  [(100,35, 45), (175,75, 90)],    # 로즈핑크 (살림)
-            "baremi542": [(8,  18, 32), (18, 38, 62)],    # 다크슬레이트 (정보)
-            "triplog":   [(4,  45, 30), (12, 85, 58)],    # 에메랄드 (여행WP)
-            "woll100":   [(8,  32, 12), (20, 72, 28)],    # 다크포레스트 (교통)
-            "phn0502":   [(4,   4, 12), (15, 12, 35)],    # 시네마블랙 (영화)
-            "me1091":    [(35,  4,  4), (85, 12, 12)],    # 딥크림슨 (리뷰)
+            "goodisak":  [(214, 232, 255), (181, 212, 248)],
+            "nolja100":  [(255, 229, 214), (255, 204, 178)],
+            "salim1su":  [(255, 235, 239), (255, 209, 220)],
+            "baremi542": [(225, 245, 250), (200, 230, 240)],
+            "triplog":   [(222, 248, 238), (196, 238, 223)],
+            "woll100":   [(235, 247, 222), (212, 236, 188)],
+            "phn0502":   [(245, 239, 255), (227, 218, 252)],
+            "me1091":    [(255, 236, 230), (255, 217, 206)],
         }
-        c1, c2 = _PALETTES.get(blog_id, [(15, 15, 40), (35, 35, 80)])
+        c1, c2 = _PALETTES.get(blog_id, [(235, 240, 255), (210, 222, 248)])
 
         img = Image.new("RGB", (W, H))
         draw = ImageDraw.Draw(img)
@@ -748,10 +775,10 @@ def _generate_pillow_thumbnail(blog_id: str, keyword: str, thumb_path: str, on_l
         ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         d = ImageDraw.Draw(ov)
         rg = int(W * 0.45)
-        gc = tuple(min(255, v + 35) for v in c2) + (35,)
+        gc = tuple(min(255, v + 20) for v in c2) + (42,)
         d.ellipse([(-rg // 3, -rg // 3), (rg, rg)], fill=gc)
         r2 = int(W * 0.30)
-        sc = tuple(min(255, v + 20) for v in c1) + (28,)
+        sc = tuple(min(255, v + 12) for v in c1) + (34,)
         d.ellipse([(W - r2, H - r2), (W + r2 // 2, H + r2 // 2)], fill=sc)
 
         img_final = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")

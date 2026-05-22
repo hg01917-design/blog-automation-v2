@@ -14,11 +14,6 @@ from claude_direct import generate_text
 from image_router import generate_images_for_blog as _img_router
 from overnight_run import _truncate_title
 
-try:
-    from agents import research_agent as _research
-except ImportError:
-    import research_agent as _research
-
 BLOG_ID = "baremi542"
 PERSONA_RULE = (
     "baremi542 정부지원금 블로그 운영자 본인 시점 — 정부 혜택을 직접 찾아 정리하는 사람. "
@@ -27,7 +22,7 @@ PERSONA_RULE = (
 )
 
 
-def run(keyword: str, on_log=None, on_status=None, skip_images=False):
+def run(keyword: str, on_log=None, on_status=None, skip_images=False, extra_context=None):
     """글 + 이미지 생성 후 파싱된 결과를 반환한다.
 
     blog_id는 "baremi542"으로 고정됩니다.
@@ -54,13 +49,13 @@ def run(keyword: str, on_log=None, on_status=None, skip_images=False):
 
     log(f"[{blog_id}] 페르소나 규칙 적용: {PERSONA_RULE}")
 
-    # 1. 사전 팩트 수집
-    fc = _research.run(keyword, blog_id, on_log=log)
+    # 1. 공통 리서치 컨텍스트 사용
+    extra_ctx = extra_context
 
     # 2. Claude.ai 글 생성
     log(f"[작성] {blog_id} / '{keyword}' — Claude.ai 글 생성")
     raw = generate_text("", blog_id=blog_id, keyword=keyword,
-                        extra_context=fc["context"] if fc["success"] else None,
+                        extra_context=extra_ctx,
                         on_log=log)
 
     if not raw or "추출 실패" in raw:

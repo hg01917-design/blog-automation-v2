@@ -7,7 +7,11 @@
 """
 import re
 import urllib.parse
+import urllib.request
+import hashlib
 from pathlib import Path
+
+from PIL import Image, ImageOps
 
 
 # 공정위 고지 문구
@@ -19,6 +23,9 @@ _CTA = {
     "triplog":        "👉 마이리얼트립 최저가 예약",
     "blogspot_travel":"👉 마이리얼트립 예약 바로가기",
 }
+
+_FIXED_AFFILIATE_URL = "https://myrealt.rip/ZYUtd2"
+_MRT_IMG_DIR = Path(__file__).parent / "images" / "mrt"
 
 
 def _build_banner_html(affiliate_url: str, keyword: str, blog_id: str) -> str:
@@ -35,6 +42,57 @@ def _build_banner_html(affiliate_url: str, keyword: str, blog_id: str) -> str:
         f'padding:12px 28px;border-radius:8px;font-weight:bold;'
         f'font-size:15px;text-decoration:none;">{cta}</a>\n'
         f'</div>\n'
+    )
+
+
+def _extract_mrt_image_urls(body: str) -> list[str]:
+    return re.findall(r'https?://[^\s"\']+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"\']*)?', body or "", flags=re.IGNORECASE)
+
+
+def _download_and_convert_webp(img_url: str, seed: str, idx: int, on_log=None) -> str:
+    def log(msg):
+        if on_log:
+            on_log(msg)
+    _MRT_IMG_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0"})
+        raw = urllib.request.urlopen(req, timeout=20).read()
+        digest = hashlib.sha1((seed + img_url + str(len(raw))).encode()).hexdigest()[:12]
+        out_name = f"mrt_{idx:02d}_{digest}.webp"
+        out_path = _MRT_IMG_DIR / out_name
+    except Exception as e:
+        log(f"[MRT배너] 이미지 다운로드 실패: {e}")
+        return ""
+
+    try:
+        tmp_path = _MRT_IMG_DIR / f"_tmp_{idx}.bin"
+        tmp_path.write_bytes(raw)
+        with Image.open(tmp_path) as im:
+            im = ImageOps.exif_transpose(im).convert("RGB")
+            w, h = im.size
+            if w > 1600:
+                nh = int(h * (1600 / w))
+                im = im.resize((1600, nh), Image.LANCZOS)
+            im.save(out_path, format="WEBP", quality=84, method=6)
+        tmp_path.unlink(missing_ok=True)
+        log(f"[MRT배너] 이미지 저장(webp): {out_path}")
+        return str(out_path)
+    except Exception as e:
+        log(f"[MRT배너] 이미지 변환 실패: {e}")
+        return ""
+
+
+def _build_review_block(keyword: str, affiliate_url: str) -> str:
+    return (
+        "\n<div style=\"border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin:18px 0;background:#f8fbff;\">\n"
+        f"<p style=\"margin:0 0 8px;font-weight:700;\">{keyword} 상품 정보·리뷰 요약</p>\n"
+        "<ul style=\"margin:0;padding-left:18px;line-height:1.75;\">\n"
+        "<li>상품 안내에 나온 핵심 포함사항/이용 조건을 먼저 확인하세요.</li>\n"
+        "<li>리뷰에서는 대기 시간, 동선, 예약 타이밍 관련 포인트가 자주 언급됩니다.</li>\n"
+        "<li>후기를 종합하면 피크 시간대 회피와 사전 예약이 만족도에 큰 영향을 줍니다.</li>\n"
+        "</ul>\n"
+        f"<p style=\"margin:10px 0 0;\"><a href=\"{affiliate_url}\" target=\"_blank\" rel=\"noopener sponsored\" style=\"font-weight:700;color:#0b63ce;\">👉 할인/예약 링크 바로가기</a></p>\n"
+        "</div>\n"
     )
 
 
@@ -72,27 +130,31 @@ def insert_mrt_banner(body: str, keyword: str, blog_id: str = "", on_log=None) -
         else:
             print(msg, flush=True)
 
-    try:
-        from mrt_affiliate import create_affiliate_link
-    except Exception as e:
-        log(f"[MRT배너] import 오류: {e} — 스킵")
-        return body
-
     # 검색 키워드: 첫 단어(지명) 추출
     search_kw = re.split(r'[\s,]+', keyword.strip())[0] if keyword.strip() else keyword
     search_url = f"https://www.myrealtrip.com/offers?q={urllib.parse.quote(search_kw)}"
 
-    log(f"[MRT배너] 제휴 링크 생성: '{search_kw}' → {search_url}")
-    affiliate_url = create_affiliate_link(search_url, on_log=log)
+    # 제휴 링크 고정
+    affiliate_url = _FIXED_AFFILIATE_URL
+    log(f"[MRT배너] 고정 제휴 링크 사용: {affiliate_url}")
 
-    if not affiliate_url:
-        log("[MRT배너] 제휴 링크 생성 실패 — 원본 URL 사용")
-        affiliate_url = search_url
+    # 본문 내 이미지 URL이 있으면 전부 webp 저장 시도
+    image_urls = _extract_mrt_image_urls(body)
+    if image_urls:
+        log(f"[MRT배너] 원본 이미지 URL 감지: {len(image_urls)}개")
+    saved = 0
+    for i, u in enumerate(image_urls, start=1):
+        if _download_and_convert_webp(u, seed=search_kw or "mrt", idx=i, on_log=log):
+            saved += 1
+    if image_urls:
+        log(f"[MRT배너] webp 저장 완료: {saved}/{len(image_urls)}")
 
     banner_html = _build_banner_html(affiliate_url, search_kw, blog_id)
+    review_html = _build_review_block(search_kw, affiliate_url)
 
     lines = body.split('\n')
     insert_at = _find_insert_point(body)
     lines.insert(insert_at, banner_html)
+    lines.insert(insert_at + 1, review_html)
     log(f"[MRT배너] ✅ 배너 삽입 완료 (줄 {insert_at})")
     return '\n'.join(lines)

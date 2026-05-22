@@ -114,6 +114,19 @@ if os.path.exists(_custom_path):
 # 계정별 빠른 조회용
 ACCOUNT_MAP = {a["blog"]: a for a in ACCOUNTS}
 
+
+def get_blog_platform(blog_id: str) -> str:
+    """blog_id의 플랫폼 문자열 반환. 미등록이면 빈 문자열."""
+    if not blog_id:
+        return ""
+    acc = ACCOUNT_MAP.get(str(blog_id).strip())
+    return (acc or {}).get("platform", "")
+
+
+def is_naver_blog(blog_id: str) -> bool:
+    """현재/추가 등록된 블로그 포함, 네이버 블로그 여부 판별."""
+    return get_blog_platform(blog_id).lower() == "naver"
+
 # 블로그별 Notion 프롬프트 페이지 ID
 PROMPT_PAGES = {
     "goodisak": "3296d296d9c1811cabe8d3dec2de4274",

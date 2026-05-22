@@ -75,7 +75,7 @@ def run(result: dict, keyword: str, blog_id: str,
 
 def run_post(blog_id: str, title: str,
              on_log=None, on_status=None) -> dict:
-    """발행된 글을 Playwright로 방문해 품질 체크.
+    """포스팅 결과를 Playwright로 확인해 품질 체크.
 
     Returns:
         dict: {"passed": bool, "issues": list, "fixed": bool}
@@ -105,10 +105,17 @@ def run_post(blog_id: str, title: str,
         page = ctx.new_page()
 
         try:
+            # 네이버는 현재 임시저장 워크플로우이므로 발행 URL 검수 스킵
+            if cfg.get("type") == "naver":
+                log("[포스팅후검수] 네이버 임시저장 모드 — 발행 URL 검수 건너뜀")
+                if on_status:
+                    on_status("review", "done")
+                return {"passed": True, "issues": [], "fixed": False}
+
             # URL 탐색
             post_url = _find_post_url(blog_id, title, cfg, page, log)
             if not post_url:
-                log("[포스팅후검수] 발행 글 URL 찾기 실패 — 건너뜀")
+                log("[포스팅후검수] 포스트 URL 찾기 실패 — 건너뜀")
                 if on_status:
                     on_status("review", "done")
                 return {"passed": True, "issues": ["URL 찾기 실패"], "fixed": False}

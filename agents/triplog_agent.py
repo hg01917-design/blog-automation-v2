@@ -9,11 +9,6 @@ from claude_direct import generate_text
 from image_router import generate_images_for_blog as _img_router
 from overnight_run import _truncate_title
 
-try:
-    from agents import research_agent as _research
-except ImportError:
-    import research_agent as _research
-
 BLOG_ID = "triplog"
 PERSONA_RULE = (
     "triplog MRT 제휴 여행 블로그 운영자 본인 시점 — 마이리얼트립 파트너스 참여 여행 전문가. "
@@ -24,7 +19,7 @@ PERSONA_RULE = (
 )
 
 
-def run(keyword: str, on_log=None, on_status=None, skip_images=False):
+def run(keyword: str, on_log=None, on_status=None, skip_images=False, extra_context=None):
     blog_id = BLOG_ID
 
     def log(msg):
@@ -36,7 +31,7 @@ def run(keyword: str, on_log=None, on_status=None, skip_images=False):
 
     log(f"[{blog_id}] 페르소나 규칙 적용: {PERSONA_RULE}")
 
-    fc = _research.run(keyword, blog_id, on_log=log)
+    extra_ctx = extra_context
 
     # MRT 제휴 링크 컨텍스트 (개별 포스팅용)
     mrt_ctx = ""
@@ -46,7 +41,7 @@ def run(keyword: str, on_log=None, on_status=None, skip_images=False):
     except Exception as _e:
         log(f"[MRT] 컨텍스트 로드 실패 (무시): {_e}")
 
-    extra_ctx = "\n\n".join(filter(None, [fc["context"] if fc["success"] else "", mrt_ctx])) or None
+    extra_ctx = "\n\n".join(filter(None, [extra_context or "", mrt_ctx])) or None
 
     log(f"[작성] {blog_id} / '{keyword}' — Claude.ai 글 생성")
     raw = generate_text("", blog_id=blog_id, keyword=keyword,

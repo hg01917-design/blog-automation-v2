@@ -9,11 +9,6 @@ from claude_direct import generate_text
 from image_router import generate_images_for_blog as _img_router
 from overnight_run import _truncate_title
 
-try:
-    from agents import research_agent as _research
-except ImportError:
-    import research_agent as _research
-
 BLOG_ID = "me1091"
 PERSONA_RULE = (
     "me1091 쿠팡파트너스 제품후기 블로그 운영자 본인 시점. "
@@ -25,7 +20,7 @@ PERSONA_RULE = (
 )
 
 
-def run(keyword: str, on_log=None, on_status=None, skip_images=False):
+def run(keyword: str, on_log=None, on_status=None, skip_images=False, extra_context=None):
     blog_id = BLOG_ID
 
     def log(msg):
@@ -37,11 +32,11 @@ def run(keyword: str, on_log=None, on_status=None, skip_images=False):
 
     log(f"[{blog_id}] 페르소나 규칙 적용: {PERSONA_RULE}")
 
-    fc = _research.run(keyword, blog_id, on_log=log)
+    extra_ctx = extra_context
 
     log(f"[작성] {blog_id} / '{keyword}' — Claude.ai 글 생성")
     raw = generate_text("", blog_id=blog_id, keyword=keyword,
-                        extra_context=fc["context"] if fc["success"] else None,
+                        extra_context=extra_ctx,
                         on_log=log)
 
     if not raw or "추출 실패" in raw:

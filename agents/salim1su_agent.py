@@ -16,11 +16,6 @@ from keyword_engine.db_handler import fetch_next_pending, set_keyword_status as 
 from keyword_crawler import _is_banned
 
 try:
-    from agents import research_agent as _research
-except ImportError:
-    import research_agent as _research
-
-try:
     import coupang_api
     _COUPANG_AVAILABLE = True
 except ImportError:
@@ -29,6 +24,13 @@ except ImportError:
 BLOG_ID = "salim1su"
 PERSONA_RULE = _base.PERSONA_RULE
 _parse_raw = _base._parse_raw
+
+_POLICY_KEYWORD_PATTERNS = [
+    r"지원금", r"보조금", r"복지", r"바우처", r"급여", r"수당", r"감면",
+    r"저소득", r"차상위", r"기초생활", r"수급자", r"취약계층",
+    r"통신비\s*(지원|감면)", r"에너지바우처", r"주거급여", r"생계급여",
+    r"정부지원", r"복지로", r"정부24",
+]
 
 # 쿠팡파트너스 삽입 허용 키워드 (제품 관련)
 _COUPANG_PRODUCT_KEYWORDS = {
@@ -77,14 +79,43 @@ def _collect_keyword(on_log=None):
         if on_log:
             on_log(msg)
 
-    keyword = fetch_next_pending(BLOG_ID)
-    if not keyword:
-        log("[키워드수집] 대기 키워드 없음")
-        return None
-
-    if _is_banned(keyword, BLOG_ID):
-        log(f"[키워드수집] '{keyword}' — 금칙어, 건너뜀")
+    def _move_to_blog(keyword: str, target_blog: str, category: str, reason: str):
+        log(f"[키워드수집] '{keyword}' — {reason}, {target_blog}로 이동")
         _db_set_status(keyword, "failed", blog_id=BLOG_ID)
+        try:
+            import sqlite3 as _sqlite3
+            _db_path = Path(__file__).parent.parent / "keyword_engine" / "engine.db"
+            with _sqlite3.connect(str(_db_path)) as _conn:
+                _conn.execute("UPDATE keywords SET category = ?, status = 'pending' WHERE keyword = ?", (category, keyword))
+                _conn.execute(
+                    "INSERT OR IGNORE INTO keyword_blog_status (keyword, blog_id, status, updated_at) VALUES (?, ?, 'pending', datetime('now'))",
+                    (keyword, target_blog),
+                )
+        except Exception as e:
+            log(f"[키워드수집] 이동 처리 실패 (무시): {e}")
+
+    def _is_policy_keyword(keyword: str) -> bool:
+        return any(re.search(p, keyword) for p in _POLICY_KEYWORD_PATTERNS)
+
+    # 부적합 키워드가 앞에 있어도 멈추지 않고 다음 후보를 계속 찾는다.
+    for _ in range(10):
+        keyword = fetch_next_pending(BLOG_ID)
+        if not keyword:
+            log("[키워드수집] 대기 키워드 없음")
+            return None
+
+        if _is_policy_keyword(keyword):
+            _move_to_blog(keyword, "baremi542", "정부지원금", "정책/복지성 키워드")
+            continue
+
+        if _is_banned(keyword, BLOG_ID):
+            log(f"[키워드수집] '{keyword}' — 금칙어, 건너뜀")
+            _db_set_status(keyword, "failed", blog_id=BLOG_ID)
+            continue
+
+        break
+    else:
+        log("[키워드수집] 살림 블로그에 맞는 대기 키워드 없음")
         return None
 
     # salim1su 주제 필터: 지역명+업종 서비스 키워드 차단 → 기타로 이동
@@ -96,18 +127,7 @@ def _collect_keyword(on_log=None):
     ]
     import re as _re
     if any(_re.search(p, keyword) for p in _LOCAL_SERVICE_PATTERNS):
-        log(f"[키워드수집] '{keyword}' — 살림 블로그 주제 부적합 (지역서비스), 기타로 이동")
-        _db_set_status(keyword, "failed", blog_id=BLOG_ID)
-        try:
-            import sqlite3 as _sqlite3
-            _db_path = Path(__file__).parent.parent / "keyword_engine" / "engine.db"
-            with _sqlite3.connect(str(_db_path)) as _conn:
-                _conn.execute(
-                    "INSERT OR IGNORE INTO keyword_blog_status (keyword, blog_id, status, updated_at) VALUES (?, '기타', 'pending', datetime('now'))",
-                    (keyword,)
-                )
-        except Exception:
-            pass
+        _move_to_blog(keyword, "기타", "기타", "살림 블로그 주제 부적합 (지역서비스)")
         return None
 
     is_dup, matched = check_duplicate_post(BLOG_ID, keyword, on_log=log)
@@ -176,7 +196,7 @@ def _expand_keyword(keyword: str, on_log=None) -> str:
         return keyword
 
 
-def run(keyword: str = None, on_log=None, on_status=None, skip_images=False):
+def run(keyword: str = None, on_log=None, on_status=None, skip_images=False, extra_context=None):
     """글 + 이미지 생성 후 파싱된 결과를 반환한다.
 
     blog_id는 "salim1su"으로 고정됩니다.
@@ -215,13 +235,13 @@ def run(keyword: str = None, on_log=None, on_status=None, skip_images=False):
     # 1단계: 단어 1개 키워드면 세부 롱테일로 확장
     actual_keyword = _expand_keyword(keyword, on_log=log)
 
-    # 2단계: 사전 팩트 수집
-    fc = _research.run(actual_keyword, blog_id, on_log=log)
+    # 2단계: 공통 리서치 컨텍스트 사용
+    extra_ctx = extra_context
 
     # 3단계: Claude.ai 글 생성 (확장된 키워드로)
     log(f"[작성] {blog_id} / '{actual_keyword}' — Claude.ai 글 생성")
     raw = generate_text("", blog_id=blog_id, keyword=actual_keyword,
-                        extra_context=fc["context"] if fc["success"] else None,
+                        extra_context=extra_ctx,
                         on_log=log)
 
     if not raw or "추출 실패" in raw:
@@ -247,7 +267,8 @@ def run(keyword: str = None, on_log=None, on_status=None, skip_images=False):
             on_status("writer", "failed")
         return None
 
-    # Gemini 이미지 생성 — H2 소제목 개수 + 썸네일 1개 기준으로 이미지 수 보정
+    # Gemini 이미지 생성 — 본문 이미지는 H2 소제목 개수와 동일하게만 생성
+    # 썸네일은 orchestrator/posting pipeline에서 image_paths[0]으로 별도 생성한다.
     image_paths = {}
 
     # H2 소제목 개수 계산 — ## 마크다운 또는 [H2]...[/H2] 마커 모두 지원
@@ -255,8 +276,14 @@ def run(keyword: str = None, on_log=None, on_status=None, skip_images=False):
     h2_md = sum(1 for line in _body_txt.splitlines() if line.startswith("## "))
     h2_tag = len(re.findall(r'\[H2\]', _body_txt))
     h2_count = max(h2_md, h2_tag)
-    required_count = h2_count + 1  # H2 개수 + 썸네일 1개
+    required_count = h2_count
     log(f"[작성] H2 소제목 {h2_count}개 감지 (## {h2_md}개 / [H2] {h2_tag}개) → 이미지 {required_count}개 필요")
+
+    # Claude가 썸네일을 이미지 목록에 섞어 주거나 H2보다 많이 만든 경우 본문용만 유지한다.
+    if required_count > 0:
+        result["images"] = [img for img in result["images"] if int(img.get("index", 0)) > 0][:required_count]
+    else:
+        result["images"] = []
 
     # 파싱된 이미지 목록이 부족하면 H2 소제목 기반 프롬프트로 채우기
     if len(result["images"]) < required_count:
@@ -280,8 +307,9 @@ def run(keyword: str = None, on_log=None, on_status=None, skip_images=False):
                 "alt": f"{h2_text} 관련 이미지",
             })
 
-    # 본문에 {{이미지N}} 마커가 없으면 H2 소제목 뒤에 주입
-    if result["images"] and not re.search(r'\{\{이미지\d+\}\}', result["body"]):
+    # 본문에 {{이미지N}} 마커가 없으면 H2 소제목 뒤에만 주입한다.
+    # 남는 이미지를 글 상단에 몰아넣지 않는다.
+    if result["images"] and not re.search(r'\{\{이미지[1-9]\d*\}\}', result["body"]):
         log("[작성] 본문에 이미지 마커 없음 → H2 소제목 뒤에 주입")
         body_lines = result["body"].split('\n')
         new_lines = []
@@ -289,15 +317,11 @@ def run(keyword: str = None, on_log=None, on_status=None, skip_images=False):
         total_imgs = len(result["images"])
         for line in body_lines:
             new_lines.append(line)
-            if line.startswith('## ') and img_idx <= total_imgs:
+            if (line.startswith('## ') or re.match(r'\s*\[H2\].+?\[/H2\]\s*$', line)) and img_idx <= total_imgs:
                 new_lines.append(f'{{{{이미지{img_idx}}}}}')
                 img_idx += 1
-        # 남은 이미지 마커는 본문 맨 앞에 추가
-        while img_idx <= total_imgs:
-            new_lines.insert(0, f'{{{{이미지{img_idx}}}}}')
-            img_idx += 1
         result["body"] = '\n'.join(new_lines)
-        log(f"[작성] 이미지 마커 {total_imgs}개 주입 완료")
+        log(f"[작성] 이미지 마커 {img_idx - 1}개 주입 완료")
 
     if result["images"] and not skip_images:
         log(f"[작성] 이미지 {len(result['images'])}개 생성 시작 (salim1su: Gemini→Bing→Pollinations)")
@@ -319,6 +343,7 @@ def run(keyword: str = None, on_log=None, on_status=None, skip_images=False):
 
     result["image_paths"] = image_paths
     result["raw"] = raw
+    result["used_keyword"] = actual_keyword
 
     # 쿠팡파트너스 블록 조건부 삽입
     if _COUPANG_AVAILABLE and _needs_coupang(actual_keyword, result["body"]):

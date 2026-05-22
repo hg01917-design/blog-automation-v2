@@ -404,8 +404,10 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
     import time as _time
     _sent_at = [0.0]
     _captured: list[tuple[bytes, str]] = []   # (image_bytes, content_type)
-    _SKIP_URL_TOKENS = ["favicon", "/icon-", "avatar", "/a/", "logo", "profile",
-                        "sprite", "badge", "emoji"]
+    _SKIP_URL_TOKENS = [
+        "favicon", "/icon-", "avatar", "/a/", "logo", "profile",
+        "sprite", "badge", "emoji", "gstatic", "gemini_sparkle", "sparkle"
+    ]
 
     # 리스너 등록 전 현재 페이지에 이미 로드된 이미지 URL 기록
     # (채팅 복원 시 이전 이미지 lazy-load가 _captured에 섞이지 않도록)
@@ -438,6 +440,16 @@ def _generate_single(browser, prompt: str, filename: str, on_log=None, skip_webp
                 return
             body = resp.body()
             if len(body) < 10_000:   # 10KB 미만 아이콘·썸네일 제외
+                return
+            # Gemini UI 아이콘/로고 오염 방지: 작은 정사각형 이미지는 제외
+            try:
+                _im = Image.open(io.BytesIO(body))
+                _w, _h = _im.size
+                if min(_w, _h) < 520:
+                    return
+                if abs(_w - _h) <= 8 and max(_w, _h) <= 640:
+                    return
+            except Exception:
                 return
             _captured.append((body, ct))
             log(f"[이미지] 네트워크 캡처 ({len(body)//1024}KB): {url[:70]}")

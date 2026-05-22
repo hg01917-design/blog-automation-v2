@@ -62,6 +62,67 @@ _SOURCE_MAP = {
     "공공api": "public",      "공공API": "public", "공공": "public",
 }
 
+_QUERY_STOPWORDS = {
+    "추천", "총정리", "완벽", "가이드", "방법", "정보", "최신", "2026", "2025",
+    "알아보기", "알아보는", "정리", "블로그", "포스팅", "본문", "작성",
+}
+
+_TRAVEL_BLOGS = {"nolja100", "triplog", "blogspot_travel"}
+
+
+def _sanitize_query(query: str, keyword: str = "") -> str:
+    """본문형/문장형 검색어를 실제 검색창용 짧은 핵심어로 정제한다."""
+    q = (query or "").strip()
+    q = re.sub(r"[\r\n\t]+", " ", q)
+    q = re.sub(r"[\[\]{}()\"'`“”‘’]", " ", q)
+    q = re.sub(r"검색\d+\s*:\s*", "", q)
+    q = q.split("|")[0].strip()
+    q = re.sub(r"\s+", " ", q).strip(" -:,.!?~/")
+
+    # 문장형이면 원 키워드 중심으로 폴백한다.
+    sentence_markers = ("합니다", "해주세요", "하려면", "어떻게", "무엇", "어디서", "때문", "위해")
+    if len(q) > 30 or any(m in q for m in sentence_markers):
+        q = _fc._core_keyword(keyword) if keyword else q[:30]
+
+    tokens = [t for t in re.split(r"[\s,/]+", q) if t]
+    cleaned = []
+    for token in tokens:
+        token = re.sub(r"^[#@]+", "", token)
+        token = re.sub(r"(은|는|이|가|을|를|에|에서|으로|로|와|과|도|만)$", "", token)
+        if not token or token in _QUERY_STOPWORDS:
+            continue
+        cleaned.append(token)
+        if len(cleaned) >= 4:
+            break
+
+    q = " ".join(cleaned).strip()
+    if not q and keyword:
+        q = _fc._core_keyword(keyword)
+    if len(q) > 30:
+        q = " ".join(q.split()[:4])[:30].strip()
+    return q
+
+
+def _normalize_plan(plan: list[tuple[str, str]], keyword: str, blog_id: str, log=None) -> list[tuple[str, str]]:
+    """검색 계획의 검색어를 짧게 정제하고 중복을 제거한다."""
+    normalized = []
+    seen = set()
+    for q, src in plan:
+        clean_q = _sanitize_query(q, keyword)
+        if not clean_q or clean_q in seen:
+            continue
+        seen.add(clean_q)
+        if blog_id == "salim1su" and src == "shopping" and not re.search(r"가격|스펙|모델|제품|구매|후기", keyword):
+            src = "blog"
+        if re.search(r"지원금|보조금|복지|정책|요금|전기|가스|수도", clean_q + " " + keyword):
+            src = "public" if blog_id in ("baremi542", "salim1su", "woll100") else "news"
+        normalized.append((clean_q, src))
+        if len(normalized) >= 3:
+            break
+    if log and normalized != plan:
+        log(f"[리서치] 검색어 정제: {normalized}")
+    return normalized
+
 
 def _ask_claude_for_plan(keyword: str, blog_id: str, on_log=None) -> list[tuple[str, str]]:
     """Claude CLI에 '무엇을 어디서 검색할지' 물어보고 (query, source) 리스트로 반환."""
@@ -84,30 +145,35 @@ def _ask_claude_for_plan(keyword: str, blog_id: str, on_log=None) -> list[tuple[
         # "검색1: 엘지그램 발열 | 네이버블로그" 형태 파싱
         m = re.match(r"검색\d\s*:\s*(.+?)\s*\|\s*(.+)", line.strip())
         if m:
-            q = m.group(1).strip()
+            q = _sanitize_query(m.group(1).strip(), keyword)
             src_raw = m.group(2).strip()
             src = _SOURCE_MAP.get(src_raw, _SOURCE_MAP.get(src_raw.replace(" ", ""), "news"))
             if 2 <= len(q) <= 30:
                 plan.append((q, src))
 
     if plan:
-        log(f"[리서치] Claude 검색 계획: {[(q, s) for q, s in plan]}")
-        return plan
+        plan = _normalize_plan(plan, keyword, blog_id, log)
+        if plan:
+            log(f"[리서치] Claude 검색 계획: {[(q, s) for q, s in plan]}")
+            return plan
 
     # 파싱 실패 — | 없이 검색어만 있는 경우도 처리
     fallback = []
     for line in raw.splitlines():
         m = re.match(r"검색\d\s*:\s*(.+)", line.strip())
         if m:
-            q = m.group(1).strip().split("|")[0].strip()
+            q = _sanitize_query(m.group(1).strip().split("|")[0].strip(), keyword)
             if 2 <= len(q) <= 30:
                 fallback.append((q, "news"))
     if fallback:
-        log(f"[리서치] 소스 파싱 실패 — 뉴스 기본값 적용: {[q for q, _ in fallback]}")
-        return fallback
+        fallback = _normalize_plan(fallback, keyword, blog_id, log)
+        if fallback:
+            log(f"[리서치] 소스 파싱 실패 — 뉴스 기본값 적용: {[q for q, _ in fallback]}")
+            return fallback
 
     log("[리서치] 파싱 실패 — 키워드 자동 추출 사용")
-    return [(_fc._info_search_keyword(keyword), "news")]
+    fallback_q = _sanitize_query(_fc._info_search_keyword(keyword), keyword)
+    return [(fallback_q or _fc._core_keyword(keyword), "news")]
 
 
 def run(keyword: str, blog_id: str, on_log=None) -> dict:
@@ -166,6 +232,21 @@ def run(keyword: str, blog_id: str, on_log=None) -> dict:
             parts.insert(0, pub)
             log("[리서치] 공공API 자동 보완 완료")
 
+    # 4. 여행 블로그는 MRT 제휴 링크 컨텍스트 자동 보강 (API 키가 있으면 동작)
+    mrt_used = False
+    if blog_id in _TRAVEL_BLOGS:
+        try:
+            from mrt_affiliate import build_agent_mrt_context
+            mrt_ctx = build_agent_mrt_context(_fc._core_keyword(keyword), on_log=on_log)
+            if mrt_ctx:
+                parts.append(mrt_ctx)
+                mrt_used = True
+                log("[리서치] MRT 제휴 컨텍스트 자동 보강 완료")
+            else:
+                log("[리서치] MRT 컨텍스트 없음 (검색 결과/제휴링크 미확보)")
+        except Exception as e:
+            log(f"[리서치] MRT 컨텍스트 로드 실패(무시): {e}")
+
     if not parts:
         log("[리서치] 수집 실패 — 컨텍스트 없음")
         return {"context": "", "success": False, "queries": query_names}
@@ -174,6 +255,7 @@ def run(keyword: str, blog_id: str, on_log=None) -> dict:
     context = (
         f"## '{keyword}' 관련 수집 정보\n"
         f"검색: {src_summary}\n"
+        f"공공API 사용: {'예' if public_done else '아니오'} / MRT 사용: {'예' if mrt_used else '아니오'}\n"
         f"아래 내용을 참고해 글을 작성하세요. "
         f"수치·사실만 추출해 자신의 문체로 재작성하고, 내용을 그대로 옮기지 마세요.\n"
         f"⚠️ 가격이 있으면 반드시 아래 데이터 범위 내에서만 작성하세요.\n\n"

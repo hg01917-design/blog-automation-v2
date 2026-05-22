@@ -249,6 +249,16 @@ class SchedulerWorker(QThread):
         self.status_signal.emit(agent, state)
 
 
+class SafeComboBox(QComboBox):
+    """휠 스크롤로 값이 의도치 않게 바뀌는 것을 방지한다."""
+
+    def wheelEvent(self, event):
+        if self.view().isVisible():
+            super().wheelEvent(event)
+            return
+        event.ignore()
+
+
 # ─── 메인 앱 ─────────────────────────────────────────────────────────────
 
 DARK_STYLE = """
@@ -270,7 +280,20 @@ QComboBox {
     border: 1px solid #1e2233; border-radius: 5px;
     padding: 4px 8px; font-size: 12px;
 }
-QComboBox::drop-down { border: none; }
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 24px;
+    border-left: 1px solid #2a3046;
+}
+QComboBox::down-arrow {
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 7px solid #9ca3af;
+    margin-right: 6px;
+}
 QComboBox QAbstractItemView {
     background: #1a1d2e; color: #e0e0e0;
     selection-background-color: #4f8ef7;
@@ -1618,7 +1641,7 @@ class BlogAutomationApp(QMainWindow):
 
         # 2. 에이전트 드롭다운 + 뱃지
         agent_row = QHBoxLayout()
-        self._agent_combo = QComboBox()
+        self._agent_combo = SafeComboBox()
         self._agent_combo.addItems(DEFAULT_BLOG_ORDER)
         self._agent_combo.setFixedHeight(34)
         self._agent_combo.setMinimumWidth(280)
@@ -1638,6 +1661,34 @@ class BlogAutomationApp(QMainWindow):
         self._agent_combo.currentTextChanged.connect(self._on_agent_changed)
         agent_row.addWidget(self._agent_combo, 1)
 
+        self._quick_blog_buttons = {}
+        quick_row = QHBoxLayout()
+        quick_row.setSpacing(6)
+        quick_lbl = QLabel("빠른선택")
+        quick_lbl.setStyleSheet("color:#9ca3af;font-size:11px;")
+        quick_row.addWidget(quick_lbl)
+        for bid in ["nolja100", "triplog", "goodisak", "salim1su", "baremi542", "me1091"]:
+            btn = QPushButton(bid)
+            btn.setCheckable(True)
+            btn.setMinimumHeight(26)
+            btn.setStyleSheet(
+                "QPushButton{background:#1a1d2e;color:#c9d1d9;border:1px solid #2a3046;border-radius:5px;padding:0 8px;font-size:11px;}"
+                "QPushButton:checked{background:#2563eb;color:#fff;border:1px solid #3b82f6;font-weight:bold;}"
+            )
+            btn.clicked.connect(lambda checked, b=bid: self._select_blog_from_quick(b))
+            quick_row.addWidget(btn)
+            self._quick_blog_buttons[bid] = btn
+        quick_row.addStretch(1)
+        ml.addLayout(quick_row)
+
+        self._agent_combo.setEditable(False)
+        self._agent_combo.setPlaceholderText("블로그 선택")
+        self._agent_combo.setInsertPolicy(QComboBox.NoInsert)
+        try:
+            self._agent_combo.setMaxVisibleItems(18)
+        except Exception:
+            pass
+
         self._order_combo = QComboBox()
         self._order_combo.addItems(["고정 순서", "랜덤 순서"])
         self._order_combo.setFixedHeight(34)
@@ -1648,6 +1699,11 @@ class BlogAutomationApp(QMainWindow):
         )
         self._order_combo.currentTextChanged.connect(self._on_order_mode_changed)
         agent_row.addWidget(self._order_combo)
+
+        self._lock_blog_check = QCheckBox("선택잠금")
+        self._lock_blog_check.setChecked(False)
+        self._lock_blog_check.setStyleSheet("color:#9ca3af;font-size:11px;")
+        agent_row.addWidget(self._lock_blog_check)
 
         # 블로그 추가 버튼
         self._add_blog_btn = QPushButton("＋")
@@ -1708,13 +1764,33 @@ class BlogAutomationApp(QMainWindow):
             QTabBar::tab:selected { background:#4f8ef7; color:#fff; border-radius:3px; }
         """)
 
-        # 로그 탭
+        # 로그 탭 (요약 기본 + 상세 펼치기)
+        log_w = QWidget()
+        log_l = QVBoxLayout(log_w)
+        log_l.setContentsMargins(6, 6, 6, 6)
+        log_l.setSpacing(6)
+        self._detail_toggle_btn = QPushButton("상세 로그 펼치기")
+        self._detail_toggle_btn.setCheckable(True)
+        self._detail_toggle_btn.setStyleSheet(
+            "QPushButton{background:#1a1d2e;color:#9ca3af;border:1px solid #2a3046;border-radius:5px;padding:5px 10px;font-size:11px;}"
+            "QPushButton:checked{background:#2563eb;color:#fff;border:1px solid #3b82f6;}"
+        )
+        self._detail_toggle_btn.toggled.connect(self._toggle_detail_log)
+        log_l.addWidget(self._detail_toggle_btn)
+
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
         self.log_box.setFont(QFont("Menlo", 10))
-        self.log_box.setStyleSheet(
-            "background:#0d0f18;color:#c9d1d9;border:none;padding:6px;")
-        self._tabs.addTab(self.log_box, "로그")
+        self.log_box.setStyleSheet("background:#0d0f18;color:#c9d1d9;border:none;padding:6px;")
+        log_l.addWidget(self.log_box, 1)
+
+        self._detail_log_box = QTextEdit()
+        self._detail_log_box.setReadOnly(True)
+        self._detail_log_box.setFont(QFont("Menlo", 10))
+        self._detail_log_box.setStyleSheet("background:#090b12;color:#7f8ea3;border:1px solid #1e2233;padding:6px;")
+        self._detail_log_box.hide()
+        log_l.addWidget(self._detail_log_box, 1)
+        self._tabs.addTab(log_w, "로그")
 
         # 키워드 큐 탭
         kw_w = QWidget()
@@ -1875,6 +1951,20 @@ class BlogAutomationApp(QMainWindow):
             pass
         QTimer.singleShot(60000, self._refresh_stats)
 
+    def _toggle_detail_log(self, checked: bool):
+        if checked:
+            self._detail_toggle_btn.setText("상세 로그 접기")
+            self._detail_log_box.show()
+        else:
+            self._detail_toggle_btn.setText("상세 로그 펼치기")
+            self._detail_log_box.hide()
+
+    def _append_log(self, msg: str):
+        self._detail_log_box.append(msg)
+        summary_markers = ("[오류]", "[실패]", "[완료]", "[실행]", "[정지]", "[전체실행]", "[파이프라인]", "[링크삽입]")
+        if msg.startswith(summary_markers):
+            self.log_box.append(msg)
+
     # ── 커스텀 블로그 로드 ──
     def _load_custom_blogs(self):
         """config_custom.json에 저장된 블로그를 콤보박스에 추가"""
@@ -1911,12 +2001,35 @@ class BlogAutomationApp(QMainWindow):
 
     # ── 에이전트 선택 → 뱃지 갱신 ──
     def _on_agent_changed(self, blog_id: str):
+        if getattr(self, "_lock_blog_check", None) and self._lock_blog_check.isChecked():
+            prev = getattr(self, "_last_blog_id", "")
+            if prev and blog_id != prev:
+                self._agent_combo.blockSignals(True)
+                self._agent_combo.setCurrentText(prev)
+                self._agent_combo.blockSignals(False)
+                self._append_log("[블로그선택] 선택잠금 상태라 변경을 무시했습니다.")
+                return
+        self._last_blog_id = blog_id
+        self._sync_quick_blog_buttons(blog_id)
         info = _PLATFORM_INFO.get(blog_id, ("Unknown","#22222266","#888","#22222244"))
         platform, bg, text, border = info
         self._badge.setText(platform)
         self._badge.setStyleSheet(
             f"background:{bg};color:{text};border:1px solid {border};"
             "border-radius:4px;font-size:10px;font-weight:bold;padding:2px 8px;")
+
+    def _select_blog_from_quick(self, blog_id: str):
+        if getattr(self, "_lock_blog_check", None) and self._lock_blog_check.isChecked():
+            self._append_log("[블로그선택] 선택잠금 해제 후 변경 가능합니다.")
+            self._sync_quick_blog_buttons(self._agent_combo.currentText())
+            return
+        self._agent_combo.setCurrentText(blog_id)
+
+    def _sync_quick_blog_buttons(self, current_blog: str):
+        for bid, btn in getattr(self, "_quick_blog_buttons", {}).items():
+            btn.blockSignals(True)
+            btn.setChecked(bid == current_blog)
+            btn.blockSignals(False)
 
     # ── 설정 패널 토글 ──
     def _toggle_settings(self):
@@ -1939,20 +2052,20 @@ class BlogAutomationApp(QMainWindow):
         os.environ["WRITING_MODEL"] = key
         # 하위 호환 — AI_PROVIDER 도 함께 설정
         os.environ["AI_PROVIDER"] = "gemini" if key.startswith("gemini") else "claude"
-        self.log_box.append(f"[모델] {label} 선택됨 (key={key})")
+        self._append_log(f"[모델] {label} 선택됨 (key={key})")
 
     def _on_order_mode_changed(self, label: str):
         mode = "fixed" if label == "고정 순서" else "random"
         os.environ["PUBLISH_ORDER_MODE"] = mode
-        self.log_box.append(f"[발행순서] {label} 선택됨 (mode={mode})")
+        self._append_log(f"[발행순서] {label} 선택됨 (mode={mode})")
 
     # ── 실행 버튼 ──
     def _run_all(self):
         if self._single_worker and self._single_worker.isRunning():
-            self.log_box.append("[전체실행] 이미 실행 중입니다.")
+            self._append_log("[전체실행] 이미 실행 중입니다.")
             return
         if hasattr(self, '_all_proc') and self._all_proc and self._all_proc.poll() is None:
-            self.log_box.append("[전체실행] 이미 실행 중입니다.")
+            self._append_log("[전체실행] 이미 실행 중입니다.")
             return
         import subprocess, threading, shutil, os as _os
         from pathlib import Path
@@ -1968,8 +2081,8 @@ class BlogAutomationApp(QMainWindow):
             if candidate and Path(candidate).exists():
                 python_bin = candidate
                 break
-        self.log_box.append(f"[전체실행] python={python_bin}")
-        self.log_box.append("[전체실행] overnight_run.py 시작...")
+        self._append_log(f"[전체실행] python={python_bin}")
+        self._append_log("[전체실행] overnight_run.py 시작...")
         self.run_all_btn.setEnabled(False)
         self.run_btn.setEnabled(False)
         self.pause_btn.setEnabled(True)
@@ -1983,7 +2096,7 @@ class BlogAutomationApp(QMainWindow):
                 start_new_session=True,  # 프로세스 그룹 생성 → 정지 시 전체 kill 가능
             )
         except Exception as e:
-            self.log_box.append(f"[전체실행] 프로세스 시작 실패: {e}")
+            self._append_log(f"[전체실행] 프로세스 시작 실패: {e}")
             self.run_all_btn.setEnabled(True)
 
             self.run_btn.setEnabled(True)
@@ -2002,15 +2115,15 @@ class BlogAutomationApp(QMainWindow):
 
     def _run_crosslink_insert(self):
         if hasattr(self, '_all_proc') and self._all_proc and self._all_proc.poll() is None:
-            self.log_box.append("[링크삽입] 이미 실행 중인 작업이 있어 대기해주세요.")
+            self._append_log("[링크삽입] 이미 실행 중인 작업이 있어 대기해주세요.")
             return
         import subprocess, threading, shutil, os as _os
         from pathlib import Path
         project_dir = Path("/Users/hana/Downloads/blog-automation-v2")
         script = project_dir / "publish_drafts.py"
         python_bin = shutil.which("python3") or "python3"
-        self.log_box.append(f"[링크삽입] python={python_bin}")
-        self.log_box.append("[링크삽입] publish_drafts.py crosslink 시작...")
+        self._append_log(f"[링크삽입] python={python_bin}")
+        self._append_log("[링크삽입] publish_drafts.py crosslink 시작...")
         env = dict(_os.environ)
         env["ENABLE_CROSSLINK"] = "1"
         self.run_all_btn.setEnabled(False)
@@ -2031,7 +2144,7 @@ class BlogAutomationApp(QMainWindow):
                 env=env,
             )
         except Exception as e:
-            self.log_box.append(f"[링크삽입] 프로세스 시작 실패: {e}")
+            self._append_log(f"[링크삽입] 프로세스 시작 실패: {e}")
             self.run_all_btn.setEnabled(True)
             self.run_btn.setEnabled(True)
             self.crosslink_btn.setEnabled(True)
@@ -2051,10 +2164,10 @@ class BlogAutomationApp(QMainWindow):
 
     def _run_pipeline(self, group: str):
         if self._single_worker and self._single_worker.isRunning():
-            self.log_box.append(f"[파이프라인] 이미 실행 중입니다.")
+            self._append_log(f"[파이프라인] 이미 실행 중입니다.")
             return
         if hasattr(self, '_all_proc') and self._all_proc and self._all_proc.poll() is None:
-            self.log_box.append(f"[파이프라인] 이미 실행 중입니다.")
+            self._append_log(f"[파이프라인] 이미 실행 중입니다.")
             return
         import subprocess, threading, shutil, os as _os
         from pathlib import Path
@@ -2068,7 +2181,7 @@ class BlogAutomationApp(QMainWindow):
             if candidate and Path(candidate).exists():
                 python_bin = candidate
                 break
-        self.log_box.append(f"[파이프라인] {group} 그룹 실행 시작...")
+        self._append_log(f"[파이프라인] {group} 그룹 실행 시작...")
         self.run_all_btn.setEnabled(False)
         self.run_btn.setEnabled(False)
         self.pause_btn.setEnabled(True)
@@ -2082,7 +2195,7 @@ class BlogAutomationApp(QMainWindow):
                 start_new_session=True,  # 프로세스 그룹 생성 → 정지 시 전체 kill 가능
             )
         except Exception as e:
-            self.log_box.append(f"[파이프라인] 프로세스 시작 실패: {e}")
+            self._append_log(f"[파이프라인] 프로세스 시작 실패: {e}")
             self.run_all_btn.setEnabled(True)
             self.run_btn.setEnabled(True)
             self.pause_btn.setEnabled(False)
@@ -2108,14 +2221,14 @@ class BlogAutomationApp(QMainWindow):
             pass
         try:
             if self._single_worker and self._single_worker.isRunning():
-                self.log_box.append("[실행] 이미 실행 중입니다.")
+                self._append_log("[실행] 이미 실행 중입니다.")
                 return
             blog_id = self._agent_combo.currentText()
             keyword = self._kw_input.text().strip() or getattr(self, '_selected_keyword', None) or None
             if keyword:
-                self.log_box.append(f"[실행] {blog_id} — 키워드: '{keyword}'")
+                self._append_log(f"[실행] {blog_id} — 키워드: '{keyword}'")
             else:
-                self.log_box.append(f"[실행] {blog_id} 시작...")
+                self._append_log(f"[실행] {blog_id} 시작...")
             self.run_btn.setEnabled(False)
             self.pause_btn.setEnabled(True)
             forced_title = getattr(self, '_forced_title', None)
@@ -2132,8 +2245,8 @@ class BlogAutomationApp(QMainWindow):
                 pass
         except Exception as e:
             import traceback
-            self.log_box.append(f"[오류] 실행 실패: {e}")
-            self.log_box.append(traceback.format_exc())
+            self._append_log(f"[오류] 실행 실패: {e}")
+            self._append_log(traceback.format_exc())
             self.run_btn.setEnabled(True)
             self.pause_btn.setEnabled(False)
 
@@ -2165,7 +2278,7 @@ class BlogAutomationApp(QMainWindow):
             self.run_all_btn.setEnabled(True)
             self.run_btn.setEnabled(True)
             self.crosslink_btn.setEnabled(True)
-            self.log_box.append("[정지] 프로세스 그룹 강제 종료 완료")
+            self._append_log("[정지] 프로세스 그룹 강제 종료 완료")
         self.pause_btn.setEnabled(False)
         self.run_btn.setEnabled(True)
 

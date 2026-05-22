@@ -32,6 +32,16 @@ def run(result: dict, blog_id: str, keyword: str, page_id: str,
     thumbnail_path = image_paths.get(0) if image_paths else None
 
     log(f"[포스팅] {blog_id} 발행 시작: \"{title}\"")
+
+    posts_dir = Path(__file__).parent.parent / "posts"
+    done_dir = Path(__file__).parent.parent / "done"
+    posts_dir.mkdir(parents=True, exist_ok=True)
+    done_dir.mkdir(parents=True, exist_ok=True)
+    safe_title = "".join(c if c.isalnum() or c in "-_" else "_" for c in title)[:60]
+    post_file = posts_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{safe_title}.txt"
+    post_file.write_text(body, encoding="utf-8")
+    body = post_file.read_text(encoding="utf-8")
+    log(f"[포스팅] 본문 파일 저장: {post_file}")
     if thumbnail_path:
         log(f"[포스팅] 썸네일: {thumbnail_path}")
 
@@ -54,6 +64,9 @@ def run(result: dict, blog_id: str, keyword: str, page_id: str,
     if ok:
         log(f"[포스팅] ✓ 발행 성공: \"{title}\" ({blog_id})")
         db_handler.set_keyword_status(keyword, "published", blog_id)
+        done_file = done_dir / post_file.name
+        post_file.replace(done_file)
+        log(f"[포스팅] 완료 파일 이동: {done_file}")
     else:
         log(f"[포스팅] ⚠ 발행 실패: \"{title}\" ({blog_id})")
         db_handler.set_keyword_status(keyword, "failed", blog_id)

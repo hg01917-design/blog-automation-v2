@@ -2,6 +2,7 @@
 import re
 import os
 from pathlib import Path
+from config import is_naver_blog
 
 # .env에서 ADSENSE_CODE 읽기
 _env_path = Path(__file__).parent / ".env"
@@ -28,8 +29,8 @@ def insert_adsense_markers(marker_text: str, blog_id: str = "") -> str:
     - 3000~5000자 → 2개 (첫번째 H2 앞, 두번째 H2 앞)
     - 5000자 이상 → 3개 (첫번째 H2 앞, 두번째 H2 앞, 표 아래)
     """
-    # 네이버(salim1su), WordPress(baremi542/triplog)는 Ad Inserter 플러그인 위임
-    if blog_id in ("salim1su", "baremi542", "triplog"):
+    # 네이버는 애드센스 마커 금지, WordPress는 Ad Inserter 플러그인 위임
+    if is_naver_blog(blog_id) or blog_id in ("baremi542", "triplog"):
         return marker_text
 
     lines = marker_text.split('\n')
@@ -128,21 +129,18 @@ def build_html(html_body: str, image_paths: dict = None, image_infos: list = Non
         title = re.sub(r'<[^>]+>', '', h1_match.group(1)).strip()
         html_body = html_body[:h1_match.start()] + html_body[h1_match.end():]
 
-    # 4. 이미지 삽입 — 각 H2 아래에 대응하는 이미지 추가
+    # 4. 이미지 삽입 — 썸네일 1장만 삽입(본문 과다 이미지 방지)
     if image_paths and image_infos:
         # H2 태그 위치 찾기
         h2_positions = [(m.start(), m.end()) for m in re.finditer(r'<h2[^>]*>.*?</h2>', html_body, re.DOTALL | re.IGNORECASE)]
 
-        # 뒤에서부터 삽입 (인덱스 안 밀리게)
-        for info in reversed(image_infos):
-            idx = info["index"]
-            if idx not in image_paths:
-                continue
+        # 첫 번째 유효 이미지 1장만 사용
+        first_info = next((info for info in image_infos if info.get("index") in image_paths), None)
+        if first_info:
+            idx = first_info["index"]
             filepath = image_paths[idx]
-            alt = info.get("alt", "")
-
-            # 이미지 idx번째 → h2_positions[idx-1] 뒤에 삽입
-            h2_idx = idx - 1
+            alt = first_info.get("alt", "")
+            h2_idx = max(0, idx - 1)
             if h2_idx < len(h2_positions):
                 insert_pos = h2_positions[h2_idx][1]
                 img_tag = f'\n<p><img src="file://{filepath}" alt="{alt}" /></p>\n'

@@ -554,7 +554,25 @@ def login_blog(blog_id: str, on_log=None):
     if config["platform"] == "tistory":
         return login_tistory(blog_id, on_log)
     elif config["platform"] == "naver":
-        return login_naver(naver_id=config.get("naver_id"), on_log=on_log)
+        def log(msg):
+            if on_log:
+                on_log(msg)
+
+        # 이미 로그인된 상태면 로그인 페이지를 거치지 않고 에디터로 바로 진행한다.
+        pw = None
+        try:
+            pw, browser = connect_cdp(on_log)
+            editor_url = config.get("editor_url") or f"https://blog.naver.com/{blog_id}/postwrite"
+            page = get_or_create_page(browser, navigate_to=editor_url)
+            _rand_delay(page, 2500, 3500)
+            if "nidlogin" not in page.url and "nid.naver.com" not in page.url:
+                log(f"[로그인] 네이버 기존 로그인 세션 확인 — 바로 글쓰기 진행 ({page.url})")
+                return True
+            log("[로그인] 네이버 로그인 필요 — 자동 로그인 진행")
+            return login_naver(naver_id=config.get("naver_id"), on_log=on_log, page=page)
+        finally:
+            if pw:
+                pw.stop()
     else:
         raise ValueError(f"지원하지 않는 플랫폼: {config['platform']}")
 

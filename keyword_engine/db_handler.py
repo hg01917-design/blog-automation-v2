@@ -128,7 +128,11 @@ _BLOG_CATEGORY = {
 _BLOG_KEYWORD_BLACKLIST: dict[str, list[str]] = {
     "goodisak": ["대출", "주식", "증권", "코인", "펀드", "ETF", "장려금", "지원금", "실업급여"],
     "salim1su": ["주식", "증권", "코인", "펀드", "ETF", "투자", "대출", "청약", "부동산",
-                 "장려금", "지원금", "실업급여", "육아휴직급여", "복지급여"],
+                 "장려금", "지원금", "보조금", "실업급여", "육아휴직급여", "복지급여",
+                 "저소득", "차상위", "기초생활", "수급자", "복지", "바우처", "감면",
+                 "통신비 지원", "통신비 감면", "에너지바우처", "주거급여", "생계급여",
+                 "연말정산", "종합소득세", "소득공제", "세액공제", "부양가족 공제",
+                 "의료비 공제", "교육비 공제", "월세 세액공제", "경정청구"],
     "nolja100": ["주식", "증권", "코인", "대출", "장려금", "지원금"],
     "triplog":  ["주식", "증권", "코인", "대출", "장려금", "지원금"],
 }
@@ -142,6 +146,53 @@ _TRAVEL_LOCATIONS = [
 
 # phn0502 OTT 플랫폼 포화 임계값 (같은 플랫폼으로 N개 이상 발행 시 스킵)
 _OTT_PLATFORMS = ["왓챠", "넷플릭스", "웨이브", "티빙", "쿠팡플레이", "시즌", "애플TV"]
+
+
+_SEASON_KEYWORDS = {
+    "연말정산": [1, 2, 11, 12],
+    "연말": [11, 12],
+    "크리스마스": [11, 12],
+    "송년회": [11, 12],
+    "신년": [1, 2],
+    "새해": [1, 2],
+    "설날": [1, 2],
+    "설 선물": [1, 2],
+    "추석": [8, 9, 10],
+    "추석 선물": [8, 9, 10],
+    "어버이날": [4, 5],
+    "어린이날": [4, 5],
+    "발렌타인": [1, 2],
+    "화이트데이": [2, 3],
+    "빼빼로": [10, 11],
+    "여름휴가": [5, 6, 7, 8],
+    "해수욕장": [6, 7, 8],
+    "겨울여행": [11, 12, 1, 2],
+    "벚꽃": [3, 4],
+    "단풍": [9, 10, 11],
+    "장마": [6, 7],
+    "난방비": [10, 11, 12, 1, 2, 3],
+    "보일러": [9, 10, 11, 12, 1, 2, 3],
+    "에어컨": [5, 6, 7, 8, 9],
+    "냉방비": [6, 7, 8, 9],
+    "선풍기": [5, 6, 7, 8],
+}
+
+_MAY_TAX_INTENT = [
+    "5월", "종합소득세", "중도퇴사", "퇴사자", "프리랜서", "누락",
+    "경정청구", "환급", "추가환급", "추가 환급", "환급신청", "환급 신청",
+]
+
+
+def is_keyword_season_valid(keyword: str, month: int | None = None) -> bool:
+    """현재 월에 맞지 않는 시즌 키워드는 글감 선택에서 제외한다."""
+    if month is None:
+        month = datetime.now().month
+    if "연말정산" in keyword and month == 5:
+        return any(term in keyword for term in _MAY_TAX_INTENT)
+    for pattern, valid_months in _SEASON_KEYWORDS.items():
+        if pattern in keyword:
+            return month in valid_months
+    return True
 
 
 def _is_topic_saturated(keyword: str, blog_id: str) -> bool:
@@ -395,7 +446,7 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
                         f"""
                         SELECT k.keyword FROM keywords k
                         WHERE k.category IN (?, ?)
-                          AND k.status NOT IN ('published')
+                          AND k.status = 'pending'
                           AND LENGTH(k.keyword) >= 7
                           AND NOT EXISTS (
                             SELECT 1 FROM keyword_blog_status kbs
@@ -413,7 +464,7 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
                         f"""
                         SELECT k.keyword FROM keywords k
                         WHERE k.category = ?
-                          AND k.status NOT IN ('published')
+                          AND k.status = 'pending'
                           AND LENGTH(k.keyword) >= 7
                           AND NOT EXISTS (
                             SELECT 1 FROM keyword_blog_status kbs
@@ -430,7 +481,7 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
                 row = db.execute(
                     f"""
                     SELECT k.keyword FROM keywords k
-                    WHERE k.status NOT IN ('published')
+                    WHERE k.status = 'pending'
                       AND NOT EXISTS (
                         SELECT 1 FROM keyword_blog_status kbs
                         WHERE kbs.keyword = k.keyword
@@ -450,6 +501,8 @@ def fetch_next_pending(blog_id: str = None) -> str | None:
     # 포화 주제 건너뛰기
     for r in (row if isinstance(row, list) else [row] if row else []):
         kw = r["keyword"] if r else None
+        if kw and not is_keyword_season_valid(kw):
+            continue
         if kw and not _is_topic_saturated(kw, blog_id or ""):
             return kw
     return None

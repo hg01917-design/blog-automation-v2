@@ -10,11 +10,6 @@ from claude_direct import generate_text
 from image_router import generate_images_for_blog as _img_router
 from overnight_run import _truncate_title
 
-try:
-    from agents import research_agent as _research
-except ImportError:
-    import research_agent as _research
-
 BLOG_ID = "salim1su"
 PERSONA_RULE = (
     "퇴근후살림 블로그 운영자 본인 시점 — 하린(30대 중반, 주부+직장인, 세 자녀) 페르소나. "
@@ -23,7 +18,7 @@ PERSONA_RULE = (
 )
 
 
-def run(keyword: str, on_log=None, on_status=None, skip_images=False):
+def run(keyword: str, on_log=None, on_status=None, skip_images=False, extra_context=None):
     """글 + 이미지 생성 후 파싱된 결과를 반환한다.
 
     blog_id는 "salim1su"으로 고정됩니다.
@@ -49,9 +44,8 @@ def run(keyword: str, on_log=None, on_status=None, skip_images=False):
 
     log(f"[{blog_id}] 페르소나 규칙 적용: {PERSONA_RULE}")
 
-    # 1. 정보 수집
-    fc = _research.run(keyword, blog_id, on_log=log)
-    extra_ctx = fc["context"] if fc["success"] else None
+    # 1. 공통 리서치 컨텍스트 사용
+    extra_ctx = extra_context
 
     # 2. Claude.ai 글 생성
     log(f"[작성] {blog_id} / '{keyword}' — Claude.ai 글 생성")

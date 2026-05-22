@@ -10,11 +10,6 @@ from claude_direct import generate_text
 from image_router import generate_images_for_blog as _img_router
 from overnight_run import _truncate_title
 
-try:
-    from agents import research_agent as _research
-except ImportError:
-    import research_agent as _research
-
 BLOG_ID = "nolja100"
 PERSONA_RULE = (
     "놀자 여행 블로그 운영자 본인 시점 — 지은(32세 콘텐츠 플래너) 페르소나. "
@@ -23,7 +18,7 @@ PERSONA_RULE = (
 )
 
 
-def run(keyword: str, on_log=None, on_status=None, skip_images=False):
+def run(keyword: str, on_log=None, on_status=None, skip_images=False, extra_context=None):
     """글 + 이미지 생성 후 파싱된 결과를 반환한다.
 
     blog_id는 "nolja100"으로 고정됩니다.
@@ -49,8 +44,8 @@ def run(keyword: str, on_log=None, on_status=None, skip_images=False):
 
     log(f"[{blog_id}] 페르소나 규칙 적용: {PERSONA_RULE}")
 
-    # 1. 사전 팩트 수집
-    fc = _research.run(keyword, blog_id, on_log=log)
+    # 1. 공통 리서치 컨텍스트 사용
+    extra_ctx = extra_context
 
     # MRT 제휴 링크 컨텍스트 (개별 포스팅용)
     mrt_ctx = ""
@@ -60,7 +55,7 @@ def run(keyword: str, on_log=None, on_status=None, skip_images=False):
     except Exception as _e:
         log(f"[MRT] 컨텍스트 로드 실패 (무시): {_e}")
 
-    extra_ctx = "\n\n".join(filter(None, [fc["context"] if fc["success"] else "", mrt_ctx])) or None
+    extra_ctx = "\n\n".join(filter(None, [extra_context or "", mrt_ctx])) or None
 
     # 2. Claude.ai 글 생성
     log(f"[작성] {blog_id} / '{keyword}' — Claude.ai 글 생성")

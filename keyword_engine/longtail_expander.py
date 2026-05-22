@@ -182,7 +182,7 @@ def expand_longtail(
     Returns:
         새로 저장된 키워드 수
     """
-    from keyword_engine.db_handler import upsert_keyword, keyword_exists
+    from keyword_engine.db_handler import upsert_keyword, keyword_exists, is_keyword_season_valid
     from keyword_engine.rel_keyword import get_rel_keywords
 
     min_vol = _CAT_MIN_VOL.get(category, _DEFAULT_MIN_VOL)
@@ -247,6 +247,10 @@ def expand_longtail(
             return
         # 광고/쇼핑 관련 키워드 제외
         if _SKIP.search(kw):
+            return
+        # 시즌이 지난 키워드는 DB에 새로 쌓지 않는다.
+        if not is_keyword_season_valid(kw):
+            total_skipped_cat += 1
             return
         # 이미 DB에 있으면 스킵
         if keyword_exists(kw):

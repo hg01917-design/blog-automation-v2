@@ -371,6 +371,18 @@ _SEARCH_STRIP_WORDS = {
 # 포맷 마커 제거용
 _FORMAT_RE = re.compile(r'\[/?[A-Za-z]+\]|\w*\]|\[.*|\*{1,3}|^#{1,6}\s*', re.MULTILINE)
 
+# 쇼핑몰 가격 크롤링으로 검증하면 오탐이 잦은 서비스형 구독 키워드
+_SUBSCRIPTION_SERVICE_KEYWORDS = {
+    "유튜브 프리미엄", "youtube premium", "유튜브", "youtube",
+    "넷플릭스", "netflix", "티빙", "tving", "웨이브", "wavve",
+    "디즈니플러스", "disney+", "쿠팡플레이", "watcha", "왓챠",
+}
+
+
+def _is_subscription_service_context(keyword: str, ctx_text: str = "") -> bool:
+    target = f"{keyword} {ctx_text}".lower()
+    return any(k in target for k in _SUBSCRIPTION_SERVICE_KEYWORDS)
+
 
 def _extract_product_name(ctx_text: str, keyword: str):
     """컨텍스트 텍스트에서 제품명 추출. 상품이 없으면 None 반환 (팩트체크 스킵).
@@ -458,6 +470,10 @@ def run(body: str, keyword: str, blog_name: str = "", on_log=None) -> dict:
             ctx_start = max(0, claim["start"] - 120)
             ctx_end = min(len(body), claim["start"] + 30)
             ctx_text = body[ctx_start:ctx_end]
+
+            if _is_subscription_service_context(keyword, ctx_text):
+                log(f"[팩트체크] 구독형 서비스 문맥 감지 — 건너뜀 (원문: '{ctx_text[-30:]}')")
+                continue
 
             search_query = _extract_product_name(ctx_text, keyword)
             if search_query is None:

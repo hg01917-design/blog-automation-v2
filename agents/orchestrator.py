@@ -15,6 +15,8 @@ import keyword_agent
 import common_review_agent
 import poster_agent
 import fix_agent
+import research_agent
+from config import is_naver_blog
 
 # .env 로드 (.app 번들 실행 시 프로젝트 루트 사용)
 import os as _os
@@ -313,18 +315,36 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
         keyword = kw_result["keyword"]
         page_id = kw_result["page_id"]
 
+        research_context = None
+        try:
+            rs = research_agent.run(keyword, blog_id, on_log=log)
+            if rs.get("success") and rs.get("context"):
+                research_context = rs["context"]
+                log(f"[오케스트레이터] 공통 리서치 완료 ({len(research_context)}자)")
+            else:
+                log("[오케스트레이터] 공통 리서치 결과 없음 — 기본 생성 진행")
+        except Exception as _re:
+            log(f"[오케스트레이터] 공통 리서치 오류 (무시): {_re}")
+
         # ── 2~3. 글 생성 + 통합 검수 (최대 MAX_WRITER_RETRIES회) ──
         result = None
         for attempt in range(1, MAX_WRITER_RETRIES + 1):
             if attempt > 1:
                 log(f"[오케스트레이터] === 재생성 {attempt}/{MAX_WRITER_RETRIES} ===")
 
-            result = active_writer.run(keyword, on_log=log, on_status=on_status, skip_images=True)
+            result = active_writer.run(
+                keyword,
+                on_log=log,
+                on_status=on_status,
+                skip_images=True,
+                extra_context=research_context,
+            )
             if not result:
                 continue
 
+            review_keyword = result.get("used_keyword") or keyword
             review = common_review_agent.run(
-                result, keyword, blog_id, on_log=log, on_status=on_status
+                result, review_keyword, blog_id, on_log=log, on_status=on_status
             )
             if review["passed"]:
                 result = review["result"]
@@ -342,7 +362,7 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
             fixed = fix_agent.run(review["result"], issues, blog_id, on_log=log)
             if fixed:
                 review2 = common_review_agent.run(
-                    fixed, keyword, blog_id, on_log=log, on_status=on_status
+                    fixed, review_keyword, blog_id, on_log=log, on_status=on_status
                 )
                 if review2["passed"]:
                     log("[오케스트레이터] ✓ 패턴 치환 후 검수 통과")
@@ -372,7 +392,7 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
                             repaired_result["raw"] = repaired_raw
                             repaired_result["image_paths"] = result.get("image_paths", {})
                             review3 = common_review_agent.run(
-                                repaired_result, keyword, blog_id, on_log=log, on_status=on_status
+                                repaired_result, review_keyword, blog_id, on_log=log, on_status=on_status
                             )
                             if review3["passed"]:
                                 log("[오케스트레이터] ✓ 부분 수정 후 검수 통과")
@@ -394,7 +414,7 @@ def run_single(blog_id: str, keyword: str = None, page_id: str = None,
 
         # ── 3-b. 검수 통과 후 이미지 생성 ──
         from image_router import generate_images_for_blog as _img_gen, generate_thumbnail
-        _is_naver = blog_id in ("salim1su", "me1091")
+        _is_naver = is_naver_blog(blog_id)
         _img_paths = {}
 
         # 본문 이미지 생성 (이미지 명세가 있을 때만)

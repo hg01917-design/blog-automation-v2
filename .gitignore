@@ -12,3 +12,8 @@ build/
 dist/
 .claude/worktrees/
 .claude_token_cache
+gsc_token.json
+outputs/
+*.db
+client_secret.json
+remote_secrets.json

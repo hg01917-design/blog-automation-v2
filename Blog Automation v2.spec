@@ -52,7 +52,7 @@ a = Analysis(
         ('cdp_utils.py', '.'),
         ('public_api.py', '.'),
     ],
-    hiddenimports=pyqt5_hiddenimports + ['playwright', 'requests', 'anthropic'],
+    hiddenimports=pyqt5_hiddenimports + ['playwright', 'requests', 'anthropic', 'mrt_affiliate'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
