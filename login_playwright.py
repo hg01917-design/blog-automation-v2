@@ -566,8 +566,16 @@ def login_blog(blog_id: str, on_log=None):
             page = get_or_create_page(browser, navigate_to=editor_url)
             _rand_delay(page, 2500, 3500)
             if "nidlogin" not in page.url and "nid.naver.com" not in page.url:
-                log(f"[로그인] 네이버 기존 로그인 세션 확인 — 바로 글쓰기 진행 ({page.url})")
-                return True
+                # 에디터가 실제로 뜨는지 확인 (다른 계정 로그인 시 에디터 접근 불가)
+                try:
+                    page.wait_for_selector(".se-content", timeout=8000)
+                    log(f"[로그인] 네이버 기존 로그인 세션 확인 — 바로 글쓰기 진행 ({page.url})")
+                    return True
+                except Exception:
+                    expected = config.get("naver_id", blog_id)
+                    log(f"[로그인] ⚠ 에디터 미로드 — 다른 계정 로그인 추정, {expected} 재로그인 진행")
+                    page.goto("https://nid.naver.com/nidlogin.logout", wait_until="domcontentloaded", timeout=15000)
+                    _rand_delay(page, 1500, 2500)
             log("[로그인] 네이버 로그인 필요 — 자동 로그인 진행")
             return login_naver(naver_id=config.get("naver_id"), on_log=on_log, page=page)
         finally:
