@@ -878,15 +878,12 @@ def run_one_product(on_log=None) -> bool:
         _log(f"[me1091] 글 생성 실패: {name[:40]}")
         return False
 
-    # 수수료 문구 맨 위 강제 삽입 (이미 있으면 스킵)
+    # 수수료 문구 맨 위 강제 삽입 (기존 문구 형식 불문하고 전부 제거 후 표준 문구 삽입)
+    import re as _re
     DISCLOSURE = "※ 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.\n\n"
-    if "쿠팡 파트너스 활동" not in content:
-        content = DISCLOSURE + content
-    else:
-        # 기존 문구 제거 후 표준 문구로 맨 위 재삽입
-        import re as _re
-        content = _re.sub(r'※ 이 포스팅은 쿠팡 파트너스 활동[^\n]*\n*', '', content).lstrip()
-        content = DISCLOSURE + content
+    # 쿠팡파트너스(띄어쓰기 없음), 쿠팡 파트너스(띄어쓰기 있음), 줄바꿈 변형 모두 제거
+    content = _re.sub(r'※\s*이 포스팅은 쿠팡\s*파트너스[^\n]*(?:\n\s+[^\n]+)?\n*', '', content).lstrip()
+    content = DISCLOSURE + content
 
     try:
         from poster import post_single
@@ -970,14 +967,11 @@ def run():
             log(f"[스킵] 글 생성 실패: {name[:40]}")
             continue
 
-        # 수수료 문구 맨 위 강제 삽입 (이미 있으면 스킵)
+        # 수수료 문구 맨 위 강제 삽입 (기존 문구 형식 불문하고 전부 제거 후 표준 문구 삽입)
+        import re as _re
         DISCLOSURE = "※ 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.\n\n"
-        if "쿠팡 파트너스 활동" not in content:
-            content = DISCLOSURE + content
-        else:
-            import re as _re
-            content = _re.sub(r'※ 이 포스팅은 쿠팡 파트너스 활동[^\n]*\n*', '', content).lstrip()
-            content = DISCLOSURE + content
+        content = _re.sub(r'※\s*이 포스팅은 쿠팡\s*파트너스[^\n]*(?:\n\s+[^\n]+)?\n*', '', content).lstrip()
+        content = DISCLOSURE + content
 
         # 5. 네이버 임시저장
         try:
