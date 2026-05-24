@@ -238,6 +238,56 @@ def fetch_api_products(n_keywords: int = 5) -> list:
     return products
 
 
+# ─── 공정위 문구 이미지 (캐시: images/me1091/disclosure.png) ──────────────
+DISCLOSURE_IMG_PATH = Path(__file__).parent / "images" / "me1091" / "disclosure.png"
+
+def make_disclosure_image() -> Path | None:
+    """공정위 표시광고 문구 이미지를 생성(또는 캐시 반환)."""
+    if DISCLOSURE_IMG_PATH.exists():
+        return DISCLOSURE_IMG_PATH
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        DISCLOSURE_IMG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        W, H = 800, 52
+        img = Image.new("RGB", (W, H), "#f9f9f9")
+        draw = ImageDraw.Draw(img)
+        # 위/아래 얇은 구분선
+        draw.line([(0, 0), (W, 0)], fill="#d8d8d8", width=1)
+        draw.line([(0, H - 1), (W, H - 1)], fill="#d8d8d8", width=1)
+        text = "※ 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다."
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/AppleSDGothicNeo.ttc", 18)
+        except Exception:
+            font = ImageFont.load_default()
+        bbox = draw.textbbox((0, 0), text, font=font)
+        tw = bbox[2] - bbox[0]
+        x = max(16, (W - tw) // 2)
+        draw.text((x, (H - (bbox[3] - bbox[1])) // 2), text, font=font, fill="#777777")
+        img.save(DISCLOSURE_IMG_PATH, "PNG")
+        log(f"[공정위] 이미지 생성 완료: {DISCLOSURE_IMG_PATH.name}")
+        return DISCLOSURE_IMG_PATH
+    except Exception as e:
+        log(f"[공정위] 이미지 생성 실패: {e}")
+        return None
+
+
+def _inject_image_markers(content: str, image_keys: list) -> str:
+    """본문 단락 사이에 {{이미지N}} 마커를 균등 배치한다."""
+    if not image_keys:
+        return content
+    paras = [p for p in content.split('\n\n') if p.strip()]
+    n = len(paras)
+    keys = sorted(image_keys)
+    placements = []
+    for i, idx in enumerate(keys):
+        pos = max(1, min(n - 1, round((i + 1) * n / (len(keys) + 1))))
+        placements.append((pos, idx))
+    # 뒤에서부터 삽입해서 앞 인덱스가 밀리지 않도록
+    for pos, idx in sorted(placements, key=lambda x: -x[0]):
+        paras.insert(pos, f'{{{{이미지{idx}}}}}')
+    return '\n\n'.join(paras)
+
+
 # ─── SQLite: 처리된 상품 추적 ─────────────────────────────────────────────
 def _db_conn():
     conn = sqlite3.connect(DB_PATH)
@@ -730,16 +780,31 @@ def run_one_product(on_log=None) -> bool:
         _log(f"[me1091] 글 생성 실패: {name[:40]}")
         return False
 
-    # 수수료 문구 맨 위 강제 삽입 (기존 문구 형식 불문하고 전부 제거 후 표준 문구 삽입)
     import re as _re
-    DISCLOSURE = "※ 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.\n\n"
-    # 쿠팡파트너스(띄어쓰기 없음), 쿠팡 파트너스(띄어쓰기 있음), 줄바꿈 변형 모두 제거
+
+    # 기존 텍스트 공정위 문구 모두 제거 (이미지로 대체)
     content = _re.sub(r'※\s*이 포스팅은 쿠팡\s*파트너스[^\n]*(?:\n\s+[^\n]+)?\n*', '', content).lstrip()
-    content = DISCLOSURE + content
+
+    # 공정위 이미지 → image_paths[0], {{이미지0}} 맨 위에 삽입
+    disc_path = make_disclosure_image()
+    if disc_path:
+        image_paths[0] = str(disc_path)
+        image_infos_list.insert(0, {
+            "index": 0,
+            "filename": disc_path.name,
+            "alt": "쿠팡파트너스 수수료 안내",
+        })
+        content = "{{이미지0}}\n\n" + content
+        _log("[me1091] 공정위 이미지 삽입")
+
+    # Gemini 이미지 마커 자동 삽입 (본문 균등 배치)
+    gemini_keys = [k for k in image_paths if k != 0]
+    if gemini_keys:
+        content = _inject_image_markers(content, gemini_keys)
+        _log(f"[me1091] Gemini 이미지 마커 {len(gemini_keys)}개 삽입")
 
     try:
         from poster import post_single
-        # SEO 키워드는 상품명 대신 제목 앞 15자 (상황 키워드 기반)
         seo_keyword = title[:15] if title else keyword
         ok = post_single(
             blog_id=BLOG_ID,

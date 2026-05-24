@@ -1591,6 +1591,17 @@ def _naver_type_line_with_links(page, line: str, chunk_size: int = 50):
             # 3) Enter 한 번 더 → OGP 카드 변환 트리거
             page.keyboard.press("Enter")
             time.sleep(3)  # OGP 로딩 대기
+            # OGP 카드 생성 후 커서가 카드 내부에 갇히지 않도록 본문 마지막 단락으로 재포커스
+            try:
+                body_ps = page.query_selector_all('.se-component.se-text .se-text-paragraph')
+                if body_ps:
+                    body_ps[-1].click()
+                    time.sleep(0.3)
+                    page.keyboard.press("End")
+                    page.keyboard.press("Enter")
+                    time.sleep(0.2)
+            except Exception:
+                pass
         else:
             _chunked_type(page, seg, chunk_size=chunk_size)
 
