@@ -424,6 +424,33 @@ _POLISH_PROMPT_NAVER = """아래는 블로그 초안이다. 구조(===제목===,
 ===초안끝==="""
 
 
+# me1091 전용 — 해요체 산문 (소제목 없음, ~했어요/~이에요/~네요/~거든요 유지)
+_POLISH_PROMPT_ME1091 = """아래는 쿠팡파트너스 리뷰 블로그 초안이다. 구조(===제목===, ===본문===, ===태그===, {{이미지N}} 마커)는 절대 바꾸지 마라.
+
+다음 기준으로 본문 문장만 다듬어라:
+
+1. 해요체 유지 필수. 종결어미는 반드시 '~했어요', '~예요', '~이에요', '~네요', '~더라고요', '~거든요' 등 해요체만 사용. '~습니다', '~합니다', '~했다', '~한다' 어미 일절 금지.
+
+2. 도입부는 독자의 상황·고민에서 자연스럽게 시작. "이 글에서는~", "오늘은~" 식 AI 도입부 금지.
+
+3. 아래 AI 표현 발견 시 자연스러운 구어체로 교체:
+   - 알아봤어요 / 살펴봤어요 / 소개해드릴게요 / 정리해드릴게요
+   - 함께 알아볼게요 / 도움이 됐으면 해요
+   - 💡 이모지, 번호 나열, 글머리 기호
+
+4. 나열형("먼저~, 다음으로~, 마지막으로~") 대신 각 내용을 이유·효과까지 자연스럽게 풀어써라.
+
+5. 마무리 문장에 "도움이 됐으면 해요", "유익한 정보" 류 금지. 자연스럽게 끝내라.
+
+6. 문단 구분: 3~4문장마다 빈 줄 하나.
+
+수정한 전체 글을 원본과 동일한 형식으로 출력해라. 설명·주석 없이 글만 출력.
+
+===초안===
+{draft}
+===초안끝==="""
+
+
 _POLISH_PROMPT_WEB = """아래는 블로그 초안이다. 구조(===제목===, ===본문===, ===태그===, ===메타===, [H2], [H3], [BOLD], [이미지N], [애드센스] 마커)는 절대 바꾸지 마라.
 
 다음 기준으로 본문 문장만 다듬어라:
@@ -773,7 +800,12 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
 
     # ── 2단계: AI 패턴 제거 + 도입부 개선 (polish, Claude haiku 고정) ──
     log("[Direct] 2단계: 문체 다듬기 중...")
-    polish_template = _POLISH_PROMPT_NAVER if is_naver_blog(blog_id or "") else _POLISH_PROMPT_WEB
+    if blog_id == "me1091":
+        polish_template = _POLISH_PROMPT_ME1091
+    elif is_naver_blog(blog_id or ""):
+        polish_template = _POLISH_PROMPT_NAVER
+    else:
+        polish_template = _POLISH_PROMPT_WEB
     polish_prompt = polish_template.format(draft=raw)
     polished = _run_claude(polish_prompt, on_log=on_log, timeout=300,
                            model_key="haiku", enforce_blog_format=True)
