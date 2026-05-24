@@ -701,7 +701,7 @@ def generate_review_post(product_info: dict, coupang_link: str) -> tuple:
 [링크 삽입 형식]
 본문에서 상품 언급 시 + 말미에 2회:
 👉 [쿠팡에서 확인하기]({coupang_link})
-※ 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 일정액의 수수료를 제공받습니다.
+(공정위 문구는 별도 이미지로 처리하므로 본문에 넣지 말 것)
 
 [출력 형식]
 ===제목===
@@ -786,8 +786,8 @@ def run_one_product(on_log=None) -> bool:
 
     import re as _re
 
-    # 기존 텍스트 공정위 문구 모두 제거 (이미지로 대체)
-    content = _re.sub(r'※\s*이 포스팅은 쿠팡\s*파트너스[^\n]*(?:\n\s+[^\n]+)?\n*', '', content).lstrip()
+    # 텍스트 공정위 문구 모두 제거 (이미지로 대체) — "이 포스팅은..." 또는 "수수료가 발생..." 변형 모두 처리
+    content = _re.sub(r'※[^\n]*(?:파트너스|수수료|제공받)[^\n]*\n?', '', content).lstrip()
 
     # 공정위 이미지 → image_paths[0], {{이미지0}} 맨 위에 삽입
     disc_path = make_disclosure_image()
