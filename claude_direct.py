@@ -778,7 +778,7 @@ def generate_text(prompt: str, blog_id: str = None, keyword: str = None,
     polished = _run_claude(polish_prompt, on_log=on_log, timeout=300,
                            model_key="haiku", enforce_blog_format=True)
 
-    if polished and len(polished) >= 500 and _is_valid_blog_content(polished):
+    if polished and len(polished) >= 500 and _is_valid_blog_content(polished, blog_id=blog_id):
         log(f"[Direct] 2단계 완료 ({len(polished)}자) ✅")
         return polished
     else:
