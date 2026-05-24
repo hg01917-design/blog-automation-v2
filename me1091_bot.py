@@ -389,15 +389,16 @@ def scrape_coupang_product(link: str, on_log=None) -> dict:
 
             # 기존 쿠팡 탭 재사용 또는 새 탭
             page = None
+            new_page_opened = False
             for p in ctx.pages:
                 if "coupang.com/vp/products" in p.url:
-                    # 같은 상품인지 확인
                     if product_url.split("?")[0].split("/")[-1] in p.url:
                         page = p
                         _lg("[쿠팡] 기존 탭 재사용")
                         break
             if not page:
                 page = await ctx.new_page()
+                new_page_opened = True
                 await page.goto(product_url, wait_until="domcontentloaded", timeout=30000)
                 await asyncio.sleep(3)
 
@@ -498,10 +499,11 @@ def scrape_coupang_product(link: str, on_log=None) -> dict:
 
             _lg(f"[쿠팡] 수집 완료 — 상품이미지:{len(result['images'])}장, 리뷰이미지:{len(result['review_images'])}장, 리뷰:{len(result['reviews'])}개")
 
-            # 탭 닫기 (새로 열었을 때만)
-            if "coupang.com/vp/products" not in (result["url"] or ""):
+            # 새로 연 탭이면 닫기 (재사용 탭은 유지)
+            if new_page_opened:
                 try:
                     await page.close()
+                    _lg("[쿠팡] 탭 닫기 완료")
                 except Exception:
                     pass
 
@@ -688,6 +690,8 @@ def generate_review_post(product_info: dict, coupang_link: str) -> tuple:
 구매 전 고민했던 점, 쓰면서 느낀 점, 이런 분께 맞을 것 같다는 개인 의견을 솔직하게.
 
 [글 스타일]
+- 해요체로 작성. '~했다', '~이다', '~한다', '~됩니다', '~아/어요' 어미 혼용 금지.
+  종결어미는 반드시 '~했어요', '~예요', '~이에요', '~네요', '~더라고요', '~거든요' 등 해요체만 사용.
 - 실제 사람이 쓴 것처럼 자연스러운 구어체. AI가 쓴 느낌 절대 금지.
 - 소제목(##, bold 헤딩) 사용 금지 — 문단으로만 흐름 이어갈 것
 - "💡", "정리하자면", 번호 나열, 글머리 기호 금지

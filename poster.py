@@ -2331,6 +2331,14 @@ def _post_naver(account, title, content, tags=None,
         return False
 
     finally:
+        # me1091 등 작업 완료 후 에디터 탭 닫기 (네이버 에디터만 대상)
+        try:
+            cur_url = page.url if page else ""
+            if "blog.naver.com" in cur_url and "postwrite" in cur_url:
+                page.close()
+                log("[포스팅] 에디터 탭 닫기 완료")
+        except Exception:
+            pass
         pw.stop()
 
 
