@@ -155,6 +155,89 @@ def fetch_notion_products() -> list:
     return products
 
 
+# ─── 쿠팡파트너스 API 상품 소싱 (다양성 확보) ─────────────────────────────
+_API_SEARCH_POOL = [
+    ("로봇청소기", "청소/생활"),
+    ("무선청소기", "청소/생활"),
+    ("물걸레청소기", "청소/생활"),
+    ("에어프라이어", "주방가전"),
+    ("전기밥솥", "주방가전"),
+    ("전기포트", "주방가전"),
+    ("핸드믹서", "주방가전"),
+    ("공기청정기", "가전"),
+    ("가습기", "가전"),
+    ("제습기", "가전"),
+    ("미니선풍기", "가전"),
+    ("섬유유연제", "세탁용품"),
+    ("세탁세제", "세탁용품"),
+    ("비타민C", "건강식품"),
+    ("유산균 프로바이오틱스", "건강식품"),
+    ("오메가3", "건강식품"),
+    ("단백질 보충제", "건강식품"),
+    ("강아지 사료", "반려동물"),
+    ("고양이 간식", "반려동물"),
+    ("펫 매트", "반려동물"),
+    ("메모리폼 베개", "수면"),
+    ("매트리스 토퍼", "수면"),
+    ("멀티탭 USB", "생활잡화"),
+    ("무선충전기", "전자기기"),
+    ("수납함 정리함", "생활잡화"),
+    ("밀폐용기 세트", "주방잡화"),
+    ("핸드크림", "뷰티"),
+    ("선크림 자외선차단제", "뷰티"),
+    ("마스크팩", "뷰티"),
+    ("두피케어 샴푸", "뷰티"),
+    ("스테인리스 냄비", "주방잡화"),
+    ("테프론 프라이팬", "주방잡화"),
+    ("보온병 텀블러", "주방잡화"),
+    ("탈취제", "생활잡화"),
+    ("방향제", "생활잡화"),
+    ("전동칫솔", "생활잡화"),
+    ("체중계 스마트", "생활잡화"),
+    ("접이식 캠핑의자", "아웃도어"),
+    ("캠핑 랜턴", "아웃도어"),
+    ("등산화", "아웃도어"),
+]
+
+
+def fetch_api_products(n_keywords: int = 5) -> list:
+    """쿠팡파트너스 API로 다양한 카테고리 상품을 무작위 수집.
+
+    _API_SEARCH_POOL에서 n_keywords개를 무작위 선택해 각 최대 3개 상품 반환.
+    더미 URL (link.coupang.com/a/dummy) 은 제외.
+    """
+    import random as _rand
+    try:
+        from coupang_api import search_products as _search
+    except ImportError:
+        log("[API소싱] coupang_api 임포트 실패")
+        return []
+
+    chosen = _rand.sample(_API_SEARCH_POOL, min(n_keywords, len(_API_SEARCH_POOL)))
+    products = []
+    seen_names: set = set()
+
+    for kw, cat in chosen:
+        try:
+            items = _search(kw, category=cat, limit=3)
+            for item in items:
+                nm = item.get("name", "")
+                url = item.get("url", "")
+                # 더미 / 유효하지 않은 URL 제외
+                if not nm or not url or "dummy" in url or not url.startswith("https://"):
+                    continue
+                if nm in seen_names:
+                    continue
+                seen_names.add(nm)
+                products.append({"name": nm, "link": url, "category": cat})
+                log(f"[API소싱] {kw} → {nm[:40]} ({cat})")
+        except Exception as e:
+            log(f"[API소싱] '{kw}' 검색 오류: {e}")
+
+    log(f"[API소싱] 총 {len(products)}개 상품 수집")
+    return products
+
+
 # ─── SQLite: 처리된 상품 추적 ─────────────────────────────────────────────
 # ─── 글 각도(angle) 정의 — 상품이 필요한 상황/독자 중심 ────────────────
 # (angle_id, situation_hint, writing_instruction)
@@ -746,9 +829,13 @@ def run_one_product(on_log=None) -> bool:
         if on_log: on_log(m)
         log(m)
 
-    products = fetch_notion_products()
+    # API 상품(다양성 우선) + Notion 상품(수동 큐레이션) 병합
+    api_products = fetch_api_products(n_keywords=5)
+    notion_products = fetch_notion_products()
+    api_names = {p["name"] for p in api_products}
+    products = api_products + [p for p in notion_products if p["name"] not in api_names]
     if not products:
-        _log("[me1091] 처리할 Notion 상품 없음")
+        _log("[me1091] 처리할 상품 없음 (API + Notion 모두 빈 결과)")
         return False
 
     # 상품 선택 전략: 한 번도 발행 안 한 상품 우선 → 발행 횟수 적은 순 → 각도 순환

@@ -2594,7 +2594,7 @@ def _post_wordpress(account, title, content, tags=None,
             on_log(msg)
 
     def _mrt_link_count(text: str) -> int:
-        return len(re.findall(r"https?://(?:myrealt\\.rip|www\\.myrealtrip\\.com)/", text or "", flags=re.IGNORECASE))
+        return len(re.findall(r"https?://(?:myrealt\.rip|www\.myrealtrip\.com)/", text or "", flags=re.IGNORECASE))
 
     def _wp_info_block(src_text: str) -> str:
         if account.get("blog") == "baremi542":
@@ -3062,9 +3062,9 @@ def post_single(blog_id: str, title: str, content: str,
     if blog_id == "nolja100":
         try:
             from mrt_banner import insert_mrt_banner
-            before_count = len(re.findall(r"https?://(?:myrealt\\.rip|www\\.myrealtrip\\.com)/", content or "", flags=re.IGNORECASE))
+            before_count = len(re.findall(r"https?://(?:myrealt\.rip|www\.myrealtrip\.com)/", content or "", flags=re.IGNORECASE))
             content = insert_mrt_banner(content, keyword or title, "nolja100", on_log=on_log)
-            after_count = len(re.findall(r"https?://(?:myrealt\\.rip|www\\.myrealtrip\\.com)/", content or "", flags=re.IGNORECASE))
+            after_count = len(re.findall(r"https?://(?:myrealt\.rip|www\.myrealtrip\.com)/", content or "", flags=re.IGNORECASE))
             log(f"[MRT] nolja100 링크 개수: before={before_count}, after={after_count}")
             if after_count < 1:
                 log("[MRT] ❌ nolja100 본문에 제휴 링크 없음 — 포스팅 중단")
