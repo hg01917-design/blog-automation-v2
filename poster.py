@@ -1584,22 +1584,26 @@ def _naver_type_line_with_links(page, line: str, chunk_size: int = 50):
             time.sleep(0.2)
             page.keyboard.press("Meta+b")  # 볼드 해제
             time.sleep(0.15)
-            # 2) Enter 후 raw URL 붙여넣기 → SE2가 OGP 미리보기로 자동 변환
+            # 2) Enter 후 URL 클립보드 붙여넣기 → SE3가 OGP 미리보기로 자동 변환
+            # (문자 단위 typing 시 URL 중간에 SE3가 OGP 포커스를 낚아채 나머지 문자가 본문에 입력되는 버그)
             page.keyboard.press("Enter")
-            time.sleep(0.2)
-            _chunked_type(page, url, chunk_size=chunk_size)
+            time.sleep(0.3)
+            import subprocess as _sp2
+            _sp2.run(['pbcopy'], input=url.encode('utf-8'), check=True)
+            page.keyboard.press("Meta+v")
+            time.sleep(0.5)
             # 3) Enter 한 번 더 → OGP 카드 변환 트리거
             page.keyboard.press("Enter")
-            time.sleep(3)  # OGP 로딩 대기
+            time.sleep(4)  # OGP 로딩 대기 (1초 추가)
             # OGP 카드 생성 후 커서가 카드 내부에 갇히지 않도록 본문 마지막 단락으로 재포커스
             try:
                 body_ps = page.query_selector_all('.se-component.se-text .se-text-paragraph')
                 if body_ps:
                     body_ps[-1].click()
-                    time.sleep(0.3)
+                    time.sleep(0.5)
                     page.keyboard.press("End")
                     page.keyboard.press("Enter")
-                    time.sleep(0.2)
+                    time.sleep(0.3)
             except Exception:
                 pass
         else:
